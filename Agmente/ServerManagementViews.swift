@@ -1,11 +1,21 @@
 import SwiftUI
 import ACPClient
+import Security
+import UniformTypeIdentifiers
 
 struct AddServerView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
     @State private var name: String = ""
-    @State private var scheme: String = "ws"
+    @State private var scheme: String = "wss"
+    @State private var localOnly: Bool = false
+    @State private var spkiPins: String = ""
+    @State private var clientIdentity: SecIdentity?
+    @State private var clientIdentityChanged = false
+    @State private var showIdentityImporter = false
+    @State private var pendingP12: Data?
+    @State private var p12Passphrase = ""
+    @State private var showPassphrasePrompt = false
     @State private var host: String = ""
     @State private var token: String = ""
     @State private var cfAccessClientId: String = ""
@@ -23,13 +33,13 @@ struct AddServerView: View {
 
     let editingServer: ACPServerConfiguration?
     let initialServerType: ServerType?
-    let onValidate: (String, String, String, String, String, String, String, ServerType) async -> Result<ValidatedServerConfiguration, Error>
+    let onValidate: (String, String, String, String, String, String, String, ServerType, ServerSecurityInput) async -> Result<ValidatedServerConfiguration, Error>
     let onInsert: (ValidatedServerConfiguration) -> Void
 
     init(
         editingServer: ACPServerConfiguration? = nil,
         initialServerType: ServerType? = nil,
-        onValidate: @escaping (String, String, String, String, String, String, String, ServerType) async -> Result<ValidatedServerConfiguration, Error>,
+        onValidate: @escaping (String, String, String, String, String, String, String, ServerType, ServerSecurityInput) async -> Result<ValidatedServerConfiguration, Error>,
         onInsert: @escaping (ValidatedServerConfiguration) -> Void
     ) {
         self.editingServer = editingServer
@@ -38,7 +48,10 @@ struct AddServerView: View {
         self.onInsert = onInsert
 
         _name = State(initialValue: editingServer?.name ?? "")
-        _scheme = State(initialValue: editingServer?.scheme ?? "ws")
+        _scheme = State(initialValue: editingServer?.scheme ?? "wss")
+        _localOnly = State(initialValue: editingServer?.localOnly ?? false)
+        _spkiPins = State(initialValue: editingServer?.spkiPins ?? "")
+        _clientIdentity = State(initialValue: editingServer.flatMap { ClientIdentityStore.shared.load(serverId: $0.id) })
         _host = State(initialValue: editingServer?.host ?? "")
         _token = State(initialValue: editingServer?.token ?? "")
         _cfAccessClientId = State(initialValue: editingServer?.cfAccessClientId ?? "")
@@ -103,12 +116,27 @@ struct AddServerView: View {
         }
 
         Section {
+            Toggle("Local only", isOn: $localOnly)
+                .accessibilityIdentifier("LocalOnlyToggle")
+                .onChange(of: localOnly) { newValue in
+                    if !newValue && !Self.plaintextOffered(localOnly: false) { scheme = "wss" }
+                }
+
             Picker("Protocol", selection: $scheme) {
-                Text("ws").tag("ws")
+                if Self.plaintextOffered(localOnly: localOnly) || scheme == "ws" {
+                    Text("ws").tag("ws")
+                }
                 Text("wss").tag("wss")
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("ProtocolPicker")
+
+            if localOnly {
+                Text("Local only: this server can reach only this device and your local network. With ws://, the token is sent unencrypted on that network.")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("LocalOnlyWarning")
+            }
 
             TextField("Host", text: $host)
 #if os(iOS)
@@ -126,6 +154,52 @@ struct AddServerView: View {
 #endif
                 .disableAutocorrection(true)
                 .focused($focusedField, equals: .token)
+        }
+
+        Section {
+            TextField("Certificate pins (optional)", text: $spkiPins, axis: .vertical)
+#if os(iOS)
+                .textInputAutocapitalization(.never)
+#endif
+                .disableAutocorrection(true)
+                .font(.footnote.monospaced())
+                .accessibilityIdentifier("SPKIPinsField")
+            if let clientIdentity {
+                HStack {
+                    Label(ClientIdentityStore.summary(of: clientIdentity), systemImage: "person.badge.key")
+                    Spacer()
+                    Button("Remove", role: .destructive) {
+                        self.clientIdentity = nil
+                        clientIdentityChanged = true
+                    }
+                    .accessibilityIdentifier("RemoveClientCertificateButton")
+                }
+            } else {
+                Button("Import client certificate (.p12)") { showIdentityImporter = true }
+                    .accessibilityIdentifier("ImportClientCertificateButton")
+            }
+        } header: {
+            Text("Security")
+        } footer: {
+            Text("Pins: base64 SHA-256 of a certificate's public key, one per line. A pin is checked in addition to normal certificate trust. The client certificate is stored in the Keychain on this device only; its passphrase is not stored.")
+        }
+        .fileImporter(isPresented: $showIdentityImporter, allowedContentTypes: [.pkcs12]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else {
+                errorMessage = "The certificate file could not be read."
+                showError = true
+                return
+            }
+            pendingP12 = data
+            p12Passphrase = ""
+            showPassphrasePrompt = true
+        }
+        .alert("Certificate passphrase", isPresented: $showPassphrasePrompt) {
+            SecureField("Passphrase", text: $p12Passphrase)
+            Button("Import") { importPendingIdentity() }
+            Button("Cancel", role: .cancel) { pendingP12 = nil; p12Passphrase = "" }
         }
 
         Section {
@@ -320,7 +394,13 @@ private extension AddServerView {
                 cfAccessClientId,
                 cfAccessClientSecret,
                 workingDirectory,
-                serverType
+                serverType,
+                ServerSecurityInput(
+                    localOnly: localOnly,
+                    spkiPins: spkiPins,
+                    clientIdentity: clientIdentity,
+                    clientIdentityChanged: clientIdentityChanged
+                )
             )
             await MainActor.run {
                 isSaving = false
@@ -357,7 +437,7 @@ private extension AddServerView {
 
     func normalizeEndpointInput(host: String, scheme: String) -> (scheme: String, host: String) {
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseScheme = scheme.isEmpty ? "ws" : scheme
+        let baseScheme = scheme.isEmpty ? "wss" : scheme
 
         guard let components = URLComponents(string: trimmedHost),
               let parsedHost = components.host
@@ -373,7 +453,24 @@ private extension AddServerView {
         let normalizedHost = parsedHost + portString + path + query + fragment
         let normalizedScheme = components.scheme ?? baseScheme
 
-        return (normalizedScheme.isEmpty ? "ws" : normalizedScheme, normalizedHost)
+        return (normalizedScheme.isEmpty ? "wss" : normalizedScheme, normalizedHost)
+    }
+
+    func importPendingIdentity() {
+        defer { pendingP12 = nil; p12Passphrase = "" }
+        guard let data = pendingP12 else { return }
+        do {
+            clientIdentity = try ClientIdentityStore.importPKCS12(data, passphrase: p12Passphrase)
+            clientIdentityChanged = true
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
+    }
+
+    /// The form offers ws:// only where FR-11 can allow it: Local only servers, or Debug builds (loopback).
+    static func plaintextOffered(localOnly: Bool) -> Bool {
+        localOnly || TransportPolicy.isDebugBuild
     }
 
     func hideSummaryOverlay() {

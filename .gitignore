@@ -13,9 +13,14 @@ ACPClient/.build
 **/*.xcuserstate
 **/*.xcsettings
 **/.swiftpm/xcode/xcuserdata/
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/commands/
 .codex/
 website/
 Scenarios/apple-store-reivew.md
 Scenarios/apple-store-review.md
 Agmente/Config/Signing.local.xcconfig
+
+# Client CA, device keys and .p12 files (PLAN 1.10)
+secrets/

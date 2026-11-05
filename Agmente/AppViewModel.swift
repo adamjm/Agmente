@@ -12,14 +12,14 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     // `ACP` also defines `SessionSummary`; keep local usages pinned to ACPClient.
     typealias SessionSummary = ACPClientSessionSummary
 
-    private static let defaultScheme = "ws"
+    private static let defaultScheme = "wss"
     private static let summarizedCodexServerLogMethods: Set<String> = [
         "thread/read",
         "thread/resume"
     ]
 
     // Connection / selection
-    @Published var scheme: String = "ws" {
+    @Published var scheme: String = "wss" {
         didSet { persistActiveServerConfig() }
     }
     @Published var endpointHost: String = "" {
@@ -309,6 +309,13 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         )
         self.connectionManager.initializationPayloadProvider = { [weak self] in
             self?.makeInitializationPayload()
+        }
+        // FR-11: every connection attempt, including reconnects, passes the transport policy first.
+        self.connectionManager.endpointPolicy = { [weak self] url in
+            let localOnly = MainActor.assumeIsolated {
+                self?.selectedServerId.flatMap { id in self?.servers.first { $0.id == id }?.localOnly } ?? false
+            }
+            return TransportPolicy.check(url: url, localOnly: localOnly)
         }
         // Phase 1: Observation setup moved to per-session creation
         // (no longer setting up a single sessionViewModel observation here)
@@ -651,13 +658,24 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         cfAccessClientId: String,
         cfAccessClientSecret: String,
         workingDirectory: String,
-        serverType: ServerType
+        serverType: ServerType,
+        security: ServerSecurityInput = ServerSecurityInput()
     ) async -> Result<ValidatedServerConfiguration, Error> {
+        let localOnly = security.localOnly
         let normalized = normalizeEndpointInput(scheme: scheme, host: host)
         let label = name.isEmpty ? "\(normalized.scheme)://\(normalized.host)" : name
         let urlString = "\(normalized.scheme)://\(normalized.host)"
         guard let url = URL(string: urlString) else {
             return .failure(AddServerValidationError.other("Invalid endpoint: \(urlString)"))
+        }
+        // FR-11: refuse before any network call.
+        if let refusal = TransportPolicy.check(url: url, localOnly: localOnly) {
+            return .failure(AddServerValidationError.other(refusal.localizedDescription))
+        }
+        let tls: TransportTLSOptions
+        switch security.tlsOptions() {
+        case .success(let options): tls = options
+        case .failure(let error): return .failure(error)
         }
 
         let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -665,7 +683,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             endpoint: url,
             authTokenProvider: trimmedToken.isEmpty ? nil : { trimmedToken },
             additionalHeaders: connectionHeaders(cfClientId: cfAccessClientId, cfClientSecret: cfAccessClientSecret),
-            pingInterval: 15
+            pingInterval: 15,
+            tls: tls
         )
         let client = ACPClient(configuration: config, logger: PrintLogger())
         let service = ACPService(client: client)
@@ -764,7 +783,11 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             cfAccessClientSecret: cfAccessClientSecret,
             workingDirectory: workingDirectory,
             serverType: serverType,
-            agentInfo: agentInfo
+            agentInfo: agentInfo,
+            localOnly: localOnly,
+            spkiPins: security.spkiPins,
+            clientIdentity: security.clientIdentity,
+            clientIdentityChanged: security.clientIdentityChanged
         )
 
         return .success(validated)
@@ -780,14 +803,17 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             cfAccessClientSecret: config.cfAccessClientSecret,
             workingDirectory: config.workingDirectory,
             serverType: config.serverType,
-            agentInfo: config.agentInfo
+            agentInfo: config.agentInfo,
+            localOnly: config.localOnly,
+            spkiPins: config.spkiPins,
+            clientIdentity: config.clientIdentity
         )
     }
 
     func updateServer(_ id: UUID, with config: ValidatedServerConfiguration) {
         guard let index = servers.firstIndex(where: { $0.id == id }) else { return }
 
-        let updated = ACPServerConfiguration(
+        let baseUpdated = ACPServerConfiguration(
             id: id,
             name: config.name,
             scheme: config.scheme,
@@ -796,10 +822,24 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             cfAccessClientId: config.cfAccessClientId,
             cfAccessClientSecret: config.cfAccessClientSecret,
             workingDirectory: sanitizeWorkingDirectory(config.workingDirectory),
-            serverType: config.serverType
+            serverType: config.serverType,
+            localOnly: config.localOnly
         )
+        var updatedWithPins = baseUpdated
+        updatedWithPins.spkiPins = config.spkiPins
+        if config.clientIdentityChanged {
+            if let identity = config.clientIdentity {
+                try? ClientIdentityStore.shared.save(identity, serverId: id)
+            } else {
+                try? ClientIdentityStore.shared.delete(serverId: id)
+            }
+        }
+        let updated = updatedWithPins
 
         let connectionChanged = servers[index].scheme != updated.scheme ||
+                                servers[index].localOnly != updated.localOnly ||
+                                servers[index].spkiPins != updated.spkiPins ||
+                                config.clientIdentityChanged ||
                                 servers[index].host != updated.host ||
                                 servers[index].token != updated.token ||
                                 servers[index].cfAccessClientId != updated.cfAccessClientId ||
@@ -833,11 +873,14 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         cfAccessClientSecret: String,
         workingDirectory: String,
         serverType: ServerType = .acp,
-        agentInfo: AgentProfile? = nil
+        agentInfo: AgentProfile? = nil,
+        localOnly: Bool = false,
+        spkiPins: String = "",
+        clientIdentity: SecIdentity? = nil
     ) {
         let normalized = normalizeEndpointInput(scheme: scheme, host: host)
         let label = name.isEmpty ? "\(normalized.scheme)://\(normalized.host)" : name
-        let server = ACPServerConfiguration(
+        var server = ACPServerConfiguration(
             id: UUID(),
             name: label,
             scheme: normalized.scheme,
@@ -846,8 +889,13 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             cfAccessClientId: cfAccessClientId,
             cfAccessClientSecret: cfAccessClientSecret,
             workingDirectory: sanitizeWorkingDirectory(workingDirectory),
-            serverType: serverType
+            serverType: serverType,
+            localOnly: localOnly
         )
+        server.spkiPins = spkiPins
+        if let clientIdentity {
+            try? ClientIdentityStore.shared.save(clientIdentity, serverId: server.id)
+        }
         servers.append(server)
         serverLifecycleController.persistServer(server)
 
@@ -962,7 +1010,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             // Clear the deleted server's endpoint from memory BEFORE selecting a new server.
             // This prevents persistCurrentServerState() from overwriting the new server's
             // config with the deleted server's endpoint values.
-            scheme = "ws"
+            scheme = "wss"
             endpointHost = ""
             token = ""
             cfAccessClientId = ""
@@ -1548,7 +1596,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             cloudflareAccessClientId: effectiveClientId.isEmpty ? nil : effectiveClientId,
             cloudflareAccessClientSecret: effectiveClientSecret.isEmpty ? nil : effectiveClientSecret,
             requiresUnescapedSlashes: requiresUnescapedSlashes,
-            pingInterval: 15
+            pingInterval: 15,
+            tls: selectedServerTLSOptions()
         )
         
         pendingRequests.removeAll()
@@ -1596,6 +1645,14 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         return headers
     }
 
+    /// Pins and client identity of the selected server (FR-13, FR-14).
+    private func selectedServerTLSOptions() -> TransportTLSOptions {
+        guard let id = selectedServerId, let server = servers.first(where: { $0.id == id }) else {
+            return TransportTLSOptions()
+        }
+        return server.tlsOptions()
+    }
+
     func connectAndWait() async -> Bool {
         // Build the connection config
         let normalized = normalizeEndpointInput(scheme: scheme, host: endpointHost)
@@ -1616,7 +1673,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             cloudflareAccessClientId: trimmedClientId.isEmpty ? nil : trimmedClientId,
             cloudflareAccessClientSecret: trimmedClientSecret.isEmpty ? nil : trimmedClientSecret,
             requiresUnescapedSlashes: requiresUnescapedSlashes,
-            pingInterval: 15
+            pingInterval: 15,
+            tls: selectedServerTLSOptions()
         )
         
         pendingRequests.removeAll()
@@ -2686,6 +2744,10 @@ struct ACPServerConfiguration: Identifiable, Equatable {
     var cfAccessClientSecret: String
     var workingDirectory: String
     var serverType: ServerType
+    /// Allows ws:// and limits the server to local hosts (FR-11, D-019).
+    var localOnly: Bool
+    /// Base64 SHA-256 SPKI pins, one per line (FR-13).
+    var spkiPins: String = ""
 
     var endpointURLString: String {
         "\(scheme)://\(host)"
@@ -2701,8 +2763,10 @@ struct ACPServerConfiguration: Identifiable, Equatable {
         cfAccessClientId: String,
         cfAccessClientSecret: String,
         workingDirectory: String,
-        serverType: ServerType = .acp
+        serverType: ServerType = .acp,
+        localOnly: Bool = false
     ) {
+        self.localOnly = localOnly
         self.id = id
         self.name = name
         self.scheme = scheme
@@ -2725,6 +2789,10 @@ struct ValidatedServerConfiguration {
     let workingDirectory: String
     let serverType: ServerType
     let agentInfo: AgentProfile?
+    var localOnly: Bool = false
+    var spkiPins: String = ""
+    var clientIdentity: SecIdentity?
+    var clientIdentityChanged: Bool = false
 }
 
 struct LogLine: Identifiable, Equatable {

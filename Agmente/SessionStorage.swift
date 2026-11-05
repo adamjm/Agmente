@@ -8,6 +8,10 @@ final class SessionStorage {
     static let shared = SessionStorage(container: PersistenceController.shared.container)
     
     private let container: NSPersistentContainer
+    /// Server secrets live here, not in Core Data (FR-10).
+    let keychain: KeychainStore
+    /// Client certificates for mutual TLS (FR-14).
+    let identities: ClientIdentityStore
     private var viewContext: NSManagedObjectContext { container.viewContext }
 
     private func insertStoredServer() -> StoredServer? {
@@ -38,19 +42,32 @@ final class SessionStorage {
         return request
     }
     
-    init(container: NSPersistentContainer) {
+    init(container: NSPersistentContainer, keychain: KeychainStore = .shared, identities: ClientIdentityStore = .shared) {
         self.container = container
+        self.keychain = keychain
+        self.identities = identities
     }
 
+    /// In-memory store for tests and previews. Uses its own Keychain service so it never touches real secrets.
     static func inMemory() -> SessionStorage {
         let controller = PersistenceController(inMemory: true)
-        return SessionStorage(container: controller.container)
+        let scope = "com.agmente.inmemory.\(UUID().uuidString)"
+        return SessionStorage(container: controller.container, keychain: KeychainStore(service: scope), identities: ClientIdentityStore(labelPrefix: scope))
+    }
+
+    /// Secret for a server: the Keychain first, then a Core Data value that could not be migrated yet.
+    private func secret(_ stored: StoredServer, _ field: KeychainStore.Field) -> String {
+        if let id = stored.id, let value = try? keychain.get(serverId: id, field: field) {
+            return value
+        }
+        return ServerSecretMigration.value(of: stored, field) ?? ""
     }
     
     // MARK: - Server Operations
     
     /// Fetch all stored servers.
     func fetchServers() -> [ACPServerConfiguration] {
+        ServerSecretMigration.run(context: viewContext, keychain: keychain)
         let request = NSFetchRequest<StoredServer>(entityName: "StoredServer")
         request.sortDescriptors = [NSSortDescriptor(keyPath: \StoredServer.name, ascending: true)]
         
@@ -62,14 +79,15 @@ final class SessionStorage {
                 return ACPServerConfiguration(
                     id: stored.id ?? UUID(),
                     name: stored.name ?? "",
-                    scheme: stored.scheme ?? "ws",
+                    scheme: stored.scheme ?? "wss",
                     host: stored.host ?? "",
-                    token: stored.token ?? "",
-                    cfAccessClientId: stored.cfAccessClientId ?? "",
-                    cfAccessClientSecret: stored.cfAccessClientSecret ?? "",
+                    token: secret(stored, .token),
+                    cfAccessClientId: secret(stored, .cfAccessClientId),
+                    cfAccessClientSecret: secret(stored, .cfAccessClientSecret),
                     workingDirectory: workingDirectory,
-                    serverType: serverType
-                )
+                    serverType: serverType,
+                    localOnly: stored.localOnly
+                ).withPins(stored.spkiPins ?? "")
             }
         } catch {
             return []
@@ -95,10 +113,18 @@ final class SessionStorage {
             stored.name = server.name
             stored.scheme = server.scheme
             stored.host = server.host
-            stored.token = server.token
-            stored.cfAccessClientId = server.cfAccessClientId
-            stored.cfAccessClientSecret = server.cfAccessClientSecret
+            // Secrets go to the Keychain; Core Data keeps nil (FR-10).
+            for (field, value) in [
+                (KeychainStore.Field.token, server.token),
+                (.cfAccessClientId, server.cfAccessClientId),
+                (.cfAccessClientSecret, server.cfAccessClientSecret),
+            ] {
+                try? keychain.set(value, serverId: server.id, field: field)
+                ServerSecretMigration.setValue(nil, on: stored, field)
+            }
             stored.serverType = server.serverType.rawValue
+            stored.localOnly = server.localOnly
+            stored.spkiPins = server.spkiPins.isEmpty ? nil : server.spkiPins
             let sanitizedWorkingDirectory = Self.normalizedWorkingDirectory(server.workingDirectory)
             stored.workingDirectory = sanitizedWorkingDirectory
 
@@ -132,6 +158,8 @@ final class SessionStorage {
                 viewContext.delete(stored)
                 try viewContext.save()
             }
+            try? keychain.deleteAll(serverId: id)
+            try? identities.delete(serverId: id)
         } catch {
         }
     }

@@ -1,0 +1,40 @@
+# systemd unit for the gateway. Status: example; VERIFY on your host (PLAN task 1.11).
+#
+# Phase 1 runs the agent as a child of the gateway, as the same unprivileged user.
+# Phases 3 and 4 move each project's agent and git into its own container (D-008).
+#
+# Setup:
+#   useradd --system --home-dir /var/lib/agmente --create-home agmente
+#   install -m 0644 -o root config.json /etc/agmente/gateway.json      # hashes only, no secrets
+#   install -m 0600 -o agmente gateway.env /etc/agmente/gateway.env     # BOB_API_KEY=...
+#
+# The agent sees only the variables listed in agent.envPassthrough.
+
+[Unit]
+Description=Agmente gateway (authenticated ACP proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=agmente
+Group=agmente
+WorkingDirectory=/opt/agmente/gateway
+ExecStart=/usr/bin/node src/main.js --config /etc/agmente/gateway.json
+EnvironmentFile=/etc/agmente/gateway.env
+Restart=on-failure
+RestartSec=2
+
+# Hardening. VERIFY each line against your systemd version.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/srv/agmente/projects /var/lib/agmente
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

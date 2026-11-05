@@ -243,7 +243,7 @@ private extension ContentView {
     func addServerSheet(_ sheet: AddServerSheet) -> some View {
         AddServerView(
             initialServerType: sheet.serverType,
-            onValidate: { name, scheme, host, token, cfAccessClientId, cfAccessClientSecret, workingDirectory, serverType in
+            onValidate: { name, scheme, host, token, cfAccessClientId, cfAccessClientSecret, workingDirectory, serverType, security in
                 await model.validateServerConfiguration(
                     name: name,
                     scheme: scheme,
@@ -252,7 +252,8 @@ private extension ContentView {
                     cfAccessClientId: cfAccessClientId,
                     cfAccessClientSecret: cfAccessClientSecret,
                     workingDirectory: workingDirectory,
-                    serverType: serverType
+                    serverType: serverType,
+                    security: security
                 )
             },
             onInsert: { validated in
@@ -264,7 +265,7 @@ private extension ContentView {
     func editServerSheet(_ server: ACPServerConfiguration) -> some View {
         AddServerView(
             editingServer: server,
-            onValidate: { name, scheme, host, token, cfAccessClientId, cfAccessClientSecret, workingDirectory, serverType in
+            onValidate: { name, scheme, host, token, cfAccessClientId, cfAccessClientSecret, workingDirectory, serverType, security in
                 await model.validateServerConfiguration(
                     name: name,
                     scheme: scheme,
@@ -273,7 +274,8 @@ private extension ContentView {
                     cfAccessClientId: cfAccessClientId,
                     cfAccessClientSecret: cfAccessClientSecret,
                     workingDirectory: workingDirectory,
-                    serverType: serverType
+                    serverType: serverType,
+                    security: security
                 )
             },
             onInsert: { validated in

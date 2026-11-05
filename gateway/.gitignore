@@ -1,0 +1,9 @@
+node_modules/
+config.json
+data/
+secrets/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*

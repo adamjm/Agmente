@@ -38,6 +38,8 @@ public struct ACPConnectionConfig: Sendable {
     public let cloudflareAccessClientSecret: String?
     public let requiresUnescapedSlashes: Bool
     public let pingInterval: TimeInterval
+    /// TLS pins and client identity for this endpoint (FR-13, FR-14).
+    public let tls: TransportTLSOptions
 
     public init(
         endpoint: URL,
@@ -45,8 +47,10 @@ public struct ACPConnectionConfig: Sendable {
         cloudflareAccessClientId: String? = nil,
         cloudflareAccessClientSecret: String? = nil,
         requiresUnescapedSlashes: Bool = false,
-        pingInterval: TimeInterval = 15
+        pingInterval: TimeInterval = 15,
+        tls: TransportTLSOptions = TransportTLSOptions()
     ) {
+        self.tls = tls
         self.endpoint = endpoint
         self.authToken = authToken
         self.cloudflareAccessClientId = cloudflareAccessClientId
@@ -105,6 +109,9 @@ public final class ACPClientManager: ObservableObject {
     // MARK: - Private State
 
     private var shouldAutoReconnect: Bool = false
+    /// Checks each endpoint before any connection attempt. Return an error to refuse it (FR-11).
+    /// Set by the app, which knows the build type and each server's "Local only" setting.
+    public var endpointPolicy: ((URL) -> Error?)?
     private var userInitiatedDisconnect: Bool = false
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempts: Int = 0
@@ -223,6 +230,19 @@ public final class ACPClientManager: ObservableObject {
     ) {
         resetInitializationState()
         resetSessionTracking()
+        // Transport policy (FR-11): a refused endpoint never reaches the network and is not retried.
+        if let refusal = endpointPolicy?(config.endpoint) {
+            log("Endpoint refused by policy: \(refusal.localizedDescription)")
+            currentConfig = nil
+            shouldAutoReconnect = false
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            isConnecting = false
+            connectionState = .failed(refusal)
+            delegate?.clientManager(self, didChangeState: connectionState)
+            resolveContinuation(success: false, completion: completion)
+            return
+        }
         currentConfig = config
         shouldAutoReconnect = true
         userInitiatedDisconnect = false
@@ -246,7 +266,8 @@ public final class ACPClientManager: ObservableObject {
             endpoint: config.endpoint,
             authTokenProvider: config.authToken.map { token in { token } },
             additionalHeaders: buildConnectionHeaders(config: config),
-            pingInterval: config.pingInterval
+            pingInterval: config.pingInterval,
+            tls: config.tls
         )
 
         let encoder = JSONEncoder()

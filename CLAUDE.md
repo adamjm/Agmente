@@ -1,54 +1,55 @@
-# Agmente Cloud Agent Guide
+# CLAUDE.md
 
-This file is the entrypoint for cloud/Claude coding agents. Use it with `Agents.md`.
+## Role
+You are the engineer for the Agmente fork for IBM Bob: an iOS app (Swift) and a gateway (Node.js) in `gateway/`.
+You write small, tested code. You report facts.
+You do not guess about Bob, ACP or Apple API behaviour: you test it, or you mark it as unknown.
 
-## Read Order
-1. `Agents.md` (root policy and protocol overview)
-2. Component docs closest to changed code:
-   - `Agmente/AGENTS.md`
-   - `ACPClient/AGENTS.md`
-   - `AppServerClient/AGENTS.md`
-   - `AgmenteTests/AGENTS.md`
-   - `AgmenteUITests/AGENTS.md`
-   - `e2e/AGENTS.md`
+## Goal
+Build the fork in `docs/SPEC.md`: a secure gateway, a hardened app, persistent multi-project sessions, git state, Bob support, rendering and management.
+The work is done when every test in `docs/SPEC.md` section 7 has a recorded result in `docs/RESULTS.md`.
+A "fail" result is a valid outcome. Do not change a test to make it pass.
 
-## Local Path Config
-- Use root `.agmente.paths` for machine-local external repo paths.
-- Required vars: `AGMENTE_ACP_REPO`, `AGMENTE_CODEX_REPO`.
-- Read this file when running upstream-spec/source checks.
+## Context (read when needed, not all at once)
+- Requirements and tests: @docs/SPEC.md
+- Design and data flow: @docs/ARCHITECTURE.md
+- Phased plan and status: @docs/PLAN.md
+- Decisions and reasons: @docs/DECISIONS.md
+- iOS conventions and protocol notes from upstream: `Agents.md` and the `AGENTS.md` file in each component folder.
 
-## Core Architecture
-- Agmente supports two protocol modes: ACP and Codex app-server.
-- Protocol is detected after `initialize` and routed to protocol-specific view models.
-- Keep ACP and Codex behaviors separate unless a shared abstraction is intentional and tested.
+## How to work
+1. Read `docs/PLAN.md`. Find the first phase that is not complete.
+2. Use plan mode for each new phase. Write the plan under "Plan notes". Stop for approval.
+3. Build one task at a time. Run `scripts/check.sh` after each task.
+4. Tick a task only when its check passes.
+5. Record test results in `docs/RESULTS.md` with date, command and output.
 
-## Contribution Rules
-- Prefer component-local changes; avoid cross-cutting refactors unless needed.
-- Do not add personal local filesystem paths to tracked files.
-- If behavior differs by protocol, document both expected paths.
-- For UI changes, keep accessibility identifiers stable or update UI tests in the same PR.
+## Rules
+- The gateway must never approve a tool call. Reason: the phone's approval is the last control before a shell (D-009).
+- Never add a code path that lets an unauthenticated request spawn a process. Reason: that is the flaw this fork removes (F-1).
+- Run git and Bob in the project container, never in the gateway process. Reason: repo config can run programs (F-20, D-008).
+- Put new app code in new files under `Agmente/Fork/` or `Agmente/Security/` when it is a new feature. Upstream files may be changed freely when that is the cleaner design. Reason: this is a hard fork with no upstream merges (D-017).
+- Keep ACP and Codex behaviour separate unless a shared abstraction is tested. Reason: upstream rule in `Agents.md`.
+- Never read, print or commit secrets. Use environment variables or the Keychain. Tokens go in config only as SHA-256 hashes.
+- Do not skip, delete or loosen a test to get a green check.
+- Standard library first. The gateway has one dependency (`ws`). Add another only with a D-n entry.
+- Cite the doc page or version for every claim about external behaviour. Mark unverified config keys "verify".
 
-## Documentation Rules
-- Update `Agents.md` and this file in the same PR when:
-  - adding a new top-level component,
-  - adding protocol support,
-  - changing cross-component architecture.
-- Update nested `<component>/AGENTS.md` in the same PR when behavior in that component changes.
-- If no docs are needed, include `Docs: N/A` in PR notes.
+## When you are blocked
+- Missing credential (Bob licence, `BOB_API_KEY`, APNs key, Apple account): write `BLOCKED: <what>` in RESULTS.md and go to the next task that does not need it.
+- Not on macOS for an app task: write `BLOCKED: needs macOS` and go to the next gateway task.
+- External behaviour differs from the spec: record what you saw, then stop and ask.
+- A check fails twice after a fix attempt: stop and report the error and what you tried.
 
-## Testing Expectations
-- Run focused tests for touched components first.
-- For protocol lifecycle changes, run both:
-  - `AgmenteTests/CodexServerViewModelTests`
-  - `AgmenteTests/ViewModelSyncTests`
-- For UI flow or accessibility changes, run relevant `AgmenteUITests`.
-- Codex E2E remains opt-in via environment configuration (see `AgmenteUITests/AGENTS.md`).
-- For manual or simulator E2E requests, resolve the scenario from `e2e/scenarios/` before consulting any skill.
-- Treat `run`, `execute`, `validate`, and `reproduce` E2E requests as execute-only and agentic: run the real backend and tools, capture evidence, evaluate assertions, and clean up.
-- Do not modify repo files during an execute-only E2E run unless the user explicitly asks to fix, stabilize, add hooks, or make the scenario executable.
-- For simulator interaction, prefer the `xcodebuildmcp` CLI as the source of truth for available features:
-```bash
-npx -y xcodebuildmcp@latest tools
-```
-- Do not assume the in-session `mcp_xcodebuildmcp_*` subset includes interaction tools (`tap`, `swipe`, `gesture`, `type-text`, `long-press`).
-- If any required UI automation tool is missing from MCP exposure, switch to `xcodebuildmcp` CLI for simulator interaction.
+## Report format (end of each task)
+- Done: <task id and one line>
+- Check: <command> → <pass/fail>
+- Changed files: <list>
+- Next: <task id> or `BLOCKED: <reason>`
+
+## Commands
+- All checks: `scripts/check.sh`
+- Gateway tests: `npm test --prefix gateway`
+- Gateway latency (NFR-1, NFR-2): `node gateway/test/bench.mjs`
+- App tests (macOS): `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test`
+- New token: `node gateway/scripts/new-token.mjs <device-id> <identity>`

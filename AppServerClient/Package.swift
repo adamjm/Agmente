@@ -6,7 +6,7 @@ let package = Package(
     name: "AppServerClient",
     platforms: [
         .iOS(.v17),
-        .macOS(.v10_15)
+        .macOS(.v13)
     ],
     products: [
         .library(
@@ -14,10 +14,15 @@ let package = Package(
             targets: ["AppServerClient"]
         )
     ],
-    dependencies: [],
+    dependencies: [
+        .package(path: "../AgmenteTransport")
+    ],
     targets: [
         .target(
-            name: "AppServerClient"
+            name: "AppServerClient",
+            dependencies: [
+                .product(name: "AgmenteTransport", package: "AgmenteTransport")
+            ]
         ),
         .target(
             name: "AppServerClientMocks",

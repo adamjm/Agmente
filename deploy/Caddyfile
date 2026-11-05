@@ -1,0 +1,25 @@
+# Edge proxy for the Agmente gateway (ARCHITECTURE 2.1).
+# Status: example. Mark each directive verified in docs/RESULTS.md after PLAN task 1.11.
+#
+# - Only port 443 is public. The gateway listens on 127.0.0.1:8787.
+# - Mutual TLS: a client without a certificate from your client CA fails the handshake.
+# - VERIFY: `trust_pool file` is the Caddy 2.8+ form. Older Caddy uses `trusted_ca_cert_file`.
+# - Clients must connect by host name. A connection by IP sends no SNI: tested with Caddy 2.11.9
+#   (RESULTS 2026-11-06), the TLS handshake then completes without a client certificate, and Caddy
+#   refuses the request with HTTP 421. That holds, but the client-certificate check is then an HTTP
+#   check, not a TLS one.
+# - Checked with Caddy 2.11.9 locally: `trust_pool file` works, and reverse_proxy forwards the
+#   WebSocket upgrade (HTTP/1.1) to the gateway.
+# - VERIFY: reverse_proxy sets X-Forwarded-For by default.
+#   The gateway trusts X-Forwarded-For only with "trustProxy": true and a loopback peer.
+
+agent.example.com {
+	tls {
+		client_auth {
+			mode require_and_verify
+			trust_pool file /etc/caddy/agmente-client-ca.pem
+		}
+	}
+
+	reverse_proxy 127.0.0.1:8787
+}

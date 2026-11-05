@@ -25,13 +25,13 @@ public final class ACPClient {
 
     public init(
         configuration: ACPClientConfiguration,
-        socketProvider: WebSocketProviding = URLSessionWebSocketProvider(),
+        socketProvider: WebSocketProviding? = nil,
         logger: ACPLogger = NoOpLogger(),
         encoder: JSONEncoder = JSONEncoder(),
         decoder: JSONDecoder = JSONDecoder()
     ) {
         self.configuration = configuration
-        self.socketProvider = socketProvider
+        self.socketProvider = socketProvider ?? URLSessionWebSocketProvider(tls: configuration.tls)
         self.logger = logger
         self.encoder = encoder
         self.decoder = decoder

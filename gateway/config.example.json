@@ -1,0 +1,24 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 8787 },
+  "trustProxy": true,
+  "tokens": [
+    {
+      "id": "iphone",
+      "identity": "owner",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "agent": {
+    "command": ["bob", "acp", "--accept-license", "--log-level", "warn"],
+    "envPassthrough": ["PATH", "HOME", "LANG", "BOB_API_KEY"]
+  },
+  "projects": { "roots": ["/srv/agmente/projects"] },
+  "limits": {
+    "maxMessageBytes": 16777216,
+    "maxAgentsPerIdentity": 1,
+    "maxAgentsTotal": 1,
+    "authFailuresPerWindow": 10,
+    "authWindowSeconds": 60,
+    "lockoutSeconds": 600
+  }
+}
