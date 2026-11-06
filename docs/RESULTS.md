@@ -878,3 +878,9 @@
 - **Fake agent:** new directives `[edit:NAME]` (a completed edit tool call with a diff), `[image]`, `[link]`.
 - **Checks after the fixes:** `scripts/check.sh` passes (137 wire tests); app tests 219, 0 failures, TEST SUCCEEDED.
 - **Not tested:** no unit test and no mutation check for the new Turn diff button wiring (found and verified on screen only); "no snapshot for this turn" and "not a repository" states on screen; many files or a long history; Dynamic Type and dark mode; a real Bob session. The 3.21 note about counting user messages for the turn number held in this run (turn 1).
+
+## 2026-11-07 Turn diff button test (FR-31)
+- Added `AgmenteTests/TurnDiffButtonTests.swift`: the UIKit `FileChangesRowView` hides "Turn diff" without a handler, shows it and fires the handler with one, and hides it again on reconfigure.
+- Command: `xcodebuild ... test -only-testing:AgmenteTests/TurnDiffButtonTests` → 3 tests pass.
+- Mutation check: forcing `turnDiffButton.isHidden = true` in `FileChangesRows.swift` made `buttonIsVisibleAndFiresHandler` fail; source restored.
+- Not covered: the closure chain in `HighPerformanceChatListView` and `SessionDetailView` (`canTurnDiff`/`onTurnDiff`); still checked on screen only.
