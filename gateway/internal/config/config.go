@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,7 +59,21 @@ type Runner struct {
 // DefaultContainerID is the uid and gid of the user in deploy/bob-project.Containerfile.
 const DefaultContainerID = 10001
 
+// Push is the APNs delivery block (PLAN 3.11, D-053, D-055). It holds paths and ids only: the key
+// itself stays in its file, which must not be readable by group or others. The URL overrides and
+// caFile exist for tests; a real deployment leaves them out.
+type Push struct {
+	KeyFile       string
+	KeyID         string
+	TeamID        string
+	Topic         string
+	SandboxURL    string // optional; default https://api.sandbox.push.apple.com
+	ProductionURL string // optional; default https://api.push.apple.com
+	CAFile        string // test only: a CA that trusts a fake APNs server
+}
+
 type Config struct {
+	Push           *Push // nil when the push block is absent: delivery is off
 	Runner         Runner
 	ListenHost     string
 	ListenPort     int
@@ -227,6 +242,8 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		add("stateDir must be an absolute path other than \"/\" (the gateway keeps its database and project homes there)")
 	}
 
+	pushCfg := validatePush(raw.Get("push"), add)
+
 	var runner Runner
 	rv := raw.Get("runner")
 	kind, _ := rv.Get("kind").StringValue()
@@ -310,6 +327,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		return nil, &Error{errs}
 	}
 	return &Config{
+		Push:           pushCfg,
 		Runner:         runner,
 		ListenHost:     host,
 		ListenPort:     int(port),
@@ -331,6 +349,84 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			LockoutSeconds:            min(limits["lockoutSeconds"], math.MaxInt32),
 		},
 	}, nil
+}
+
+var (
+	apnsKeyID = regexp.MustCompile(`^[A-Z0-9]{10}$`)
+	apnsTopic = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,199}$`)
+)
+
+var pushKeys = map[string]bool{"keyFile": true, "keyId": true, "teamId": true, "topic": true, "sandboxURL": true, "productionURL": true, "caFile": true}
+
+// validatePush checks the push block. A null or missing block means delivery is off (nil).
+func validatePush(v *jsonv.Value, add func(string, ...any)) *Push {
+	if v.IsNull() {
+		return nil
+	}
+	if v.Kind != jsonv.Object {
+		add("push must be an object (or left out to turn delivery off)")
+		return nil
+	}
+	for _, k := range v.Keys {
+		if !pushKeys[k] {
+			add("push.%s is not a known key", k)
+		}
+	}
+	str := func(key string) string {
+		s, _ := v.Get(key).StringValue()
+		return s
+	}
+	p := &Push{KeyFile: str("keyFile"), KeyID: str("keyId"), TeamID: str("teamId"), Topic: str("topic")}
+	ok := true
+	if !filepath.IsAbs(p.KeyFile) {
+		add("push.keyFile must be an absolute path to the APNs .p8 key (the key itself never goes in the config)")
+		ok = false
+	}
+	if !apnsKeyID.MatchString(p.KeyID) {
+		add("push.keyId must be the 10-character APNs key id")
+		ok = false
+	}
+	if !apnsKeyID.MatchString(p.TeamID) {
+		add("push.teamId must be the 10-character Apple team id")
+		ok = false
+	}
+	if !apnsTopic.MatchString(p.Topic) {
+		add("push.topic must be the app's bundle id")
+		ok = false
+	}
+	for _, item := range []struct {
+		key string
+		dst *string
+	}{{"sandboxURL", &p.SandboxURL}, {"productionURL", &p.ProductionURL}} {
+		if v.Get(item.key).IsNull() {
+			continue
+		}
+		if !validHTTPSBase(str(item.key)) {
+			add("push.%s must be an https URL with a host and no path, query or user", item.key)
+			ok = false
+			continue
+		}
+		*item.dst = str(item.key)
+	}
+	if !v.Get("caFile").IsNull() {
+		p.CAFile = str("caFile")
+		if !filepath.IsAbs(p.CAFile) {
+			add("push.caFile must be an absolute path (test only)")
+			ok = false
+		}
+	}
+	if !ok {
+		return nil
+	}
+	return p
+}
+
+func validHTTPSBase(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	return u.Path == "" || u.Path == "/"
 }
 
 // Load reads, parses and validates a config file.

@@ -85,7 +85,7 @@ Gateway:
 - [x] 3.8 `_agmente/sessions/index`.
 - [x] 3.9 Approval queue with timeout. Check: T-22, T-23.
 - [x] 3.10 Push payload builder. Check: T-24.
-- [ ] 3.11 APNs delivery with token-based auth (`.p8`). Check: a push reaches a test device. (Token registration done, D-052; delivery BLOCKED, see docs/PUSH-TESTING.md.)
+- [!] 3.11 APNs delivery with token-based auth (`.p8`). Check: T-48. The wire part and the Go unit tests pass against a fake APNs server (D-053 to D-055). BLOCKED: the device part needs a real `.p8` key, the Apple account and an iPhone (`BLOCKED:` in RESULTS; see docs/PUSH-TESTING.md Part E).
 - [x] 3.12 Idle close (FR-24) and project stop when idle (FR-45): stop Bob, then the container; wait for exit before any restart. Check: T-46.
 - [x] 3.13 Container exec runner for git with the safe flags, timeout and output cap. Check: T-26, T-27.
 - [x] 3.14 `git/status`, `git/diff`, `git/log` with path allow-list and deny-list. Check: T-28, T-29, T-30.

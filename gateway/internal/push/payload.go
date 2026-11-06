@@ -1,5 +1,4 @@
-// Package push builds APNs payloads (PLAN 3.10, FR-23, NFR-11, D-038). It builds bytes and sends
-// nothing: delivery is task 3.11.
+// Payload building (PLAN 3.10, FR-23, NFR-11, D-038). Delivery is in apns.go.
 //
 // A payload holds the project name, the session id and the event type, and nothing else. The
 // builder has no parameter for a prompt, a title or tool output, so none can reach a payload.

@@ -170,7 +170,9 @@ Shapes are a draft. Each phase confirms them in its plan notes and records chang
 
 ### 6.3 Gateway config file
 
-JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)).
+JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)), `push` (optional; delivery is off when absent, D-053, D-055).
+
+The `push` block: `keyFile` (absolute path to the APNs `.p8` key), `keyId` and `teamId` (10 characters each), `topic` (the app's bundle id), and optional `sandboxURL` and `productionURL` (https, host only). Config holds no key material. The gateway refuses to start when the key file is readable by group or others, or does not parse. Two keys are for tests only: `caFile` (a PEM CA trusted for APNs requests) and the URL overrides, which point the wire suite at a fake APNs server (D-055). Deployments leave them out.
 
 ### 6.4 Gateway CLI
 
@@ -230,6 +232,7 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 | T-45 | Run Bob without `--accept-license` against an app with elicitation | License form shown and answered in the app | FR-44 |
 | T-46 | Project lifecycle with a fake container runner: first request starts one container; a second request while starting waits and does not start another; idle past the idle time stops it; a pending approval or a subscriber keeps it running; a request during stop waits for exit, then starts a new one | Exactly one container per project at any time; each case behaves as stated | FR-45, D-015 |
 | T-47 | Cold start on the Linux host: `node gateway/scripts/bench-start.mjs --runs 20 --skip-host` | Load-and-replay p95 ≤ 3 s | NFR-15 |
+| T-48 | Device test of push delivery (PUSH-TESTING Part E): a finished turn, an approval and a failed session each reach a locked phone; a subscribed phone gets none; a 410 or BadDeviceToken removes the token. The wire part runs against a fake APNs server (`gateway/test/apns.test.mjs`) | Each event arrives on a real device with the project name as title, no prompt or tool text; foreground suppression holds; the token row is removed on 410 or BadDeviceToken | FR-23, NFR-11 |
 
 ## 8. Risks and open questions
 

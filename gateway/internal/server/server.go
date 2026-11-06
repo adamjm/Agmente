@@ -64,6 +64,10 @@ type Server struct {
 	evMu sync.Mutex                           // held while an event is logged and delivered (subscribe.go)
 	subs map[string]map[*client]*subscription // session id -> socket -> subscription
 
+	push       *pushDelivery // APNs delivery; nil when the push block is absent (push_deliver.go)
+	pushCtx    context.Context
+	pushCancel context.CancelFunc
+
 	snaps   turnSnapshots // turn snapshots in progress (snapshot.go)
 	gits    gitStates     // the last git/status of each project: the diff allow-list (git.go)
 	watches gitWatches    // projects whose git status is being watched (watch.go)
@@ -88,6 +92,7 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 		caps:        defaultInitialize,
 	}
 	s.initApprovals()
+	s.pushCtx, s.pushCancel = context.WithCancel(context.Background())
 	if data, err := os.ReadFile(s.capsPath()); err == nil {
 		if v, err := jsonv.Parse(data); err == nil && v.Kind == jsonv.Object {
 			s.caps = data
@@ -111,6 +116,7 @@ func (s *Server) Serve(ln net.Listener) error { return s.http.Serve(ln) }
 // Shutdown stops accepting, drops every socket, and stops every agent and waits for it to exit
 // (up to the kill grace), so no agent outlives the gateway by more than that.
 func (s *Server) Shutdown() {
+	s.pushCancel()
 	_ = s.http.Close()
 	s.mu.Lock()
 	clients := make([]*client, 0, len(s.clients))

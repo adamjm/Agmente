@@ -20,6 +20,7 @@ import (
 
 	"agmente/gateway/internal/audit"
 	"agmente/gateway/internal/config"
+	"agmente/gateway/internal/push"
 	"agmente/gateway/internal/server"
 	"agmente/gateway/internal/store"
 )
@@ -48,6 +49,15 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}
+	var pushClient *push.Client
+	if cfg.Push != nil {
+		// Refuse to start on a key that is readable by others or cannot be parsed (PLAN 3.11).
+		pushClient, err = push.NewClient(pushOptions(cfg.Push))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "push: %v\n", err)
+			return 1
+		}
+	}
 	if *dryRun {
 		return printSummary(cfg)
 	}
@@ -65,6 +75,10 @@ func run(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot listen: %v\n", err)
 		return 1
+	}
+	if pushClient != nil {
+		srv.SetPush(pushClient)
+		logger.Log("push_enabled", audit.Fields{})
 	}
 	logger.Log("listening", audit.Fields{Reason: ln.Addr().String()})
 
@@ -87,7 +101,34 @@ func run(args []string) int {
 	}
 }
 
-// printSummary prints the config without token hashes.
+// pushOptions maps the config's push block to the APNs client (D-053).
+func pushOptions(p *config.Push) push.Options {
+	return push.Options{
+		KeyFile: p.KeyFile, KeyID: p.KeyID, TeamID: p.TeamID, Topic: p.Topic,
+		SandboxURL: p.SandboxURL, ProductionURL: p.ProductionURL, CAFile: p.CAFile,
+	}
+}
+
+// pushSummary shows the APNs settings with ids and paths only; "off" when the block is absent.
+func pushSummary(p *config.Push) any {
+	if p == nil {
+		return "off"
+	}
+	o := pushOptions(p)
+	sandbox, production := o.SandboxURL, o.ProductionURL
+	if sandbox == "" {
+		sandbox = push.DefaultSandboxURL
+	}
+	if production == "" {
+		production = push.DefaultProductionURL
+	}
+	return map[string]any{
+		"keyFile": p.KeyFile, "keyId": p.KeyID, "teamId": p.TeamID, "topic": p.Topic,
+		"sandboxURL": sandbox, "productionURL": production, "caFile": p.CAFile,
+	}
+}
+
+// printSummary prints the config without token hashes or key material (SPEC 6.4).
 func printSummary(cfg *config.Config) int {
 	tokens := make([]string, 0, len(cfg.Tokens))
 	for _, t := range cfg.Tokens {
@@ -110,6 +151,7 @@ func printSummary(cfg *config.Config) int {
 		Roots          []string      `json:"roots"`
 		StateDir       string        `json:"stateDir"`
 		Limits         config.Limits `json:"limits"`
+		Push           any           `json:"push"`
 	}{
 		Listen:         fmt.Sprintf("%s:%d", cfg.ListenHost, cfg.ListenPort),
 		Runner:         cfg.Runner,
@@ -120,6 +162,7 @@ func printSummary(cfg *config.Config) int {
 		Roots:          roots,
 		StateDir:       cfg.StateDir,
 		Limits:         cfg.Limits,
+		Push:           pushSummary(cfg.Push),
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetEscapeHTML(false)
