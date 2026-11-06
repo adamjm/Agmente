@@ -1,15 +1,17 @@
 # Testing push notifications end to end
 
-Status 2026-11-07: the app can ask for permission, get a device token and give it to the gateway, and the gateway stores it (D-052). **Nothing sends a push yet.** Delivery (PLAN 3.11) needs an Apple account, a key and a real iPhone. This page lists what to do, in order, and how to tell each step worked.
+Status 2026-11-07: the app asks for permission, gets a device token and gives it to the gateway, and the gateway stores it (D-052). The gateway also **delivers** pushes to APNs (D-053 to D-055): the JWT, the HTTP/2 send, the triggers, foreground suppression, and the cleanup and retry rules are built and tested against a fake APNs server. **Nothing has reached Apple or a device yet.** The device part (Part E, step 3 onward) needs an APNs key from the owner and a real iPhone. This page lists what to do, in order, and how to tell each step worked.
 
 ## Part A. Checks that need no Apple account (done; rerun any time)
 
 | Step | Command | Pass |
 | --- | --- | --- |
-| Gateway wire tests | `scripts/check.sh` | "All checks passed"; `test/push.test.mjs` is in the 142 |
+| Gateway wire tests | `scripts/check.sh` | "All checks passed"; `test/push.test.mjs` and `test/apns.test.mjs` are in the count |
 | Payload builder (T-24) | `(cd gateway && go test ./internal/push/...)` | ok |
+| Delivery against a fake APNs (T-48, wire part) | `node --test test/apns.test.mjs` from `gateway/` after `go build` | every test passes |
 | App tests | `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test` | TEST SUCCEEDED |
 | Register by hand | start a gateway, connect with a token, send `{"jsonrpc":"2.0","id":1,"method":"_agmente/push/register","params":{"deviceToken":"<64 hex>","environment":"sandbox"}}` | result `{}`; `sqlite3 <stateDir>/gateway.db 'select identity,device,environment from push_tokens'` shows one row |
+| Key and config rules | `gateway/bin/agmente-gateway --config <file> --dry-run` | prints the `push` block with ids and paths, never key bytes; a group-readable key is refused |
 
 ## Part B. What you need from Apple (owner)
 
@@ -34,27 +36,41 @@ Status 2026-11-07: the app can ask for permission, get a device token and give i
 4. **Check the environment guess:** a Debug build run from Xcode should say `sandbox`. If you install a Release or TestFlight build it must say `production`. If it does not match, delivery fails with `BadDeviceToken`; fix `PushGatewaySync.environment`.
 5. Kill and relaunch the app: the row's `updated` time changes (the app registers again each launch).
 
-## Part E. Delivery (the remaining code, then the test)
+## Part E. Delivery: what is built, then the device test
 
-Code to write (task 3.11, second half; plan it first, then add a D-n):
+### E.1 What is built (D-053 to D-055)
 
-- JWT: ES256, header `{alg: ES256, kid: <KEYID>}`, claims `{iss: <TEAMID>, iat: <now>}`, signed with the `.p8`. Apple wants a new token at most every 20 minutes and at least every 60. Go standard library `crypto/ecdsa` is enough.
-- Send: HTTP/2 POST to `https://api.sandbox.push.apple.com/3/device/<token>` (or `api.push.apple.com` for production tokens) with headers `authorization: bearer <jwt>`, `apns-topic: <bundle id>`, `apns-push-type: alert`, body from `push.Build` (`internal/push`, at most 256 bytes). Go's `net/http` does HTTP/2 over TLS.
-- Triggers: turn ended, approval needed, session failed (FR-23), to every token of the session's project identity. Do not push to a device that has a live subscriber on that session.
-- Cleanup: on status 410 or `Unregistered`, and `BadDeviceToken`, delete that token (`Store.DeletePushToken`).
-- Config: the key path, key id, team id and bundle id as config keys (paths and ids only, never the key itself). Refuse to start delivery when the key file is group- or world-readable.
-- Tests: a fake APNs server (HTTP/2, TLS with a test certificate) in the wire suite to check headers, JWT claims, payload, topic and cleanup on 410, so only the last mile needs the real device.
+- **Config.** The `push` block in the gateway config (SPEC 6.3): `keyFile` (absolute path to the `.p8`), `keyId`, `teamId`, `topic` (bundle id). Optional `sandboxURL` and `productionURL`. No `push` block means delivery is off. Example for the host (no key material in the file):
 
-Device test (T-new, add to SPEC section 7 when the code exists):
+  ```json
+  "push": {
+    "keyFile": "/etc/agmente/AuthKey_ABCDE12345.p8",
+    "keyId": "ABCDE12345",
+    "teamId": "TEAM123456",
+    "topic": "com.example.yourapp"
+  }
+  ```
 
-1. Part D passed, key and ids configured, gateway restarted.
+- **Key rule.** The gateway refuses to start when the key is readable by group or others, is not a regular file, or does not parse as a P-256 PKCS#8 key. `chmod 600` fixes the first. `--dry-run` runs the same check and prints `push` with ids and paths only.
+- **Auth.** An ES256 provider token: header `{alg, kid}`, claims `{iss, iat}`, cached and rebuilt after 50 minutes. Standard library only.
+- **Send.** `POST /3/device/<token>` over HTTP/2 with `authorization`, `apns-topic`, `apns-push-type: alert`, `apns-priority: 10`, and the body from `push.Build` (at most 256 bytes, no prompt, title or tool text). The host follows the token's `environment`.
+- **Triggers.** A finished turn (`Turn finished`), a failed turn (`Session failed`, when the agent exits mid-turn or refuses the prompt), and an approval request (`Approval needed`). Each goes to every stored token.
+- **Foreground suppression.** A device with a socket subscribed to that session gets no push at that moment.
+- **Cleanup.** 410, `Unregistered`, `BadDeviceToken` or `DeviceTokenNotForTopic` deletes that device's token. 429 and 5xx are retried twice (0.5 s, then 1 s). A 403 `ExpiredProviderToken` rebuilds the JWT once.
+- **Audit.** `push_sent`, `push_failed` (status, reason), `push_token_removed`, `push_dropped` (queue full). None holds a token, key, JWT or payload.
+- **Tests.** `gateway/test/apns.test.mjs` (wire, against a fake APNs server on HTTP/2 with throwaway keys made at run time) and `internal/push` Go tests. Mutation checks are recorded in RESULTS.
+
+### E.2 Device test (T-48; needs Part B, C and D)
+
+1. Part D passed, the key and ids are in the config, and the gateway is restarted. The audit shows `push_enabled`.
 2. Open a session in the app, send a prompt that takes a while (for example `[slow:20000]` against the fake agent, or any long Bob task), then **lock the phone and background the app**.
-3. **Pass:** within a few seconds of the turn ending, a notification appears with the project name as the title and "Turn finished" as the body. No prompt text or file name appears.
+3. **Pass:** within a few seconds of the turn ending, a notification appears with the project name as the title and "Turn finished" as the body. No prompt text or file name appears. The gateway audit shows `push_sent` with status 200.
 4. Repeat with a prompt that needs permission (`[permission]`): "Approval needed" arrives; tapping it opens the app on that session (deep link, D-041). Answer from the inbox.
-5. Make the session fail (stop the agent process): "Session failed".
-6. With the app open and subscribed to the session, finish a turn: **no** notification (foreground suppression).
+5. Make the session fail (stop the agent process during a turn): "Session failed".
+6. With the app open and subscribed to the session, finish a turn: **no** notification (foreground suppression). The audit has no `push_sent` for that turn.
 7. Revoke notifications in iOS Settings, finish a turn: the gateway logs a 410 or the token stays unused; confirm the token row is removed after the next attempt.
 8. Wrong environment: install a build whose `environment` does not match the token. Expect `BadDeviceToken` in the gateway audit and the token removed.
+9. Record each step's result in `docs/RESULTS.md` under T-48. A step that does not pass is a FAIL with a decision entry, not a changed test.
 
 ## Part F. Things that fail quietly
 
@@ -62,3 +78,4 @@ Device test (T-new, add to SPEC section 7 when the code exists):
 - A phone with no network at the time gets the push later; Apple keeps only the last one for the same `apns-collapse-id` (unset, so each is kept up to a limit).
 - Production tokens from TestFlight or App Store builds do not work against the sandbox host and the reverse.
 - If the token row never appears, check in order: the server's `initialize` lists `push`; permission is "Allowed"; the Xcode console shows the token callback.
+- A push is dropped, not sent late, when the gateway's queue is full (64 pending); the audit shows `push_dropped`.

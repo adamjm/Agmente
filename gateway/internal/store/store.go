@@ -619,6 +619,36 @@ func (s *Store) DeletePushToken(ctx context.Context, identity, device string) (b
 	return n > 0, err
 }
 
+// DeletePushTokenIfEqual removes a device's token only while it still holds `token`, so a token
+// that APNs rejected cannot remove a newer one the device registered meanwhile (D-053).
+func (s *Store) DeletePushTokenIfEqual(ctx context.Context, identity, device, token string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM push_tokens WHERE identity = ? AND device = ? AND token = ?`, identity, device, token)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// AllPushTokens lists every stored token, for delivery (D-053). Every device of this gateway's
+// owner shares the projects, so every token is a target (FR-25).
+func (s *Store) AllPushTokens(ctx context.Context) ([]PushToken, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT identity, device, token, environment, updated FROM push_tokens ORDER BY identity, device`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PushToken
+	for rows.Next() {
+		var t PushToken
+		if err := rows.Scan(&t.Identity, &t.Device, &t.Token, &t.Environment, &t.Updated); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // PushTokens lists the tokens of an identity (delivery, 3.11, reads this).
 func (s *Store) PushTokens(ctx context.Context, identity string) ([]PushToken, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT identity, device, token, environment, updated FROM push_tokens WHERE identity = ? ORDER BY device`, identity)

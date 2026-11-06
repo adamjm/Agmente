@@ -17,6 +17,7 @@ import (
 
 	"agmente/gateway/internal/audit"
 	"agmente/gateway/internal/jsonv"
+	"agmente/gateway/internal/push"
 	"agmente/gateway/internal/store"
 )
 
@@ -722,5 +723,11 @@ func (a *projectAgent) logTurnEnded(sessionID string, response *jsonv.Value) {
 		a.s.audit.Log("store_error", a.fields(audit.Fields{Reason: "session_status"}))
 	}
 	a.logEvent(sessionID, "turn_ended", gatewayNotification("_agmente/turn_ended", sessionID, fields, "stopReason", "error"))
+	// FR-23: a finished turn, or a failed one (the agent exited or refused it) pushes once.
+	if status == "error" {
+		a.s.pushNotify(push.SessionFailed, a.id, sessionID)
+	} else {
+		a.s.pushNotify(push.TurnEnded, a.id, sessionID)
+	}
 	a.snapshotTurnEnd(sessionID)
 }

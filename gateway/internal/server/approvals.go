@@ -17,6 +17,7 @@ import (
 
 	"agmente/gateway/internal/audit"
 	"agmente/gateway/internal/jsonv"
+	"agmente/gateway/internal/push"
 	"agmente/gateway/internal/store"
 )
 
@@ -73,6 +74,7 @@ func (s *Server) addPermission(a *projectAgent, proc *agentProcess, agentID *jso
 	if err != nil {
 		s.audit.Log("store_error", a.fields(audit.Fields{Reason: "insert_approval"}))
 	}
+	s.pushNotify(push.ApprovalNeeded, a.id, sessionID)
 	return p.id
 }
 

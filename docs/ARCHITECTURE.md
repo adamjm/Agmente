@@ -13,7 +13,7 @@ Read with [SPEC.md](SPEC.md). Decision IDs (D-n) refer to [DECISIONS.md](DECISIO
 | Gateway: config and audit | `config`, `audit` | Validate the config file; one JSON audit line per event on stderr. | `gateway/internal/` |
 | Gateway: sessions (phase 3) | `projects.go`, `store`, `subscribe.go`; approvals and idle close planned | Project registry, event log, subscribe and replay (D-028), approval queue, idle close. | `gateway/internal/server/`, `gateway/internal/store/` |
 | Gateway: project data (phases 3, 5, 6) | `git.go`, `gitexec.go`, `snapshot.go`, `watch.go`; planned `files/`, `mcp/`, `skills/` | Read-only git (D-034, D-035); later signed file URLs, MCP and skill config. | `gateway/internal/server/` |
-| Gateway: notify (phase 3) | `push/` | APNs payloads and delivery. | `gateway/internal/push/` (planned) |
+| Gateway: notify (phase 3) | `push/`, `push_deliver.go` | APNs payloads (D-038), token-based auth, HTTP/2 send, cleanup and retry (D-053); triggers and suppression (D-054). | `gateway/internal/push/`, `gateway/internal/server/` |
 | Project runtime | One container per project | Run `bob acp` and git as the project user. | `deploy/` (planned) |
 | App: transport | `AgmenteTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `AgmenteTransport/`, upstream folders |
 | App: security | Keychain store | Tokens, client identity, MCP headers. | `Agmente/Security/` (new) |
