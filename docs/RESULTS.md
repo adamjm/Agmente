@@ -963,3 +963,38 @@
   - The gate itself: not green; the timing flakes above are unresolved. They are not caused by this change as far as the code shows, but a clean base-commit run was not done, so that is unverified.
   - No app (WKWebView) side (PLAN 5.4 and 5.5).
 - **Environment note:** `.claude/settings.json` is untracked in the main checkout, so I copied it into the worktree to run the gate. It is not committed, and I removed it afterwards. `npm ci --prefix gateway` installed from the lockfile in this worktree.
+
+## 2026-11-07 Open questions on Bob 2.0.9: Q-2 (T-39), Q-3 (T-42), Q-4 (T-43), session/close (D-032)
+- **Command:** `node gateway/scripts/probe-bob-open-questions.mjs --env-file <repo>/Agmente/.env` (run 2, the full set, 7 prompts); `... --only q2 --raw` (run 3, the image question with raw updates, 1 prompt). Run 1 is void (see below). Raw logs kept outside the repo in `~/.agmente-live/openq-run*.log`.
+- **Path:** Bob 2.0.9 on the host runner, run directly as `bob acp --accept-license --log-level warn` over stdio, in a scratch project under `~/.agmente-live/` with a disposable `HOME`. No `--auto-approve`, no `--trust`. Not run through the gateway: the gateway answers `session/load` and `session/resume` itself for a live session (D-029), so it would hide the behaviour under test. Podman was not run: these answers are about Bob's ACP behaviour, and the container path was not part of the question.
+- **Key:** the shell form `set -a; . .env; set +a` was refused by the sandbox (the file is outside the worktree), so the probe read only the `BOB_API_KEY` line from `--env-file`, in its own process. It printed `set: true`. A search of the saved logs found 0 copies of the value.
+- **Prompts:** 15 in total (run 1: 7, run 2: 7, run 3: 1).
+- **Run 1 is void.** My permission check matched `make_image` and `ping_http`, but Bob titles the calls "Running Make Image (probe-image)" and "Running Ping Http (probe-http)". Both calls were rejected, so the Q-2 and Q-3 "after" results were not valid. The check was fixed and run 2 is reported below. Q-4 and the close probe in run 1 agreed with run 2.
+- **Permission requests:** Bob asked only for the two probe tools, and the probe allowed each once. Bob's own read tools ran with no request.
+
+**Q-2 (T-39): Bob does not forward MCP image content over ACP.** The probe MCP server returns `[text, image(image/png)]` for `make_image`, and I checked by hand that it does. Bob 2.0.9 sent:
+- `tool_call` (pending, title "Running Make Image (probe-image)", kind `other`), then `tool_call_update` with `status: in_progress`;
+- `tool_call_update` (completed) with keys `content, rawOutput, sessionUpdate, status, toolCallId`. `content` holds one block, `{type: "content", content: {type: "text", text}}`. `rawOutput` is `{"result": <the text>}`;
+- no `image` block in any update, and no resource block. The agent then sent a text reply.
+
+Outcome: the image is dropped before ACP. FR-37 (phase 5 images from tool results) gets nothing from Bob's MCP tools. Bob's stderr was not inspected for a warning about the image block, because the scratch folder was removed.
+
+**Q-3 (T-42): `session/resume` accepts a changed `mcpServers` list, and the tool list follows it.**
+- `session/resume` with `mcpServers: [{type: "http", name: "probe-http", url, headers: []}]` returned a result with `modes` and no error. The server then received, in order: `server/discover`, `initialize`, `notifications/initialized`, `tools/list` (twice). The probe server answered `server/discover` with `-32601`, and Bob went on.
+- The next prompt called the tool: `tool_call` "Running Ping Http (probe-http)", one `tools/call` on the server, reply text `http-pong`.
+- `session/resume` of the same session with `mcpServers: []` returned a result with no error. No request reached the server. The next prompt did not call the tool and replied with the no-tool marker.
+- Limit: the session had no earlier turns when resumed, so the replayed history was not tested here. Not tested: whether a list change without a later prompt restarts servers.
+
+**Q-4 (T-43): a running session can invoke a skill added afterwards, but its command list does not change until a load or a new session.**
+- Before the file existed, the command list from `session/new` had six names, with no skill. `/probe-skill` got a reply that no such skill exists.
+- After `<project>/.bob/skills/probe-skill/SKILL.md` was written (no prompt, 5 s wait): zero `available_commands_update` updates.
+- The next prompt in the same session, with no `session/load`, replied with the skill's marker. That turn had no tool call, only `agent_message_chunk` and `session_info_update`. How the skill text got into the context is not known.
+- `session/load` of the same session (idle, same process) returned a result with no error. Its replay started with an `available_commands_update` that listed `probe-skill`. A prompt after the load gave the marker again.
+- A fresh `session/new` in the same process listed `probe-skill`.
+
+**session/close (D-032, "verify"): Bob 2.0.9 accepts it, and the session stays loadable.** `initialize` advertises `sessionCapabilities.close`. `session/close {sessionId}` on an idle session returned `{}`, with no error and no update. `session/load` of that session then returned a result with no error and replayed 8 updates, and the next prompt ended with `end_turn`. A second `session/close` also returned `{}`. Not tested: close during a turn, and whether close frees memory in the process.
+
+**Could not determine:** why Bob drops the image block (its stderr was not inspected); whether skill text is injected without a visible tool call in every case; Q-3 on a session with earlier turns; any Podman behaviour.
+- **Gate:** `scripts/check.sh` exits 1. Every Go test passes, and every wire test passes except one: T-46 "a subscriber keeps the container running; it stops once the subscriber leaves" (`gateway/test/lifecycle.test.mjs:129`). It fails with `the idle time counts from when the subscriber left` (line 143, `exits[0].t - left >= 900`). It fails alone too, on this unmodified gateway. The gateway stops the agent less than 900 ms after the subscriber leaves, because its activity clock is refreshed at busy checks every quarter of the idle time (D-032), so a stop can come about 250 ms early. The test expects a full idle time after the subscriber leaves. Not changed: either the gateway or the test should change, and that is the owner's call (CLAUDE.md: do not change a test to make it pass).
+- **Gate setup:** this worktree had no `.claude/settings.json` (not tracked on this branch). I copied the main checkout's file in, untracked and not committed, and removed it after the run. `npm ci --prefix gateway` was needed for the Node dependencies.
+- **Changed files:** `gateway/scripts/probe-bob-open-questions.mjs`, `gateway/scripts/open-questions/mcp-image-server.mjs`, `gateway/scripts/open-questions/mcp-http-server.mjs`, `docs/RESULTS.md`, `docs/SPEC.md` (section 3 F-22 to F-25, section 8 Q-2 to Q-4). No gateway source, no DECISIONS entry (no finding changed a design).
