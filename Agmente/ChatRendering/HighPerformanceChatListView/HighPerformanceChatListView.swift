@@ -13,6 +13,7 @@ enum RowType {
     case assistantPlan
     case toolCall
     case fileChanges
+    case media
     case system
     case error
     case streaming
@@ -372,6 +373,8 @@ extension HighPerformanceChatListView: ListViewAdapter {
             return RowType.toolCall
         case .fileChanges:
             return RowType.fileChanges
+        case .media:
+            return RowType.media
         case .system:
             return RowType.system
         case .error:
@@ -401,6 +404,8 @@ extension HighPerformanceChatListView: ListViewAdapter {
             return ToolCallRowView()
         case .fileChanges:
             return FileChangesRowView()
+        case .media:
+            return ForkMediaRowView()
         case .system:
             return SystemRowView(isError: false)
         case .error:
@@ -471,6 +476,9 @@ extension HighPerformanceChatListView: ListViewAdapter {
 
         case .fileChanges:
             height = FileChangesRowView.estimatedHeight(for: entry.fileChanges, width: width)
+
+        case .media:
+            height = entry.media.map { ForkMediaRowView.height(for: $0, width: width) } ?? 0
 
         case .system, .error:
             let textHeight = boundingHeight(for: entry.text, font: .preferredFont(forTextStyle: .footnote), width: width - 16)
@@ -543,6 +551,9 @@ extension HighPerformanceChatListView: ListViewAdapter {
                     self?.actionHandlers.onReviewFileChanges?(items)
                 }
             )
+
+        case let row as ForkMediaRowView:
+            if let media = entry.media { row.configure(item: media) }
 
         case let row as SystemRowView:
             row.text = entry.text

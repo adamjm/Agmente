@@ -40,6 +40,11 @@ struct ChatEntryMapper {
         for segment in contentSegments {
             switch segment.kind {
             case .message:
+                if let media = segment.media {
+                    entries.append(.media(messageId: message.id, segmentId: segment.id, item: media))
+                    hasVisibleContent = true
+                    continue
+                }
                 let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
                 entries.append(.assistantMarkdown(messageId: message.id, segmentId: segment.id, text: text))

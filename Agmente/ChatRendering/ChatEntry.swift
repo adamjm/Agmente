@@ -9,6 +9,7 @@ struct ChatEntry: Identifiable, Hashable {
         case assistantPlan
         case toolCall
         case fileChanges
+        case media
         case system
         case error
         case streamingIndicator
@@ -20,6 +21,7 @@ struct ChatEntry: Identifiable, Hashable {
     let images: [ChatImageData]
     let segment: AssistantSegment?
     let fileChanges: [FileChangeSummaryItem]
+    let media: ForkMediaItem?
     let isStreaming: Bool
     let messageId: UUID
     let contentHash: Int
@@ -31,6 +33,7 @@ struct ChatEntry: Identifiable, Hashable {
         images: [ChatImageData] = [],
         segment: AssistantSegment? = nil,
         fileChanges: [FileChangeSummaryItem] = [],
+        media: ForkMediaItem? = nil,
         isStreaming: Bool = false,
         messageId: UUID,
         contentHash: Int
@@ -41,6 +44,7 @@ struct ChatEntry: Identifiable, Hashable {
         self.images = images
         self.segment = segment
         self.fileChanges = fileChanges
+        self.media = media
         self.isStreaming = isStreaming
         self.messageId = messageId
         self.contentHash = contentHash
@@ -122,6 +126,17 @@ struct ChatEntry: Identifiable, Hashable {
             fileChanges: items,
             messageId: messageId,
             contentHash: signature.hashValue
+        )
+    }
+
+    static func media(messageId: UUID, segmentId: UUID, item: ForkMediaItem) -> ChatEntry {
+        ChatEntry(
+            id: "message.\(messageId.uuidString).media.\(segmentId.uuidString)",
+            kind: .media,
+            text: item.fallbackText,
+            media: item,
+            messageId: messageId,
+            contentHash: item.hashValue
         )
     }
 

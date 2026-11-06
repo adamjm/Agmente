@@ -20,6 +20,9 @@ public enum ACPSessionUpdateEvent: Equatable, Sendable {
     /// An existing tool call has been updated (status change, output, etc.).
     case toolCallUpdate(ACPToolCallUpdate)
     
+    /// An image, resource or resource_link content block (PLAN 5.1). Not decoded or fetched here.
+    case media(ACPMediaBlock)
+
     /// The agent's current mode has changed.
     case modeChange(modeId: String)
 
@@ -123,16 +126,17 @@ public final class ACPSessionUpdateHandler: Sendable {
             
         case "agent_message_chunk":
             let text = ACPSessionUpdateParser.extractText(from: update)
-            guard !text.isEmpty else { return [] }
-            return [.agentMessage(text: text)]
+            var events: [ACPSessionUpdateEvent] = text.isEmpty ? [] : [.agentMessage(text: text)]
+            events += ACPSessionUpdateParser.mediaBlocks(from: update).map { .media($0) }
+            return events
             
         case "tool_call":
             let info = parseToolCallInfo(from: update)
-            return [.toolCall(info)]
+            return [.toolCall(info)] + ACPSessionUpdateParser.mediaBlocks(from: update).map { .media($0) }
             
         case "tool_call_update":
             let updateInfo = parseToolCallUpdate(from: update)
-            return [.toolCallUpdate(updateInfo)]
+            return [.toolCallUpdate(updateInfo)] + ACPSessionUpdateParser.mediaBlocks(from: update).map { .media($0) }
             
         case "current_mode_update":
             if let modeId = update["modeId"]?.stringValue {
