@@ -80,6 +80,10 @@ public final class ACPService {
         try await sendRequest(method: ACPMethods.sessionSetMode, params: payload.params())
     }
 
+    public func deleteSession(_ payload: ACPSessionDeletePayload) async throws -> ACP.AnyResponse {
+        try await sendRequest(method: ACPMethods.sessionDelete, params: payload.params())
+    }
+
     public func setSessionConfigOption(_ payload: ACPSessionSetConfigOptionPayload) async throws -> ACP.AnyResponse {
         try await sendRequest(method: ACPMethods.sessionSetConfigOption, params: payload.params())
     }

@@ -24,6 +24,7 @@ struct SessionDetailView: View {
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showPhotoPermissionAlert = false
     @State private var showDeleteSessionConfirm = false
+    @State private var deleteSessionError: String?
     @State private var expandedThoughts: Set<UUID> = []
     @State private var fileChangesReviewPayload: FileChangesReviewPayload?
     @State private var showUndoUnavailableAlert = false
@@ -63,6 +64,13 @@ struct SessionDetailView: View {
 #endif
     }
 
+    /// The agent's title when it sent one (FR-33), else the session summary's title.
+    private var sessionDisplayTitle: String {
+        if let title = sessionViewModel.forkMeta.title { return title }
+        let id = serverViewModel.sessionId
+        return serverViewModel.sessionSummaries.first(where: { $0.id == id })?.title ?? "Session"
+    }
+
     private var selectedCommand: SessionCommand? {
         sessionViewModel.availableCommands.first { $0.name == sessionViewModel.selectedCommandName }
     }
@@ -89,6 +97,9 @@ struct SessionDetailView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
+                if let planEntries = sessionViewModel.forkMeta.plan {
+                    SessionPlanView(entries: planEntries)
+                }
                 transcriptContent
                     .frame(maxHeight: .infinity)
 
@@ -105,8 +116,10 @@ struct SessionDetailView: View {
                                 }
                         }
                     )
+                SessionUsageFooter(usage: sessionViewModel.forkMeta.usage)
             }
         }
+        .navigationTitle(sessionDisplayTitle)
         .overlay(alignment: .bottomTrailing) {
             if shouldShowScrollToBottomButton {
                 Button(action: scrollTranscriptToBottom) {
@@ -169,11 +182,25 @@ struct SessionDetailView: View {
             Button("Delete Session", role: .destructive) {
                 let idToDelete = serverViewModel.sessionId
                 guard !idToDelete.isEmpty else { return }
-                model.deleteSession(idToDelete)
+                Task {
+                    do {
+                        try await model.deleteSessionOnAgent(idToDelete)
+                    } catch {
+                        deleteSessionError = ACPAgentErrorText.text(for: error)
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the session and its cached chat history from this device.")
+            Text("This removes the session and its cached chat history from this device. If the agent supports it, the session is also deleted on the agent.")
+        }
+        .alert("Session not deleted", isPresented: .init(
+            get: { deleteSessionError != nil },
+            set: { if !$0 { deleteSessionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteSessionError ?? "")
         }
         .alert("Undo not available", isPresented: $showUndoUnavailableAlert) {
             Button("OK", role: .cancel) {}

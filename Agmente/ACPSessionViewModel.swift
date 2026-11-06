@@ -69,6 +69,8 @@ final class ACPSessionViewModel: ObservableObject {
 
     @Published private(set) var currentModeId: String?
     @Published private(set) var availableModes: [AgentModeOption] = []
+    /// Plan, title and usage from session updates (FR-33).
+    @Published private(set) var forkMeta = ForkSessionMeta()
     @Published private(set) var sessionConfigOptions: [ACPSessionConfigOption] = []
     @Published private(set) var availableCommands: [SessionCommand] = []
     @Published var promptText: String = ""
@@ -722,6 +724,9 @@ final class ACPSessionViewModel: ObservableObject {
                 sessionId: sessionId
             )
             dependencies.append("Available commands updated (\(commands.count))")
+
+        case .planUpdate, .planRemoved, .sessionInfo, .usage:
+            forkMeta.apply(event)
         }
     }
 
@@ -1143,6 +1148,7 @@ final class ACPSessionViewModel: ObservableObject {
     /// Reset chat state (clear messages and stop reason).
     func resetChatState() {
         chatMessages = []
+        forkMeta = ForkSessionMeta()
         stopReason = ""
         streamingMessageId = nil
         currentServerId = nil

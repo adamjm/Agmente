@@ -487,3 +487,36 @@ Append only. To change a decision, add a new entry that supersedes the old one. 
   - **Go unit tests.** Token round trip; a changed payload, a changed signature, a truncated or split token, a token from another key, an oversize token and missing claims are refused; the path rules; the type allow-list.
   - **Wire tests:** `test/files.test.mjs` (14 tests, T-37 and the rest of PLAN 5.3). The HTTP side uses `node:http` with a chosen Host header, so the wire tests reach the same listener as the phone. `supervisor.test.mjs` now expects `files` in the extension list.
 - **Reason:** The phone can ask for any file in a project, so the audit trail is the record of what was reachable, and it must not become a place where secrets are copied.
+
+## D-070 Plan, session title and usage updates: parsed defensively, shapes marked "verify"
+- **Date:** 2026-11-07
+- **Decision:** PLAN 4.7 (FR-33).
+  - **Plan.** `plan` (ACP's kind, schema `entries: [{content, priority, status}]`) and `plan_update` (Bob's name) both become `ACPSessionUpdateEvent.planUpdate(entries:)`, capped at 200 entries. Entry text is read from `content` (string or `{text}`), then `title`, `text` or `description`. Status `pending`, `in_progress`, `completed`; any other value is kept as `unknown` and shown as pending. An empty list hides the plan. `plan_removed` clears it. **verify:** Bob 2.0.9 sends `plan_update` and `plan_removed`; no fixture or recorded payload shows their shape, so the list keys (`entries`, `plan`, `items`, `steps`) are a guess.
+  - **Title.** `session_info_update` gives `sessionInfo(title:)`, trimmed. An absent or empty title leaves the last one in place. The gateway already reads the same field for its index (D-030).
+  - **Usage.** `usage_update` is read from `used` or `usedTokens`, `size` or `contextSize`, and a cost as `cost: {amount, currency}` or `costAmount`/`costCurrency`. Negative, non-finite or string values are dropped; a currency over 8 characters is dropped. **verify:** no recorded Bob `usage_update`; the keys are unconfirmed. An update with no usable field emits nothing.
+  - **Where shown.** The plan is a collapsible checklist above the transcript (`SessionPlanView`); usage is a small line under the composer (`SessionUsageFooter`); the navigation title uses the agent's title when present, else the session summary's.
+  - **Unknown fields never fail.** Every parser returns an empty or nil result for an unexpected shape.
+- **Reason:** The ACP schema names the plan shape, but Bob's own kinds and the usage shape are not in any fixture. Reading defensively keeps the app up when Bob changes a key, and "verify" marks what a live run must confirm.
+
+## D-071 Start mode from the project's default, sent as `_meta["bob/mode"]`
+- **Date:** 2026-11-07
+- **Decision:** PLAN 4.8 (FR-34).
+  - **Start mode.** When a new session is created on a gateway, the app calls `_agmente/projects/list`, finds the deepest project whose path is the session's cwd or contains it, and sends its `defaultMode` as `_meta["bob/mode"]` on `session/new`. No matching project, no default, or a failed lookup sends no `_meta` and starts the session as before. A lookup failure never fails the session. Only gateway servers send it: `bob/mode` is a Bob key and the gateway fronts Bob only.
+  - **Mode picker.** Unchanged in behaviour: the picker shows only when the session reports `availableModes` (it sits in the composer row), it calls `session/set_mode` through the existing path, and `current_mode_update` updates it. The gateway already tracks the mode for reopens (D-029).
+  - **Gateway.** Forwards `_meta` on `session/new` as it does every param; a wire test (`gateway/test/start-mode.test.mjs`) shows the fake agent starts in the sent mode and in `agent` without `_meta`. No gateway code changed.
+  - **Not done:** a per-project picker of the default mode (only the stored value is read).
+- **Reason:** The owner set the default per project (D-024 `defaultMode`), and Bob reads `bob/mode` at session start (plan notes). Looking the project up at creation keeps the cache and the gateway the only source of the value.
+
+## D-072 Authentication required: its own text, no key entry in the app
+- **Date:** 2026-11-07
+- **Decision:** PLAN 4.9 (FR-35, T-35). `ACPAgentErrorText` maps JSON-RPC error `-32000` whose message contains "Authentication required" to the fixed text "Bob needs authentication. Set BOB_API_KEY on the gateway host.". Any other error keeps its own text. It is used wherever a session create, load, resume or prompt error reaches the transcript (`ServerViewModel` failure paths and `formatPromptError`). The app offers no field for a key, and it never sends one.
+- **Reason:** RESULTS 2026-11-05 records Bob's answer with no key. The fix is a setting on the gateway host, so the app says so rather than asking for a secret. Matching on the code and the message together keeps other `-32000` errors unchanged.
+- **Not verified:** the text on screen. T-35 needs a Bob run with no key shown in the app; the mapping is unit-tested only.
+
+## D-073 `session/delete` on the agent first, then the device; a failure keeps the session
+- **Date:** 2026-11-07
+- **Decision:** PLAN 4.10 (FR-36).
+  - **Capability.** `sessionCapabilities.delete` in `initialize` sets `AgentCapabilityState.deleteSession`. Bob 2.0.9 advertises it (fixture `bob-initialize-2.0.9.json`).
+  - **Flow.** "Delete Session" (existing confirmation dialog) sends `session/delete {sessionId}` when the capability is set and the session exists on the agent (not a placeholder that was never created). On success the session is removed from the list, its chat and its storage, as before. On an error, or when not connected while the capability is set, nothing is removed locally and an alert shows the text from `ACPAgentErrorText`. Without the capability, or for a placeholder, the local removal is unchanged.
+  - **Gateway.** Forwards `session/delete` and, when the agent accepts it, removes the session from its index, events and read markers (D-030, `sessions.test.mjs`). No gateway change.
+- **Reason:** Deleting only locally would leave the session on Bob and in the gateway index, where it still shows. Removing locally only after the agent accepts means a refusal never hides a session that still exists.

@@ -582,10 +582,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
     /// Format prompt error for display.
     private func formatPromptError(_ error: Error) -> String {
-        if let serviceError = error as? ACPServiceError, let message = serviceError.rpcMessage {
-            return message
-        }
-        return error.localizedDescription
+        ACPAgentErrorText.text(for: error)
     }
 
     /// Finalize pending session creation after session/new response.
@@ -986,7 +983,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                 self.pendingLocalSessionNewCwds[pendingId] = (self.pendingLocalSessionNewCwds[pendingId] == true) || newCwdAdded
                 let payload = ACPSessionCreatePayload(
                     workingDirectory: creationCwd,
-                    mcpServers: []
+                    mcpServers: [],
+                    meta: await gatewayStartMeta(forCwd: creationCwd)
                 )
 
                 do {
@@ -1000,7 +998,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                 } catch {
                     self.failPendingSessionCreation(
                         placeholderId: pendingId,
-                        errorMessage: error.localizedDescription
+                        errorMessage: ACPAgentErrorText.text(for: error)
                     )
                 }
                 self.creatingSessionTasks.removeValue(forKey: pendingId)
@@ -1032,6 +1030,31 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             )
             setSessionSummaries(sessionSummaries)
         }
+    }
+
+    /// `_meta["bob/mode"]` for a new session on a gateway, from the project's default mode (FR-34).
+    /// Empty when there is no gateway, no project for the path or no default. A failed lookup starts
+    /// the session without a mode rather than failing it.
+    func gatewayStartMeta(forCwd cwd: String) async -> [String: ACP.Value] {
+        guard isGatewayServer, let client = gatewayClient else { return [:] }
+        guard let projects = try? await client.projects(),
+              let mode = ForkSessionAgentRules.startMode(forCwd: cwd, projects: projects) else { return [:] }
+        return ["bob/mode": .string(mode)]
+    }
+
+    /// FR-36: asks the agent to delete the session when it advertised `session/delete`, then removes
+    /// it from this device. If the agent refuses or the call fails, the session stays on this device.
+    func deleteSessionOnAgent(_ sessionId: String) async throws {
+        let isPending = pendingLocalSessions.contains(sessionId)
+        guard ForkSessionAgentRules.sendsDeleteToAgent(agentInfo?.capabilities ?? AgentCapabilityState(), isPending: isPending) else {
+            deleteSession(sessionId)
+            return
+        }
+        guard connectionState == .connected, let service = getServiceClosure() else {
+            throw ForkSessionDeleteError.notConnected
+        }
+        _ = try await service.deleteSession(ACPSessionDeletePayload(sessionId: sessionId))
+        deleteSession(sessionId)
     }
 
     /// Delete a session.
@@ -1327,7 +1350,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
                     let payload = ACPSessionCreatePayload(
                         workingDirectory: creationCwd,
-                        mcpServers: []
+                        mcpServers: [],
+                        meta: await gatewayStartMeta(forCwd: creationCwd)
                     )
 
                     do {
@@ -1347,9 +1371,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                     } catch {
                         failPendingSessionCreation(
                             placeholderId: placeholderId,
-                            errorMessage: error.localizedDescription
+                            errorMessage: ACPAgentErrorText.text(for: error)
                         )
-                        failPendingTurn("Failed to create session: \(error.localizedDescription)")
+                        failPendingTurn("Failed to create session: \(ACPAgentErrorText.text(for: error))")
                         return
                     }
 
@@ -1401,7 +1425,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                         appendClosure("session/load disabled for this agent (Method not found)")
                     } else {
                         appendClosure("Failed to load session before prompt: \(error)")
-                        failPendingTurn("Failed to load session: \(error.localizedDescription)")
+                        failPendingTurn("Failed to load session: \(ACPAgentErrorText.text(for: error))")
                         return
                     }
                 }
@@ -1438,7 +1462,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                     } else {
                         appendClosure("Failed to resume session: \(error)")
                     }
-                    failPendingTurn("Failed to resume session: \(error.localizedDescription)")
+                    failPendingTurn("Failed to resume session: \(ACPAgentErrorText.text(for: error))")
                     return
                 }
 
@@ -1514,5 +1538,16 @@ extension ServerViewModel: ACPSessionEventDelegate {
         // Track that this session was successfully loaded
         connectionManager.markSessionMaterialized(sessionId)
         lastLoadedSession = sessionId
+    }
+}
+
+/// Why a delete on the agent did not happen (FR-36).
+enum ForkSessionDeleteError: LocalizedError {
+    case notConnected
+
+    var errorDescription: String? {
+        switch self {
+        case .notConnected: return "Not connected. The session was not deleted; try again when the server is connected."
+        }
     }
 }
