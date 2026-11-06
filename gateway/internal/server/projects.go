@@ -50,10 +50,13 @@ type projectJSON struct {
 	DefaultMode *string `json:"defaultMode"`
 	// DenyPaths are the project's additions to the secret deny-list (D-050); left out when none.
 	DenyPaths []string `json:"denyPaths,omitempty"`
+	// WatchSkip are the folders the git watcher leaves out, added to the built-in list (D-065);
+	// left out when none.
+	WatchSkip []string `json:"watchSkip,omitempty"`
 }
 
 func toProjectJSON(p store.Project) projectJSON {
-	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths}
+	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip}
 	if p.DefaultMode != "" {
 		mode := p.DefaultMode
 		out.DefaultMode = &mode
@@ -85,6 +88,10 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		}
 		s.audit.Log("project_created", with(who, audit.Fields{Project: p.ID}))
 		return map[string]any{"project": toProjectJSON(*p)}, nil
+	case "_agmente/projects/addDenyPaths":
+		return s.addProjectList(ctx, who, params, "denyPaths")
+	case "_agmente/projects/addWatchSkip":
+		return s.addProjectList(ctx, who, params, "watchSkip")
 	case "_agmente/sessions/index":
 		return s.sessionIndex(ctx, who, params)
 	case "_agmente/sessions/read":
@@ -134,20 +141,22 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 	}
 	var deny []string
 	if dv := params.Get("denyPaths"); !dv.IsNull() {
-		if dv.Kind != jsonv.Array {
-			return nil, invalidParams("denyPaths must be a list of glob strings")
+		in, rerr := stringList(dv, "denyPaths must be a list of glob strings")
+		if rerr != nil {
+			return nil, rerr
 		}
-		in := []string{}
-		for _, item := range dv.Arr {
-			str, ok := item.StringValue()
-			if !ok {
-				return nil, invalidParams("denyPaths must be a list of glob strings")
-			}
-			in = append(in, str)
+		if deny, rerr = checkedList("denyPaths", in, validateDenyPaths); rerr != nil {
+			return nil, rerr
 		}
-		var err error
-		if deny, err = validateDenyPaths(in); err != nil {
-			return nil, invalidParams("%s", err.Error())
+	}
+	var skip []string
+	if wv := params.Get("watchSkip"); !wv.IsNull() {
+		in, rerr := stringList(wv, "watchSkip must be a list of folder names")
+		if rerr != nil {
+			return nil, rerr
+		}
+		if skip, rerr = checkedList("watchSkip", in, validateWatchSkip); rerr != nil {
+			return nil, rerr
 		}
 	}
 	rawPath, ok := params.Get("path").StringValue()
@@ -179,7 +188,7 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 		_ = os.RemoveAll(home)
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create the project home"}
 	}
-	p := store.Project{ID: id, Name: name, Path: real, DefaultMode: mode, DenyPaths: deny, Created: time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
+	p := store.Project{ID: id, Name: name, Path: real, DefaultMode: mode, DenyPaths: deny, WatchSkip: skip, Created: time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
 	if err := s.store.CreateProject(ctx, p); err != nil {
 		_ = os.RemoveAll(home)
 		if errors.Is(err, store.ErrDuplicatePath) {
@@ -188,6 +197,83 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot save the project"}
 	}
 	return &p, nil
+}
+
+// stringList reads a JSON array of strings. msg is the error for anything else.
+func stringList(v *jsonv.Value, msg string) ([]string, *rpcError) {
+	if v.Kind != jsonv.Array {
+		return nil, invalidParams("%s", msg)
+	}
+	out := []string{}
+	for _, item := range v.Arr {
+		str, ok := item.StringValue()
+		if !ok {
+			return nil, invalidParams("%s", msg)
+		}
+		out = append(out, str)
+	}
+	return out, nil
+}
+
+// checkedList runs one of the two validators on input from the phone (D-066: the same rules at
+// create and in the additive methods). Its error names the list.
+func checkedList(field string, in []string, validate func([]string) ([]string, error)) ([]string, *rpcError) {
+	out, err := validate(in)
+	if err != nil {
+		return nil, invalidParams("%s", err.Error())
+	}
+	return out, nil
+}
+
+// addProjectList adds entries to a project's deny-list or watch skip list (D-066). It only adds:
+// no input removes an entry, the built-in lists always apply, and the 32-entry cap counts the
+// stored total. A refused request changes nothing.
+func (s *Server) addProjectList(ctx context.Context, who audit.Who, params *jsonv.Value, field string) (any, *rpcError) {
+	id, ok := params.Get("projectId").StringValue()
+	if !ok || id == "" {
+		return nil, invalidParams("projectId is required")
+	}
+	v := params.Get(field)
+	if v.IsNull() {
+		return nil, invalidParams("%s is required and must be a list of strings", field)
+	}
+	in, rerr := stringList(v, field+" must be a list of strings")
+	if rerr != nil {
+		return nil, rerr
+	}
+	validate := validateDenyPaths
+	if field == "watchSkip" {
+		validate = validateWatchSkip
+	}
+	add, rerr := checkedList(field, in, validate)
+	if rerr != nil {
+		return nil, rerr
+	}
+	var refused error
+	p, err := s.store.UpdateProjectLists(ctx, id, func(cur *store.Project) error {
+		target := &cur.DenyPaths
+		if field == "watchSkip" {
+			target = &cur.WatchSkip
+		}
+		merged, err := mergeEntries(field, *target, add)
+		if err != nil {
+			refused = err
+			return err
+		}
+		*target = merged
+		return nil
+	})
+	if refused != nil {
+		return nil, invalidParams("%s", refused.Error())
+	}
+	if err != nil {
+		return nil, &rpcError{Code: rpcInternal, Message: "cannot save the project"}
+	}
+	if p == nil {
+		return nil, invalidParams("unknown project")
+	}
+	s.audit.Log("project_updated", with(who, audit.Fields{Project: id}))
+	return map[string]any{"project": toProjectJSON(*p)}, nil
 }
 
 // projectHome is the project's HOME for its agent: <stateDir>/homes/<projectId>.

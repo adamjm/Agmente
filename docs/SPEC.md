@@ -149,8 +149,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `_agmente/projects/list` | — | `{ projects: [{ id, name, path, defaultMode }] }` |
-| `_agmente/projects/create` | `{ name, path, defaultMode?, denyPaths? }` | `{ project }` (`denyPaths`: additions to the secret deny-list, D-050; returned only when not empty) |
+| `_agmente/projects/list` | — | `{ projects: [{ id, name, path, defaultMode }] }` (`denyPaths` and `watchSkip` are added to a project only when not empty) |
+| `_agmente/projects/create` | `{ name, path, defaultMode?, denyPaths?, watchSkip? }` | `{ project }` (`denyPaths`: additions to the secret deny-list, D-050; `watchSkip`: folders the git watcher leaves out, D-065; each returned only when not empty) |
+| `_agmente/projects/addDenyPaths` | `{ projectId, denyPaths }` | `{ project }`: adds to the deny-list; never removes; same rules as create; 32 in total (D-066) |
+| `_agmente/projects/addWatchSkip` | `{ projectId, watchSkip }` | `{ project }`: adds to the watcher's skip list; never removes; same rules as create; 32 in total (D-066) |
 | `_agmente/sessions/index` | `{ projectId? }` | `{ sessions: [{ sessionId, projectId, title, status, lastActivity, headSeq, unread }] }` (D-030) |
 | `_agmente/sessions/read` | `{ sessionId, seq }` | `{ lastSeenSeq }`: the identity's read marker, which only moves forward (D-030) |
 | `_agmente/sessions/subscribe` | `{ sessionId, afterSeq }` | `{ headSeq }`, then notifications `_agmente/event { sessionId, seq, message }`: the replay up to `headSeq`, then live events (D-028) |

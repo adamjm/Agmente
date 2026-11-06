@@ -374,3 +374,37 @@ Append only. To change a decision, add a new entry that supersedes the old one. 
   - **Not built (BLOCKED):** delivery to APNs (3.11 second half): JWT signing with the `.p8` key, HTTP/2 to `api.sandbox.push.apple.com` or `api.push.apple.com`, removing a token that APNs reports as invalid, retry. The `aps-environment` entitlement and Push capability. Steps are in `docs/PUSH-TESTING.md`.
   - **Unregister on switch-off** is not wired in the app: turning notifications off in iOS Settings leaves the gateway holding a token that APNs will later reject. Delivery must delete a token on `BadDeviceToken` or `Unregistered`.
 - **Reason:** The owner asked for everything that can be built and tested without Apple. Registration is a plain stored value and can be tested end to end on the wire. Keying by the authenticated device keeps one device from changing another's token.
+
+## D-065 A project's own skip list for the git watcher (`watchSkip`)
+- **Date:** 2026-11-07
+- **Decision:** Extends D-037, which fixed the watcher's folders to a built-in list. FR-27, NFR-9.
+  - **Input.** `_agmente/projects/create` takes an optional `watchSkip`: at most 32 entries, each 1 to 100 characters of ASCII letters, digits, space and `. _ - /`. No `*` (so no glob), no `..`, `.` or empty component, no leading or trailing `/`, no leading or trailing space, no absolute path. A bad entry or a bad type is `-32602` naming `watchSkip`, and nothing is registered. Duplicates (case-insensitive) are dropped. The check is `validatePathList`, shared with `denyPaths` (D-050) with globs off.
+  - **Meaning.** A bare name skips a folder of that name at any depth, as the built-in names do. An entry with a `/` skips only the folder at that path from the project root. Matching is exact.
+  - **Only adds.** The skipped folders are the built-in names plus the project's entries. No input removes a built-in.
+  - **Effect.** The stat poll does not walk a skipped folder, so a change inside it starts no check and sends no `git/changed`. `git/status` still lists those files, and the diff paths are unchanged. The watcher reads the project again on each tick, so `addWatchSkip` (D-066) applies to a running watch.
+  - **Root.** The project folder itself is never skipped. Before this change, a project whose folder was called `target` or `Pods` had its whole watch skipped, because the built-in name check also ran on the root.
+  - **Baseline.** A new watch now starts from the folder fingerprint taken before its `git/status` runs (`watchBaseline`), instead of running one check on its first tick. The first tick used to run git status unconditionally, and git status lists untracked files in skipped folders, so a skipped change made in the first second after a status changed the hash and sent one notification. A change after the baseline is seen by the fingerprint; a change before it is already in the status. Cost: one extra walk on the first `git/status` of a project that has no watch. Not measured on a 200,000-file folder.
+  - **Storage.** Schema version 5 (D-067).
+- **Reason:** A project can have a large folder the built-in list does not know (generated data, a cache). Exact names and root-anchored paths are the smallest rule that covers it, and the same validator as the secret list keeps the input rules in one place.
+
+## D-066 Additive updates: `addDenyPaths` and `addWatchSkip`
+- **Date:** 2026-11-07
+- **Decision:** Builds the additive update that D-050 deferred. A project can get entries after it is created.
+  - **Methods.** `_agmente/projects/addDenyPaths {projectId, denyPaths}` and `_agmente/projects/addWatchSkip {projectId, watchSkip}`, each returning `{project}`. Both are answered by the gateway (D-024) and start no agent.
+  - **Refusals (`-32602`, nothing changed).** A missing `projectId`. A missing list, or a list that is not a JSON array of strings (`null` is refused, not read as empty). An unknown project: "unknown project". Any entry that fails the create rules for that list: the whole request is refused. A merged total over 32 entries: refused whole, with "holds at most 32 entries". The built-ins are not counted.
+  - **Merge.** Case-insensitive, the spelling already stored is kept, duplicates are dropped, new entries are appended in the order sent. An empty list is accepted and changes nothing.
+  - **Never removes.** The input type cannot express a removal. Built-ins are not in the stored list, so they cannot be removed by any request: the effective list is still built-ins first (`isSecretFor`, `secretExcludesFor`, D-050).
+  - **Takes effect at once.** There is no cache of the effective list. `git/status`, `git/diff`, `git/log`, `turnDiff` and the watcher (each tick) read the project from the database, so the next call after the response uses the new list.
+  - **Atomic.** The read, merge and write run in one transaction (D-067), so two adds at once cannot lose each other's entries.
+  - **Audit.** `project_updated` with the project id. The entries are not logged.
+  - **Not built.** Removing an entry (by design), and renaming or moving a project. An entry that is wrong has to be removed by editing the registry, which is a change for the owner and a new D-n entry if it is ever needed.
+- **Reason:** A project registered before a secret pattern or a heavy folder was known could not get one without a new registration, which needs a new path. Making the update a merge with a cap, and making removal impossible in the input type, is the same argument as D-050: a client cannot weaken the list it adds to.
+
+## D-067 Schema version 5, and one transaction for a project's lists
+- **Date:** 2026-11-07
+- **Decision:** Storage for D-065 and D-066.
+  - **Schema version 5:** `ALTER TABLE projects ADD COLUMN watch_skip TEXT`, a JSON array, NULL when none. A version 1 to 4 database is migrated in place and keeps its projects, with no skip list. The migration tests that rebuild an old shape (versions 1, 2 and 3) now also drop `watch_skip`, as the version 4 change did for `push_tokens`. The schema 4 migration test is in `store/store_watch_test.go`.
+  - **Reads.** Every project read uses one column list and one scanner (`projectColumns`, `scanProject`), so both lists are read the same way everywhere. `denyPaths` reads did not change.
+  - **Update.** `Store.UpdateProjectLists(ctx, id, fn)` runs the read, the change by `fn`, and the write in one transaction. The store has one connection and `BEGIN IMMEDIATE`, so two updates run one after another. If `fn` fails, nothing is written. An unknown id returns nil without calling `fn`.
+  - **No new table.**
+- **Reason:** The additive methods read a list, merge and write it back. Without one transaction, two requests could each read the same list and the second write would drop the first's entries. The store already serialises writes, so the transaction costs nothing extra.

@@ -47,8 +47,31 @@ type gitWatches struct {
 	m  map[string]*gitWatch
 }
 
-// watchGit adds a socket to a project's watchers. hash is the status hash it was just given.
-func (s *Server) watchGit(c *client, projectID, hash string) {
+// watchBaseline is the fingerprint of a project's folder taken before a git/status runs, when no
+// watch runs yet (D-065). A new watch starts from it, so a change made while git runs is seen, and
+// a change inside a skipped folder is not (the status would list it, but no check is gated by it).
+// It returns 0 when there is nothing to take; the watch then checks once, which is harmless.
+func (s *Server) watchBaseline(ctx context.Context, params *jsonv.Value) uint64 {
+	pid, ok := params.Get("projectId").StringValue()
+	if !ok {
+		return 0
+	}
+	s.watches.mu.Lock()
+	_, running := s.watches.m[pid]
+	s.watches.mu.Unlock()
+	if running {
+		return 0
+	}
+	p, err := s.store.ProjectByID(ctx, pid)
+	if err != nil || p == nil {
+		return 0
+	}
+	return fingerprint(p.Path, newWatchSkipper(p.WatchSkip))
+}
+
+// watchGit adds a socket to a project's watchers. hash is the status hash it was just given, and
+// baseline the fingerprint from watchBaseline, used only when this call starts the watch.
+func (s *Server) watchGit(c *client, projectID, hash string, baseline uint64) {
 	s.watches.mu.Lock()
 	defer s.watches.mu.Unlock()
 	if s.watches.m == nil {
@@ -59,7 +82,7 @@ func (s *Server) watchGit(c *client, projectID, hash string) {
 		w = &gitWatch{clients: map[*client]struct{}{}, lastHash: hash}
 		s.watches.m[projectID] = w
 		s.audit.Log("git_watch_start", with(c.who, audit.Fields{Project: projectID}))
-		go s.watchLoop(projectID, w)
+		go s.watchLoop(projectID, w, baseline)
 	}
 	w.mu.Lock()
 	w.clients[c] = struct{}{}
@@ -81,7 +104,7 @@ func (w *gitWatch) live() []*client {
 	return out
 }
 
-func (s *Server) watchLoop(projectID string, w *gitWatch) {
+func (s *Server) watchLoop(projectID string, w *gitWatch, baseline uint64) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.audit.Log("panic", audit.Fields{Project: projectID, Reason: "git_watch"})
@@ -103,15 +126,21 @@ func (s *Server) watchLoop(projectID string, w *gitWatch) {
 		stop()
 		return
 	}
-	last := fingerprint(project.Path)
-	dirty := true // the first quiet interval checks once, for a change between the status and now
+	// Compared with the fingerprint from before the status (watchBaseline), so a change after it
+	// starts a check. A change before it is in the status already and needs none.
+	last := baseline
+	dirty := false
 	ticker := time.NewTicker(watchInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		if stop() {
 			return
 		}
-		now := fingerprint(project.Path)
+		// Read the project again each tick, so an addWatchSkip takes effect without a restart (D-065).
+		if p, err := s.store.ProjectByID(ctx, projectID); err == nil && p != nil {
+			project = p
+		}
+		now := fingerprint(project.Path, newWatchSkipper(project.WatchSkip))
 		if now != last {
 			last, dirty = now, true
 			continue // wait for a quiet interval: the debounce
@@ -150,8 +179,8 @@ func (s *Server) watchLoop(projectID string, w *gitWatch) {
 
 // fingerprint hashes the name, size, modification time and mode of every file in the project,
 // without .git (only its HEAD, index, packed-refs and refs, which a commit or checkout changes)
-// and without the folders in skipDirs.
-func fingerprint(root string) uint64 {
+// and without the folders in skipDirs or in the project's watchSkip (D-065).
+func fingerprint(root string, skip watchSkipper) uint64 {
 	h := fnv.New64a()
 	var buf [24]byte
 	add := func(rel string, info fs.FileInfo) {
@@ -172,7 +201,7 @@ func fingerprint(root string) uint64 {
 				fingerprintGit(path, add)
 				return filepath.SkipDir
 			}
-			if skipDirs[d.Name()] {
+			if rel != "." && skip.skips(d.Name(), filepath.ToSlash(rel)) { // the root itself is never skipped
 				return filepath.SkipDir
 			}
 			// A folder's own modification time changes when an entry is added or removed, even

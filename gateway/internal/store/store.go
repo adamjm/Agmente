@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -94,6 +94,11 @@ var schemaV4 = []string{
 	) WITHOUT ROWID`,
 }
 
+// schemaV5 adds a project's watcher skip list (D-065): a JSON array, NULL when none.
+var schemaV5 = []string{
+	`ALTER TABLE projects ADD COLUMN watch_skip TEXT`,
+}
+
 // Store is one open database. It is safe for concurrent use.
 type Store struct {
 	db *sql.DB
@@ -154,7 +159,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -233,6 +238,7 @@ type Project struct {
 	DefaultMode string // "" when unset
 	Created     string
 	DenyPaths   []string // additions to the secret deny-list (D-050); the built-ins always apply
+	WatchSkip   []string // folders the git watcher adds to its skip list (D-065)
 }
 
 // ErrDuplicatePath means a project with the same path is already registered.
@@ -244,38 +250,54 @@ func (s *Store) CreateProject(ctx context.Context, p Project) error {
 	if p.DefaultMode != "" {
 		mode = p.DefaultMode
 	}
-	var deny any
-	if len(p.DenyPaths) > 0 {
-		b, err := json.Marshal(p.DenyPaths)
-		if err != nil {
-			return err
-		}
-		deny = string(b)
+	deny, err := encodeList(p.DenyPaths)
+	if err != nil {
+		return err
 	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths) VALUES (?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, mode, p.Created, deny)
+	skip, err := encodeList(p.WatchSkip)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths, watch_skip) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, mode, p.Created, deny, skip)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: projects.path") {
 		return ErrDuplicatePath
 	}
 	return err
 }
 
+// projectColumns is the SELECT list of every project read, in the order scanProject reads it.
+const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, '')`
+
+// scanProject reads one row of projectColumns.
+func scanProject(row interface{ Scan(...any) error }) (Project, error) {
+	var p Project
+	var deny, skip string
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip); err != nil {
+		return Project{}, err
+	}
+	var err error
+	if p.DenyPaths, err = parseList("stored denyPaths", deny); err != nil {
+		return Project{}, err
+	}
+	if p.WatchSkip, err = parseList("stored watchSkip", skip); err != nil {
+		return Project{}, err
+	}
+	return p, nil
+}
+
 // Projects lists every project, oldest first.
 func (s *Store) Projects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, '') FROM projects ORDER BY created, id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+projectColumns+` FROM projects ORDER BY created, id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []Project{}
 	for rows.Next() {
-		var p Project
-		var deny string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny); err != nil {
-			return nil, err
-		}
-		if p.DenyPaths, err = parseDeny(deny); err != nil {
+		p, err := scanProject(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -285,38 +307,74 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 
 // ProjectByPath returns the project registered at path, or nil.
 func (s *Store) ProjectByPath(ctx context.Context, path string) (*Project, error) {
-	var p Project
-	var deny string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, '') FROM projects WHERE path = ?`, path).
-		Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny)
+	return s.projectWhere(ctx, s.db, `path = ?`, path)
+}
+
+// ProjectByID returns the project with this id, or nil.
+func (s *Store) ProjectByID(ctx context.Context, id string) (*Project, error) {
+	return s.projectWhere(ctx, s.db, `id = ?`, id)
+}
+
+// queryer is the read part shared by *sql.DB and *sql.Tx.
+type queryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func (s *Store) projectWhere(ctx context.Context, q queryer, where string, arg any) (*Project, error) {
+	p, err := scanProject(q.QueryRowContext(ctx, `SELECT `+projectColumns+` FROM projects WHERE `+where, arg))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
-	}
-	if p.DenyPaths, err = parseDeny(deny); err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-// ProjectByID returns the project with this id, or nil.
-func (s *Store) ProjectByID(ctx context.Context, id string) (*Project, error) {
-	var p Project
-	var deny string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, '') FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+// UpdateProjectLists applies fn to a project's stored lists (D-066, D-067) in one transaction, so
+// two updates cannot lose each other's entries. fn may change DenyPaths and WatchSkip and must not
+// use the database. If fn returns an error nothing is written and that error is returned. It
+// returns the project as stored, or nil when no project has this id.
+func (s *Store) UpdateProjectLists(ctx context.Context, id string, fn func(p *Project) error) (*Project, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	if p.DenyPaths, err = parseDeny(deny); err != nil {
+	defer tx.Rollback()
+	p, err := s.projectWhere(ctx, tx, `id = ?`, id)
+	if err != nil || p == nil {
 		return nil, err
 	}
-	return &p, nil
+	if err := fn(p); err != nil {
+		return nil, err
+	}
+	deny, err := encodeList(p.DenyPaths)
+	if err != nil {
+		return nil, err
+	}
+	skip, err := encodeList(p.WatchSkip)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET deny_paths = ?, watch_skip = ? WHERE id = ?`, deny, skip, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// encodeList stores a list as a JSON array, or NULL when it is empty.
+func encodeList(list []string) (any, error) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(list)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 // RecordSession notes that a session belongs to a project. A new session starts "idle"; an
@@ -525,14 +583,14 @@ func (s *Store) Snapshot(ctx context.Context, sessionID string, turn int64) (sta
 	return a.String, b.String, err == nil, err
 }
 
-// parseDeny reads a stored deny_paths value ("" when none).
-func parseDeny(v string) ([]string, error) {
+// parseList reads a stored JSON array ("" when none).
+func parseList(what, v string) ([]string, error) {
 	if v == "" {
 		return nil, nil
 	}
 	var out []string
 	if err := json.Unmarshal([]byte(v), &out); err != nil {
-		return nil, fmt.Errorf("stored denyPaths: %w", err)
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return out, nil
 }
