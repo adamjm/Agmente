@@ -105,6 +105,8 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		return s.gitTurnDiff(ctx, params)
 	case "_agmente/git/log":
 		return s.gitLog(ctx, params)
+	case "_agmente/files/url":
+		return s.fileURL(ctx, who, params)
 	default:
 		return nil, &rpcError{Code: rpcMethodNotFound, Message: "Method not found"}
 	}

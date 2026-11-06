@@ -893,3 +893,29 @@
   - **Mutation check:** widening the token pattern to `{0,200}` made the bad-token wire test fail (141 pass, 1 fail); restored. Not run for the app side.
 - **BLOCKED:** APNs delivery (JWT with `.p8`, HTTP/2 send, invalid-token cleanup), the Push entitlement, and any check on a device. Steps: `docs/PUSH-TESTING.md`.
 - **Unverified:** that `sandbox` for Debug and `production` otherwise matches the real signing; that the app's token reaches the gateway on a real device (the simulator cannot register for remote notifications).
+
+### 2026-11-07 — Signed file URLs (PLAN 5.3, D-061 to D-064, T-37)
+- **Done:** `_agmente/files/url`, `GET`/`HEAD /f/<token>` on the `files.host` only, the `files` config block (key file or random key, TTL cap 300 s, size cap), audit events `file_url_issued`, `file_served`, `file_refused`, `extensions` now ends with `files`.
+- **Commands and results:**
+  - `(cd gateway && go vet ./... && go test ./...)`: pass (new Go unit tests for token sign/verify, path rules, type allow-list; config key-file tests).
+  - `node --test test/files.test.mjs`: 14 of 14 pass (T-37 cases: `../`, absolute, symlink to `/etc/passwd`, folder link to outside, symlink swapped after signing to outside and to `.env`, expired URL with `ttlSeconds: 1`, tampered token, token spliced from another path, `.env` and `denyPaths` entry, secret-named link, folder, named pipe, wrong Host, upgrade on files host (403), POST (405), HEAD, size cap at signing and at serving, nosniff, no-store, CSP on HTML, SVG as text, audit never holds the token, key file never in audit).
+  - `node --test test/supervisor.test.mjs`: 8 of 8 pass (extension list now includes `files`).
+  - `scripts/check.sh`: **not green.** Three full runs. Run 1 failed in `test/lifecycle.test.mjs` (T-46 subscriber case, assertion "the idle time counts from when the subscriber left"). Run 2 (the one with the exit code recorded, 155 of 156) failed on the same test. Run 3 failed on `test/git*.test.mjs` "a change to a file sends one notification with the new status hash". In each run the failure was a timing assertion under full-suite load. The T-46 subscriber test passed 3 of 3 when run alone.
+- **Mutation checks** (`node --test test/files.test.mjs` after each change to `files.go`, source restored and rebuilt after each):
+  | Mutant | Result |
+  | --- | --- |
+  | containment check off (sign and serve) | 2 tests fail (outside paths, swapped symlink) |
+  | expiry check off | expired-URL test fails |
+  | inner (realpath) deny-list check off | 2 tests fail |
+  | outer (name) deny-list check off at signing | caught only after adding the secret-named link case: 1 test fails |
+  | Host check always true | 12 tests fail |
+  | MAC comparison off | tampered-token test fails |
+  | serve-time size checks off (both) | size test fails |
+  | serve-time realpath recheck off (first and post-open) | swapped-symlink test fails |
+  | post-open `SameFile` recheck off only | **survives** (see Not tested) |
+- **Not tested:**
+  - The post-open `SameFile` recheck: a race between the check and `open` cannot be reproduced over the wire. Only the first serve-time check is covered by the swap test.
+  - Caddy routing of `files.host` and whether the client-certificate rule applies to it (D-061): not checked on any host.
+  - The gate itself: not green; the timing flakes above are unresolved. They are not caused by this change as far as the code shows, but a clean base-commit run was not done, so that is unverified.
+  - No app (WKWebView) side (PLAN 5.4 and 5.5).
+- **Environment note:** `.claude/settings.json` is untracked in the main checkout, so I copied it into the worktree to run the gate. It is not committed, and I removed it afterwards. `npm ci --prefix gateway` installed from the lockfile in this worktree.

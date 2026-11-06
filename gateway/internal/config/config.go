@@ -69,6 +69,7 @@ type Config struct {
 	Roots          []string
 	StateDir       string
 	Limits         Limits
+	Files          *Files // signed file URLs (PLAN 5.3); nil when off
 }
 
 // limitKeys in the order of DEFAULT_LIMITS (SPEC NFR-3, NFR-4, NFR-5).
@@ -306,10 +307,14 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		add("limits.maxAgentsPerIdentity must not exceed limits.maxAgentsTotal")
 	}
 
+	filesCfg, filesErrs := validateFiles(raw.Get("files"))
+	errs = append(errs, filesErrs...)
+
 	if len(errs) > 0 {
 		return nil, &Error{errs}
 	}
 	return &Config{
+		Files:          filesCfg,
 		Runner:         runner,
 		ListenHost:     host,
 		ListenPort:     int(port),

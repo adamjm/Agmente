@@ -15,6 +15,7 @@
   "projects": { "roots": ["/srv/agmente/projects"] },
   "stateDir": "/var/lib/agmente/state",
   "runner": { "kind": "podman", "image": "agmente-bob:2.0.9" },
+  "files": { "host": "files.example.com", "ttlSeconds": 300, "maxBytes": 20971520 },
   "limits": {
     "maxMessageBytes": 16777216,
     "maxAgentsPerIdentity": 1,

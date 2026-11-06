@@ -31,7 +31,7 @@ const killGrace = 2 * time.Second
 const Version = "0.3.0-dev"
 
 // extensions lists the _agmente/* method groups this gateway serves (D-026).
-var extensions = []string{"projects", "sessions", "approvals", "git", "push"}
+var extensions = []string{"projects", "sessions", "approvals", "git", "push", "files"}
 
 //go:embed default-initialize.json
 var defaultInitialize []byte // Bob 2.0.9's initialize result (F-11), until an agent has started
@@ -279,6 +279,16 @@ func (s *Server) route(ctx context.Context, c *client, msg *jsonv.Value, method 
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The files host serves signed files only, and never the ACP socket (D-061, ARCHITECTURE 2.5).
+	if s.isFilesHost(r) {
+		if isUpgrade(r) {
+			s.audit.Log("reject", audit.Fields{Client: clientKey(r, s.cfg.TrustProxy), Status: 403, Reason: "files_host"})
+			reject(w, http.StatusForbidden, nil)
+			return
+		}
+		s.serveFile(w, r)
+		return
+	}
 	if isUpgrade(r) {
 		s.handleUpgrade(w, r)
 		return

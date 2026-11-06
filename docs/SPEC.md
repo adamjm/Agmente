@@ -162,7 +162,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 | `_agmente/git/turnDiff` | `{ sessionId, turn }` | `{ diff, truncated, hidden, fromTree, toTree }` (D-036) |
 | `_agmente/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
 | `_agmente/push/register`, `_agmente/push/unregister` | `{ deviceToken, environment }` (`sandbox` or `production`), none | `{}` (D-052; the token is kept per identity and device) |
-| `_agmente/files/url` | `{ projectId, path }` | `{ url, expiresAt }` |
+| `_agmente/files/url` | `{ projectId, path }` | `{ url, expiresAt }`: `url` is `https://<files.host>/f/<token>`; `path` is relative to the project and must pass D-063; refusals are `-32602`, a disabled feature `-32000` (D-061, D-062) |
 | `_agmente/mcp/list`, `_agmente/mcp/set` | `{ projectId?, name, disabled?, alwaysAllow? }` | `{ servers }` |
 | `_agmente/skills/list`, `put`, `delete` | `{ scope, name, content? }` | `{ skills }` |
 
@@ -170,7 +170,7 @@ Shapes are a draft. Each phase confirms them in its plan notes and records chang
 
 ### 6.3 Gateway config file
 
-JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)).
+JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)), `files` (optional, D-061: `host` (required, the files host name), `ttlSeconds` (1 to 300, default 300, NFR-12), `maxBytes` (default 20 MiB), `secretFile` (optional absolute path to a key file, mode 0600 or stricter, at least 32 bytes; no key in the config). Absent means signed file URLs are off).
 
 ### 6.4 Gateway CLI
 

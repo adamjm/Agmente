@@ -152,7 +152,7 @@ Goal: the app shows agent images and HTML without new risk. Closes T-36 to T-39.
 
 - [x] 5.1 Parse `image`, `resource` and `resource_link` content blocks in `SessionUpdateParsing` and the Codex path. (ACP only; Codex has no inbound image item, D-060.)
 - [x] 5.2 Image view with ImageIO downsampling and MIME allow-list. Check: T-36.
-- [ ] 5.3 Gateway signed file URLs on a separate preview host. Check: T-37.
+- [x] 5.3 Gateway signed file URLs on a separate preview host. Check: T-37. (D-061 to D-064; 14 wire tests in `gateway/test/files.test.mjs`; Caddy routing of the files host is "verify" and not checked on the host.)
 - [ ] 5.4 HTML preview view. Check: T-38.
 - [ ] 5.5 Answer Q-2 on Bob. Check: T-39.
 
