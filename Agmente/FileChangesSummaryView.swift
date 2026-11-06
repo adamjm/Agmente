@@ -74,6 +74,8 @@ struct FileChangesSummaryView: View {
     let items: [FileChangeSummaryItem]
     let onUndo: () -> Void
     let onReview: () -> Void
+    /// Set on a gateway that offers git: shows what the whole turn changed (FR-31).
+    var onTurnDiff: (() -> Void)? = nil
 
     private var uniqueItems: [FileChangeSummaryItem] {
         var chosen: [String: FileChangeSummaryItem] = [:]
@@ -141,6 +143,13 @@ struct FileChangesSummaryView: View {
                     .foregroundStyle(.primary)
 
                 Spacer()
+
+                if let onTurnDiff {
+                    Button("Turn diff", action: onTurnDiff)
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("turnDiffButton")
+                }
 
                 Button("Undo", action: onUndo)
                     .font(.caption.weight(.semibold))

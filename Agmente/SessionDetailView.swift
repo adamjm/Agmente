@@ -132,6 +132,8 @@ struct SessionDetailView: View {
         .sheet(isPresented: $showFileChangesReview) {
             FileChangesReviewSheet(items: fileChangesForReview)
         }
+        .gitSessionToolbar(store: model.gitStore, sessionId: serverViewModel.sessionId,
+                           enabled: serverViewModel.isGatewayServer && model.gitStore.supportsGit)
         .toolbar {
             if model.canDeleteSessionsLocally, !serverViewModel.sessionId.isEmpty {
                 let placement: ToolbarItemPlacement = {
@@ -804,10 +806,20 @@ private extension SessionDetailView {
                     onReview: {
                         fileChangesForReview = fileChangeItems
                         showFileChangesReview = true
-                    }
+                    },
+                    onTurnDiff: turnDiffAction(for: message)
                 )
             }
         }
+    }
+
+    /// The "Turn diff" action for a message's file-change row: only on a gateway that offers git, and
+    /// only when the message follows a user message (that gives its turn number, see GitTurnIndex).
+    func turnDiffAction(for message: ChatMessage) -> (() -> Void)? {
+        guard model.gitStore.supportsGit, serverViewModel.isGatewayServer, !serverViewModel.sessionId.isEmpty,
+              let turn = GitTurnIndex.turn(forMessageId: message.id, in: sessionViewModel.chatMessages) else { return nil }
+        let sessionId = serverViewModel.sessionId
+        return { model.gitStore.requestTurnDiff(sessionId: sessionId, turn: turn) }
     }
 
     func displaySegments(for message: ChatMessage) -> [AssistantSegment] {

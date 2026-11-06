@@ -210,6 +210,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     @Published private(set) var gatewayInfos: [UUID: GatewayInfo] = [:]
     /// The selected gateway's open approvals (FR-22). The home shows a banner for them.
     let gatewayApprovals = ApprovalsInboxModel()
+    /// Read-only git state of the selected gateway's projects (FR-31).
+    lazy var gitStore = GitStore(serverId: { [weak self] in self?.selectedServerId },
+                                 client: { [weak self] in self?.selectedGatewayClient() },
+                                 supportsGit: { [weak self] in self?.selectedGatewayInfo?.supports("git") == true })
     private let encoder = JSONEncoder()
     private var pendingRequests: [ACP.ID: String] = [:]
     private var codexAckNeeded: Set<UUID> = []
@@ -2391,11 +2395,16 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
                 loadPendingSessionIfPossible()
                 // A reconnect drops the gateway's subscription; subscribe again from the last event applied.
                 selectedServerViewModel?.resubscribeGatewaySessionIfNeeded()
+                gitStore.connectionReset()
             }
             
         case .notification(let notification):
             if notification.method == GatewayEvent.method {
                 handleGatewayEvent(notification.params)
+                return
+            }
+            if notification.method == GatewayGitChanged.method {
+                gitStore.handleChanged(notification.params)
                 return
             }
             append(render("Notification", method: notification.method, payload: notification.params))

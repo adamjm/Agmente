@@ -41,6 +41,7 @@ struct GatewayStatusBadge: View {
 struct GatewayHomeSections: View {
     @ObservedObject var home: GatewayHomeModel
     let search: String
+    var git: GitStore?
     let open: (String) -> Void
 
     var body: some View {
@@ -73,9 +74,12 @@ struct GatewayHomeSections: View {
                                 .foregroundStyle(.white)
                         }
                         Spacer()
+                        if let git, section.project != nil, git.supportsGit {
+                            GitHomeChip(store: git, projectId: section.id)
+                        }
                     }
                     .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("gatewayProject.\(section.id)")
                     if section.sessions.isEmpty {
                         Text("No sessions yet").font(.footnote).foregroundStyle(.tertiary)
