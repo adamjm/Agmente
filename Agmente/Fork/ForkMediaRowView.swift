@@ -11,7 +11,7 @@ final class ForkMediaRowView: BaseRowView {
         case .image:
             let size = item.fittedSize(maxWidth: width, maxHeight: maxImageHeight)
             return max(size.height, 1)
-        case .placeholder, .link:
+        case .placeholder, .link, .html:
             return placeholderHeight
         }
     }
@@ -21,7 +21,9 @@ final class ForkMediaRowView: BaseRowView {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let detailLabel = UILabel()
+    private let previewButton = UIButton(type: .system)
     private var item: ForkMediaItem?
+    private var onPreviewHTML: ((String) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -44,6 +46,15 @@ final class ForkMediaRowView: BaseRowView {
         detailLabel.textColor = .secondaryLabel
         detailLabel.lineBreakMode = .byTruncatingMiddle
 
+        var previewConfig = UIButton.Configuration.bordered()
+        previewConfig.title = "HTML preview"
+        previewConfig.buttonSize = .small
+        previewButton.configuration = previewConfig
+        previewButton.isHidden = true
+        previewButton.accessibilityIdentifier = "agentHTMLPreviewButton"
+        previewButton.addTarget(self, action: #selector(previewTapped), for: .touchUpInside)
+        card.addSubview(previewButton)
+
         rowContainer.addSubview(imageView)
         rowContainer.addSubview(card)
         card.addSubview(iconView)
@@ -51,8 +62,10 @@ final class ForkMediaRowView: BaseRowView {
         card.addSubview(detailLabel)
     }
 
-    func configure(item: ForkMediaItem) {
+    func configure(item: ForkMediaItem, onPreviewHTML: ((String) -> Void)? = nil) {
         self.item = item
+        self.onPreviewHTML = onPreviewHTML
+        previewButton.isHidden = true
         switch item.content {
         case .image(let image):
             imageView.image = UIImage(cgImage: image)
@@ -63,6 +76,10 @@ final class ForkMediaRowView: BaseRowView {
         case .link(let title, let uri, let detail):
             // A plain label, not a tappable link and never loaded (PLAN 5.1).
             show(icon: "link", title: title, detail: detail.isEmpty ? uri : "\(uri) · \(detail)")
+        case .html:
+            // Source is not shown in the chat row; the sandboxed preview is the only view of it (FR-39).
+            show(icon: "doc.richtext", title: "HTML", detail: "Sandboxed preview, no network")
+            previewButton.isHidden = onPreviewHTML == nil
         }
         setNeedsLayout()
     }
@@ -76,6 +93,11 @@ final class ForkMediaRowView: BaseRowView {
         detailLabel.text = detail
     }
 
+    @objc private func previewTapped() {
+        guard let item, case .html(let source) = item.content else { return }
+        onPreviewHTML?(source)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let bounds = rowContainer.bounds
@@ -84,11 +106,15 @@ final class ForkMediaRowView: BaseRowView {
         case .image:
             let size = item.fittedSize(maxWidth: bounds.width, maxHeight: Self.maxImageHeight)
             imageView.frame = CGRect(origin: .zero, size: size)
-        case .placeholder, .link:
+        case .placeholder, .link, .html:
             card.frame = CGRect(x: 0, y: 0, width: bounds.width, height: Self.placeholderHeight)
             iconView.frame = CGRect(x: 12, y: (Self.placeholderHeight - 18) / 2, width: 18, height: 18)
             let x: CGFloat = 38
-            let w = max(0, bounds.width - x - 12)
+            let buttonWidth: CGFloat = previewButton.isHidden ? 0 : 116
+            if !previewButton.isHidden {
+                previewButton.frame = CGRect(x: bounds.width - buttonWidth - 8, y: (Self.placeholderHeight - 30) / 2, width: buttonWidth, height: 30)
+            }
+            let w = max(0, bounds.width - x - 12 - (buttonWidth > 0 ? buttonWidth + 8 : 0))
             titleLabel.frame = CGRect(x: x, y: 5, width: w, height: 18)
             detailLabel.frame = CGRect(x: x, y: 23, width: w, height: 16)
         }

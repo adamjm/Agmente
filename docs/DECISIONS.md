@@ -520,3 +520,47 @@ Append only. To change a decision, add a new entry that supersedes the old one. 
   - **Flow.** "Delete Session" (existing confirmation dialog) sends `session/delete {sessionId}` when the capability is set and the session exists on the agent (not a placeholder that was never created). On success the session is removed from the list, its chat and its storage, as before. On an error, or when not connected while the capability is set, nothing is removed locally and an alert shows the text from `ACPAgentErrorText`. Without the capability, or for a placeholder, the local removal is unchanged.
   - **Gateway.** Forwards `session/delete` and, when the agent accepts it, removes the session from its index, events and read markers (D-030, `sessions.test.mjs`). No gateway change.
 - **Reason:** Deleting only locally would leave the session on Bob and in the gateway index, where it still shows. Removing locally only after the agent accepts means a refusal never hides a session that still exists.
+
+## D-074 Agent HTML runs in a sandboxed web view with no network and no bridge
+- **Date:** 2026-11-07
+- **Decision:** PLAN 5.4 (FR-39, T-38). `Agmente/Fork/Preview/AgentHTMLPreviewController.swift` (the `WKWebView` owner and its delegates), `AgentHTMLPreviewSheet.swift` (the sheet and the representable) and `AgentHTMLSchemeHandler` in the controller file. Layers, each of which alone stops a network load or a script bridge:
+  1. `WKWebsiteDataStore.nonPersistent()`; `isInspectable = false`; link previews off.
+  2. A compiled `WKContentRuleList` (`block` on `.*`, then `ignore-previous-rules` for `agmente-preview:`, `about:` and `data:`), added to the user content controller before the first load. If it does not compile, nothing loads (fail closed).
+  3. The Content-Security-Policy in the document (D-075).
+  4. JavaScript off by default. `WKWebpagePreferences.allowsContentJavaScript` is set for each navigation from the view's scripts setting. Turning scripts on loads the document again under the new policy.
+  5. `WKNavigationDelegate` allows one main-frame load of the base URL and in-page fragments. Every other navigation is cancelled. A tapped link is passed to the sheet as text and never opened.
+  6. `WKUIDelegate`: no new windows, alerts and confirms auto-answered, no file picker, camera and microphone denied.
+  7. No `WKScriptMessageHandler`, so the page has no bridge to the app.
+  - The base URL is `agmente-preview://page/`. The scheme handler fails every request. The document is supplied with `loadHTMLString`, so the handler serves nothing; the spec's "serves the document" is met by `loadHTMLString`, not by the handler.
+  - Geolocation: WebKit on iOS has no delegate for it. It is not blocked by code; the app has no location usage text, so it is not expected to be prompted (unverified on device).
+- **Reason:** Agent HTML is untrusted input (ARCHITECTURE trust boundary 5). No single layer is trusted: the test measures what each one does (RESULTS 2026-11-07).
+
+## D-075 The preview document: policy first, structural tags removed from agent HTML
+- **Date:** 2026-11-07
+- **Decision:** PLAN 5.4 (FR-39). `AgentHTMLSecurity.wrap(_:scriptsEnabled:)` in `Agmente/Fork/Preview/AgentHTMLDocument.swift` builds the document string.
+  - The policy is `default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`, and `script-src 'unsafe-inline'` is added only when scripts are on. `base-uri` and `form-action` are added to the brief's policy: they do not fall back to `default-src`, so without them a base tag or a form could still reach the network.
+  - The policy is the first element of the head, before any agent content. The agent's HTML goes in the body.
+  - Every `<!doctype>`, `<html>`, `<head>`, `<body>`, `<base>` and `<meta>` tag in the agent's HTML is removed, so an agent cannot set a base URL, a second policy, a refresh, a charset or a new document structure. `<link>` is left: its loads are blocked by the policy and the rule list (D-074). Removal repeats until nothing matches, so a tag that appears only after another is removed is removed too (`<<base href>base href>`).
+  - Agent HTML over 1 MiB is refused (`maxSourceBytes`).
+  - Limit: the removal is textual, not an HTML parse. A `<meta` or `<base` string inside agent JavaScript or a comment is also removed. That changes the agent's text, never its network access.
+- **Reason:** The unit tests in `AgentHTMLDocumentTests` check: one policy even when the agent sends its own, no base tag, the `</head>` trick, nested tags, and the policy's scripts setting. The policy is enforced by WebKit, not by the removal; the removal is a second layer that keeps the document as the code describes it.
+
+## D-076 Chat wiring: fenced html blocks and `text/html` resources get a preview row; nothing is fetched
+- **Date:** 2026-11-07
+- **Decision:** PLAN 5.4 (FR-39, D-060).
+  - A fenced ```` ```html ```` (or `htm`) block in an assistant message gets its own row after the message text, with an "HTML preview" button (`HTMLFenceScanner`, at most 8 blocks per message). The row is built in `ChatEntryMapper` from the message text, so it is also present after a restored chat.
+  - A `resource` block with MIME `text/html` (parameters allowed) becomes `ForkMediaItem.Content.html`: the `text`, or the base64 `blob` decoded as UTF-8. Both are size-capped at 1 MiB (the base64 length at its own cap). A malformed or oversized one is a placeholder row. A `resource_link` is still a plain row and is never fetched (PLAN 5.3 is the gateway's signed URL work).
+  - The button opens `AgentHTMLPreviewSheet` through `ChatEntryActionHandlers.onPreviewHTML`, in both `SessionDetailView` (ACP) and `CodexSessionDetailView`. The sheet has the scripts toggle (off by default), the label "Sandboxed preview: no network", a line showing a tapped link as text, and Done.
+  - The chat row shows no HTML source; only the sandboxed preview displays it.
+  - ACP and Codex share the mapper and the row, which is a view of content, not protocol logic. Codex has no inbound media (D-060), but its markdown can hold an html fence, so Codex gets the same row.
+- **Reason:** The brief's places where agent HTML can appear. Taking the text from the message keeps one code path for both protocols and for restored chats.
+
+## D-077 T-38 runs in the real web view against a loopback probe; the probe must see a control request
+- **Date:** 2026-11-07
+- **Decision:** PLAN 5.4 check (T-38), `AgmenteTests/AgentHTMLPreviewTests.swift`.
+  - The hostile page sends requests through `fetch`, `XMLHttpRequest`, an external `<img>`, a relative `<img>` under a hostile `<base>`, a stylesheet `<link>`, an `<iframe>`, a form submit (after a timer), `window.open`, `location =` top navigation (after a timer), and a `<meta http-equiv="refresh">`. The `<meta>` also tries to replace the policy.
+  - The probe is a POSIX TCP listener bound to `127.0.0.1` on an ephemeral port (no dependency). It counts accepted connections and bytes. Pass means 0 accepted connections, with scripts off and with scripts on.
+  - The page loads in a `WKWebView` in a `UIWindow` in the unit-test host. Each load waits at most 15 s. After it finishes, the test waits 3 s for timers and requests.
+  - A control test loads the same page in an unrestricted `WKWebView`, and must see at least one connection. Without it, zero counts could mean the probe is blind. The control polls for up to 15 s, because a cold WebKit start can take several seconds.
+  - Mutation checks are recorded in RESULTS 2026-11-07. Removing the rule list alone, or allowing all navigation alone, does not fail T-38 (each is covered by another layer). Both together fail the scripts-on case. All three layers removed fail both cases.
+- **Reason:** T-38 has to exercise the real engine, and only a control proves the detector works. Recording which layer catches what is more useful than a single pass.

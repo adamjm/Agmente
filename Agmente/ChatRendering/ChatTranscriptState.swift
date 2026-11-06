@@ -34,6 +34,8 @@ struct ChatEntryActionHandlers {
     /// Whether the file-change row of a message offers "Turn diff" (a gateway with git), and what it does.
     var canTurnDiff: ((UUID) -> Bool)?
     var onTurnDiff: ((UUID) -> Void)?
+    /// Opens the sandboxed HTML preview for a fenced html block or an HTML resource (PLAN 5.4).
+    var onPreviewHTML: ((String) -> Void)?
 
     static let none = ChatEntryActionHandlers()
 }

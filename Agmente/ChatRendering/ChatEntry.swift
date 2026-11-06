@@ -129,9 +129,9 @@ struct ChatEntry: Identifiable, Hashable {
         )
     }
 
-    static func media(messageId: UUID, segmentId: UUID, item: ForkMediaItem) -> ChatEntry {
+    static func media(messageId: UUID, segmentId: UUID, item: ForkMediaItem, index: Int = 0) -> ChatEntry {
         ChatEntry(
-            id: "message.\(messageId.uuidString).media.\(segmentId.uuidString)",
+            id: "message.\(messageId.uuidString).media.\(segmentId.uuidString).\(index)",
             kind: .media,
             text: item.fallbackText,
             media: item,

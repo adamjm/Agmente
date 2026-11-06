@@ -1025,3 +1025,32 @@ Outcome: the image is dropped before ACP. FR-37 (phase 5 images from tool result
 - **Not verified:** how the plan, usage line, title and delete alert look on screen (the simulator was not driven, per the owner's instruction). The shapes of Bob's `plan_update`, `plan_removed` and `usage_update` (no recorded payload; D-070 marks them "verify"). Bob's real `session/delete` and the `-32000` text were not run with a live key. Whether Bob's `session_info_update` after a `session/new` with `_meta` behaves the same (the start mode was tested against the fake agent only).
 - **Unverified (tick check):** 4.7, 4.8 and 4.10 are ticked on unit, mutation and wire evidence. 4.9 stays open: T-35 asks for the on-screen auth message, and that was not seen.
 
+
+## 2026-11-07 HTML preview in a sandboxed WKWebView, T-38 (PLAN 5.4; D-074 to D-077)
+- **Done:** `Agmente/Fork/Preview/` (`AgentHTMLDocument.swift`: policy and sanitizer; `AgentHTMLPreviewController.swift`: the web view, rule list, navigation and UI delegates, scheme handler; `AgentHTMLPreviewSheet.swift`: sheet and representable). Chat: fenced `html` blocks and `resource` blocks with `text/html` get an "HTML preview" row (`ForkMediaRowView`, `ChatEntryMapper`), wired in `SessionDetailView` and `CodexSessionDetailView`. `resource_link` is still never fetched.
+- **Result: PASS for T-38** (scripts off and on), in a real `WKWebView` in a window in the unit-test host, against a loopback probe on `127.0.0.1` (POSIX socket, no dependency). Both cases: 0 connections. A control test loads the same page in an unrestricted web view and sees at least one connection, so the zero counts are not from a blind probe.
+- **Unit tests:** `AgentHTMLDocumentTests` (policy injected once even with the agent's own meta policy; policy first in the head; `script-src` only when scripts are on; `<base>` and `<meta>` removed; `</head>` trick; nested tags; fence scanner), `AgentHTMLIngestTests` (`text/html` text and blob; malformed and oversize placeholders; `resource_link` stays a link).
+- **Commands:**
+  - `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/dd-preview -only-testing:AgmenteTests/AgentHTMLPreviewTests test`: 4 tests pass (T-38 scripts off, scripts on, control, and a final run with the control poll).
+  - Full app run, `-only-testing:AgmenteTests test`: TEST SUCCEEDED, 222 XCTest cases, 0 failures; Swift Testing run 46 tests passed.
+  - `scripts/check.sh`: "All checks passed." (wire suite, Go vet and tests, docs cross-check, Swift packages).
+- **Mutation checks** (one change at a time, source restored after each; the sources were checked against a saved copy):
+
+  | Mutation | Scripts off | Scripts on | Result |
+  | --- | --- | --- | --- |
+  | Content rule list not installed | pass (0 connections) | pass (0) | does not fail: CSP blocks every load on its own |
+  | Navigation: allow everything | pass | pass | does not fail: the rule list blocks the top navigation |
+  | Rule list off and navigation allow-all | pass | **fail: 4 connections, 1828 bytes** | fails T-38 |
+  | Rule list off, navigation allow-all, and CSP removed | **fail: 12 connections, 5316 bytes** | **fail: 24 connections, 10288 bytes** | fails T-38 |
+
+  Reading: each network layer catches the others' gaps. T-38 fails only when all of the layers the test covers are removed, with the scripts-on case the first to fail. The rule list and the CSP are each enough alone. That is the defence in depth D-074 describes, but it means T-38 alone cannot say which layer holds.
+- **Flakes, not reproduced:** the test host was killed by a signal ("Test crashed with signal kill", `before establishing connection` in one case) on three runs: the first run after the rule-list mutation, the first run after the allow-all mutation, and the first combined run. Each identical rerun passed or ran through. The simulator is shared with another session, and that session's runs may have interfered; the cause is not confirmed. The control test failed once with a fixed 4 s wait, and it now polls for up to 15 s.
+- **Fixes during the run:** `WKOpenPanelParameters` is iOS 18.4+ (the app targets 18.0), so the file-picker delegate is `@available(iOS 18.4, *)`; the representable's coordinator is `@MainActor`.
+- **Not done:** PLAN 5.5 (Q-2, whether Bob forwards image blocks from MCP tool results) needs a live Bob run with an MCP tool that returns an image. Not run in this task, so 5.5 stays unticked.
+- **Environment note:** the worktree's base commit does not track `.claude/settings.json`, which `scripts/check.sh` reads. For the gate run I copied the main checkout's file in, uncommitted, and removed it afterwards. `npm ci --prefix gateway` was needed in the worktree.
+- **Unverified (not seen on a screen):**
+  - The sheet and the chat row were not seen in the simulator; no UI was driven (another session uses the simulator). Layout, the toggle, the Done button, and the row's button placement are untested visually.
+  - Geolocation prompts in the web view on iOS (no delegate; expected not to prompt because the app has no location usage text).
+  - Behaviour on a device (the simulator does not enforce every WebKit policy in the same way).
+  - Whether `ignore-previous-rules` behaves the same on every iOS version the app supports (checked on iOS 27.2 simulator only).
+  - Whether a hostile page can make visible content look like a link that navigates (blocked links appear as text only, by design; not tested on screen).
