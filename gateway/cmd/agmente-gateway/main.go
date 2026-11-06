@@ -152,7 +152,9 @@ func printSummary(cfg *config.Config) int {
 		StateDir       string        `json:"stateDir"`
 		Limits         config.Limits `json:"limits"`
 		Push           any           `json:"push"`
+		Files          any           `json:"files"`
 	}{
+		Files:          filesSummary(cfg.Files),
 		Listen:         fmt.Sprintf("%s:%d", cfg.ListenHost, cfg.ListenPort),
 		Runner:         cfg.Runner,
 		TrustProxy:     cfg.TrustProxy,
@@ -172,6 +174,20 @@ func printSummary(cfg *config.Config) int {
 	}
 	fmt.Fprintln(os.Stdout, "Config OK (dry run).")
 	return 0
+}
+
+// filesSummary describes the files block without its key. Nil when the feature is off.
+func filesSummary(f *config.Files) any {
+	if f == nil {
+		return nil
+	}
+	out := map[string]any{"host": f.Host, "ttlSeconds": f.TTLSeconds, "maxBytes": f.MaxBytes}
+	if f.SecretFile != "" {
+		out["keyFile"] = f.SecretFile
+	} else {
+		out["key"] = "random per process"
+	}
+	return out
 }
 
 // newToken prints a new random token once, and the config entry that holds only its hash.

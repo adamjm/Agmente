@@ -91,12 +91,14 @@ Turn snapshot (D-036): list the files, hash them with `git hash-object --no-filt
 ### 2.5 File preview (phase 5)
 
 ```
-Phone ─files/url(path)─▶ Gateway: realpath inside project root? ── no ─▶ error
-                                 ─▶ HMAC-signed URL on preview host, expires ≤ 300 s
-Phone WKWebView / image loader ─▶ preview host ─▶ verify signature + expiry ── fail ─▶ 403
+Phone ─files/url(path)─▶ Gateway: path syntax, deny-list, realpath inside project root, regular file? ── no ─▶ error
+                                 ─▶ HMAC-SHA256 token {projectId, path, expiry} on the files host, expires ≤ 300 s (D-061)
+Phone WKWebView / image loader ─▶ files host (Host header) ─▶ verify MAC + expiry ── fail ─▶ 403
+                                 ─▶ check the path again: realpath inside root, not secret, same file as the open descriptor (D-063)
+                                 ─▶ headers: nosniff, no-store, inline, CSP for HTML; GET and HEAD only (D-062)
 ```
 
-The preview host is a different hostname from the ACP endpoint. A hostile page cannot reach the ACP socket or its cookies.
+The preview host is a different hostname from the ACP endpoint. Only a request whose Host is the files host reaches the file handler, and an upgrade there gets 403, so a hostile page cannot reach the ACP socket or its cookies. The check is repeated at each serve, so a symlink changed after signing is refused.
 
 ## 3. Trust boundaries
 
