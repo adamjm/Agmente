@@ -5,11 +5,13 @@ import ACPClient
 final class FileChangesRowView: BaseRowView {
     private var onUndo: (() -> Void)?
     private var onReview: (([FileChangeSummaryItem]) -> Void)?
+    private var onTurnDiff: (() -> Void)?
     private var items: [FileChangeSummaryItem] = []
     private var itemRows: [FileChangePreviewRowView] = []
 
     private let card = UIView()
     private let summaryLabel = UILabel()
+    private let turnDiffButton = ActionButton(type: .system)
     private let undoButton = ActionButton(type: .system)
     private let reviewButton = ActionButton(type: .system)
 
@@ -36,6 +38,20 @@ final class FileChangesRowView: BaseRowView {
         }
         undoButton.configuration = undoConfig
 
+        var turnDiffConfig = UIButton.Configuration.bordered()
+        turnDiffConfig.title = "Turn diff"
+        turnDiffConfig.baseForegroundColor = .systemBlue
+        turnDiffConfig.cornerStyle = .capsule
+        turnDiffConfig.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+        turnDiffConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .preferredFont(forTextStyle: .caption1).withWeight(.semibold)
+            return outgoing
+        }
+        turnDiffButton.configuration = turnDiffConfig
+        turnDiffButton.accessibilityIdentifier = "turnDiffButton"
+        turnDiffButton.isHidden = true
+
         var reviewConfig = UIButton.Configuration.borderedProminent()
         reviewConfig.title = "Review"
         reviewConfig.baseForegroundColor = .white
@@ -51,11 +67,15 @@ final class FileChangesRowView: BaseRowView {
 
         rowContainer.addSubview(card)
         card.addSubview(summaryLabel)
+        card.addSubview(turnDiffButton)
         card.addSubview(undoButton)
         card.addSubview(reviewButton)
 
         undoButton.action = { [weak self] in
             self?.onUndo?()
+        }
+        turnDiffButton.action = { [weak self] in
+            self?.onTurnDiff?()
         }
         reviewButton.action = { [weak self] in
             guard let self else { return }
@@ -63,10 +83,12 @@ final class FileChangesRowView: BaseRowView {
         }
     }
 
-    func configure(items: [FileChangeSummaryItem], onUndo: @escaping () -> Void, onReview: @escaping ([FileChangeSummaryItem]) -> Void) {
+    func configure(items: [FileChangeSummaryItem], onUndo: @escaping () -> Void, onReview: @escaping ([FileChangeSummaryItem]) -> Void, onTurnDiff: (() -> Void)? = nil) {
         self.items = deduplicate(items)
         self.onUndo = onUndo
         self.onReview = onReview
+        self.onTurnDiff = onTurnDiff
+        turnDiffButton.isHidden = onTurnDiff == nil
 
         let count = self.items.count
         summaryLabel.text = count == 1 ? "1 file changed" : "\(count) files changed"
@@ -101,7 +123,15 @@ final class FileChangesRowView: BaseRowView {
             height: buttonHeight
         )
 
-        let summaryAvailableWidth = max(0, undoButton.frame.minX - horizontalPadding - 10)
+        var leftmost = undoButton.frame.minX
+        if !turnDiffButton.isHidden {
+            let turnSize = turnDiffButton.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: buttonHeight))
+            let turnWidth = ceil(turnSize.width)
+            turnDiffButton.frame = CGRect(x: leftmost - 10 - turnWidth, y: topPadding, width: turnWidth, height: buttonHeight)
+            leftmost = turnDiffButton.frame.minX
+        }
+
+        let summaryAvailableWidth = max(0, leftmost - horizontalPadding - 10)
         let summarySize = summaryLabel.sizeThatFits(CGSize(width: summaryAvailableWidth, height: buttonHeight))
         summaryLabel.frame = CGRect(
             x: horizontalPadding,

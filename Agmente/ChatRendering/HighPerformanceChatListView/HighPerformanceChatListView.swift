@@ -549,7 +549,10 @@ extension HighPerformanceChatListView: ListViewAdapter {
                 },
                 onReview: { [weak self] items in
                     self?.actionHandlers.onReviewFileChanges?(items)
-                }
+                },
+                onTurnDiff: actionHandlers.canTurnDiff?(entry.messageId) == true
+                    ? { [weak self] in self?.actionHandlers.onTurnDiff?(entry.messageId) }
+                    : nil
             )
 
         case let row as ForkMediaRowView:

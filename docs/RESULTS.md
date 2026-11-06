@@ -861,3 +861,20 @@
   - **Mutation checks** (one run, four changes, each restored afterwards): no dedupe of paged commits fails `testLogPagesAndDropsACommitSeenOnAnEarlierPage`; removing the "path must be in the status" guard fails `testDiffIsRequestedOnlyForAPathInTheStatus`; removing the same-hash check fails `testChangedWithTheHeldHashDoesNothingAndANewHashRefreshes`; disabling secret-stub parsing fails `testSecretStubsAfterADiffBecomeHiddenFilesWithNoContent` and `testAHiddenOnlyAnswerAndEmptyText`.
 - **Not tested:** the views on screen (chip, Git tab, diff, turn-diff sheet) and the accessibility identifiers; no simulator run against a gateway with the fake agent; the toolbar placement beside the existing menu; a gateway restart between a status and a diff. The turn-number rule (D-042) is tested as a pure function only.
 - **Environment note:** this worktree has no `.claude/settings.json` (untracked in the main checkout), so `check.sh` stops at "JSON files parse". I copied the file in to run the gate and did not commit it. The destination `iPhone 17 Pro` does not exist on this Mac; I used `iPhone 18 Pro`.
+
+### 2026-11-07 — Simulator run of the Git UI, image rows and deep link (3.20, 3.21, 5.1, 5.2)
+- **Setup:** iPhone 17 simulator, Debug build of the merged `main`, a local gateway (the Go binary) with the fake agent on `ws://127.0.0.1:8799`, one project that is a git repo with a modified file, an untracked file and a `.env`. Screens were checked by screenshot.
+- **Seen working:**
+  - Session header: branch chip "main" with a dirty marker. Tap opens the Git sheet.
+  - Changes tab: branch, 4 changed files with status letters and +/- counts. A file added on disk while the sheet was open appeared (5 files) without a manual refresh (`git/changed`).
+  - Diff of `a.txt` renders removed and added lines; `.env` shows "Content hidden" and no content.
+  - History tab lists both commits.
+  - Image: a 160x100 PNG sent as an `image` block renders as an image; a `resource_link` renders as a plain row with its URI and is not fetched.
+  - Turn diff: "Turn 1 changes" shows only the file the agent wrote in that turn (`made-by-agent.txt`, +1); `a.txt`, modified before the turn, is correctly absent.
+  - Deep link `agmente://session/<server>/<session>` opened the session (iOS first asks "Open in Agmente?").
+- **Two defects found by this run and fixed:**
+  1. The "Turn diff" button was built into the SwiftUI file-change card, but iOS draws the chat with the UIKit list (`FileChangesRows.swift`), so the button never appeared. It is now in the UIKit row, shown only when the gateway offers git and the turn number is known.
+  2. "Review" opened an empty "File Changes" sheet (a sheet driven by two state values read before the second was set; upstream behaviour). `SessionDetailView` now uses `.sheet(item:)`, as the Codex view already did.
+- **Fake agent:** new directives `[edit:NAME]` (a completed edit tool call with a diff), `[image]`, `[link]`.
+- **Checks after the fixes:** `scripts/check.sh` passes (137 wire tests); app tests 219, 0 failures, TEST SUCCEEDED.
+- **Not tested:** no unit test and no mutation check for the new Turn diff button wiring (found and verified on screen only); "no snapshot for this turn" and "not a repository" states on screen; many files or a long history; Dynamic Type and dark mode; a real Bob session. The 3.21 note about counting user messages for the turn number held in this run (turn 1).

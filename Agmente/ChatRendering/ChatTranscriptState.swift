@@ -31,6 +31,9 @@ struct ChatEntryActionHandlers {
     var onDeclineRequest: ((JSONRPCID) -> Void)?
     var onUndoFileChanges: (() -> Void)?
     var onReviewFileChanges: (([FileChangeSummaryItem]) -> Void)?
+    /// Whether the file-change row of a message offers "Turn diff" (a gateway with git), and what it does.
+    var canTurnDiff: ((UUID) -> Bool)?
+    var onTurnDiff: ((UUID) -> Void)?
 
     static let none = ChatEntryActionHandlers()
 }

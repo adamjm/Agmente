@@ -11,6 +11,9 @@
 //     [write:NAME]    write the file NAME ("x\n") under the session's cwd before replying
 //     [remove:NAME]   remove the file NAME under the session's cwd
 //     [symlink:NAME>TARGET]  create a symlink NAME that points at TARGET
+//     [edit:NAME]     report a completed file edit (kind edit, a diff as output), for the app's file-change row
+//     [image]         send a 160x100 PNG as an image content block
+//     [link]          send a resource_link block
 //   The reply text is "echo: <prompt text>". session/cancel ends a running turn with "cancelled".
 // - session/load and session/resume (F-12): while a turn runs in this process, they are refused with
 //   -32600 "Invalid request: Session is already running a prompt" and the turn goes on. When the
@@ -33,6 +36,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { crc32, deflateSync } from 'node:zlib';
 import { createInterface } from 'node:readline';
 
 const fixture = JSON.parse(readFileSync(new URL('./bob-initialize-2.0.9.json', import.meta.url), 'utf8'));
@@ -109,6 +113,24 @@ function requestClient(method, params) {
   return { id, response: new Promise((resolve) => { pendingAgentRequests.set(id, resolve); send({ jsonrpc: '2.0', id, method, params }); }) };
 }
 
+/** A 160x100 PNG with a colour gradient, built here so the fixture needs no binary file. */
+function samplePng() {
+  const w = 160, h = 100;
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y += 1) {
+    const row = y * (w * 3 + 1);
+    for (let x = 0; x < w; x += 1) { raw[row + 1 + x * 3] = Math.round((x / w) * 255); raw[row + 2 + x * 3] = Math.round((y / h) * 255); raw[row + 3 + x * 3] = 160; }
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body) >>> 0);
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+}
+
 function directives(text) {
   const num = (name, dflt) => {
     const m = new RegExp(`\\[${name}:(\\d+)\\]`).exec(text);
@@ -116,7 +138,7 @@ function directives(text) {
   };
   const allowOnly = text.includes('[permission:allow-only]');
   const all = (name) => [...text.matchAll(new RegExp(`\\[${name}:([^\\]]+)\\]`, 'g'))].map((m) => m[1]);
-  return { writes: all('write'), removes: all('remove'), symlinks: all('symlink').map((v) => v.split('>')), chunks: Math.max(1, num('chunks', 1)), slowMs: num('slow', 0), permission: allowOnly || text.includes('[permission]'), allowOnly };
+  return { edits: all('edit'), image: text.includes('[image]'), link: text.includes('[link]'), writes: all('write'), removes: all('remove'), symlinks: all('symlink').map((v) => v.split('>')), chunks: Math.max(1, num('chunks', 1)), slowMs: num('slow', 0), permission: allowOnly || text.includes('[permission]'), allowOnly };
 }
 
 function replay(record) {
@@ -164,6 +186,13 @@ async function runTurn(msg, entry) {
     }
     for (const name of d.removes) rmSync(join(root, name), { force: true });
     for (const [name, target] of d.symlinks) symlinkSync(target, join(root, name));
+    for (const name of d.edits) {
+      const toolCallId = `edit-${randomBytes(3).toString('hex')}`;
+      update(record.sessionId, { sessionUpdate: 'tool_call', toolCallId, title: `Edit: ${name}`, kind: 'edit', status: 'in_progress' });
+      update(record.sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: `--- a/${name}\n+++ b/${name}\n@@ -1 +1,2 @@\n one\n+two` } }] });
+    }
+    if (d.image) update(record.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'image', mimeType: 'image/png', data: samplePng() } });
+    if (d.link) update(record.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'resource_link', name: 'report.html', uri: 'https://example.com/report.html', mimeType: 'text/html' } });
     if (d.permission) {
       const toolCallId = `call-${randomBytes(3).toString('hex')}`;
       const toolCall = { toolCallId, title: 'Run echo', kind: 'execute', status: 'pending', rawInput: { command: 'echo fake' } };

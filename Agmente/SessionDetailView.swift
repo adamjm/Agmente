@@ -7,6 +7,12 @@ import ACP
 import AppKit
 #endif
 
+/// What the "Review" sheet shows. A sheet driven by an item reads it when it opens, so it is never empty.
+struct FileChangesReviewPayload: Identifiable {
+    let id = UUID()
+    let items: [FileChangeSummaryItem]
+}
+
 struct SessionDetailView: View {
     @ObservedObject var model: AppViewModel
     @ObservedObject var serverViewModel: ServerViewModel
@@ -19,8 +25,7 @@ struct SessionDetailView: View {
     @State private var showPhotoPermissionAlert = false
     @State private var showDeleteSessionConfirm = false
     @State private var expandedThoughts: Set<UUID> = []
-    @State private var showFileChangesReview = false
-    @State private var fileChangesForReview: [FileChangeSummaryItem] = []
+    @State private var fileChangesReviewPayload: FileChangesReviewPayload?
     @State private var showUndoUnavailableAlert = false
     @State private var transcriptState = ChatTranscriptState()
     @State private var scrollViewHeight: CGFloat = 0
@@ -129,8 +134,8 @@ struct SessionDetailView: View {
             WorkingDirectoryPickerSheet(model: model, isPresented: $showingWorkingDirectoryPicker)
                 .presentationDetents([.medium])
         }
-        .sheet(isPresented: $showFileChangesReview) {
-            FileChangesReviewSheet(items: fileChangesForReview)
+        .sheet(item: $fileChangesReviewPayload) { payload in
+            FileChangesReviewSheet(items: payload.items)
         }
         .gitSessionToolbar(store: model.gitStore, sessionId: serverViewModel.sessionId,
                            enabled: serverViewModel.isGatewayServer && model.gitStore.supportsGit)
@@ -330,8 +335,15 @@ private extension SessionDetailView {
                 },
                 onReviewFileChanges: { items in
                     guard !items.isEmpty else { return }
-                    fileChangesForReview = items
-                    showFileChangesReview = true
+                    fileChangesReviewPayload = FileChangesReviewPayload(items: items)
+                },
+                canTurnDiff: { messageId in
+                    guard let message = sessionViewModel.chatMessages.first(where: { $0.id == messageId }) else { return false }
+                    return turnDiffAction(for: message) != nil
+                },
+                onTurnDiff: { messageId in
+                    guard let message = sessionViewModel.chatMessages.first(where: { $0.id == messageId }) else { return }
+                    turnDiffAction(for: message)?()
                 }
             ),
             onAtBottomChanged: { value in
@@ -804,8 +816,7 @@ private extension SessionDetailView {
                     items: fileChangeItems,
                     onUndo: { showUndoUnavailableAlert = true },
                     onReview: {
-                        fileChangesForReview = fileChangeItems
-                        showFileChangesReview = true
+                        fileChangesReviewPayload = FileChangesReviewPayload(items: fileChangeItems)
                     },
                     onTurnDiff: turnDiffAction(for: message)
                 )
