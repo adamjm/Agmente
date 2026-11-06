@@ -517,12 +517,16 @@ func (s *Server) serveGit(ctx context.Context, c *client, who audit.Who, method 
 	if id.IsNull() {
 		return
 	}
+	var baseline uint64
+	if method == "_agmente/git/status" {
+		baseline = s.watchBaseline(ctx, params) // before git runs (D-037, D-065)
+	}
 	result, rerr := s.handleExtension(ctx, who, method, params)
 	if rerr == nil && method == "_agmente/git/status" {
 		if m, ok := result.(map[string]any); ok {
 			if hash, ok := m["hash"].(string); ok {
 				if pid, ok := params.Get("projectId").StringValue(); ok {
-					s.watchGit(c, pid, hash)
+					s.watchGit(c, pid, hash, baseline)
 				}
 			}
 		}
