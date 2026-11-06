@@ -24,6 +24,7 @@ type Fields struct {
 	HasExit                  bool // write exitCode and signal (each may be null)
 	ExitCode                 *int
 	Signal                   string
+	Project                  string
 }
 
 // Who identifies one connection in every line it writes.
@@ -76,6 +77,7 @@ func (l *Logger) Log(event string, f Fields) {
 	str("reason", f.Reason)
 	str("method", f.Method)
 	str("dir", f.Dir)
+	str("project", f.Project)
 	num("code", f.Code, f.Code != 0)
 	num("pid", f.Pid, f.Pid != 0)
 	if f.HasExit {

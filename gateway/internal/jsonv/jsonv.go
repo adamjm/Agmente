@@ -244,3 +244,20 @@ func AppendString(buf []byte, s string) []byte {
 	}
 	return append(buf, '"')
 }
+
+// Str returns a JSON string value.
+func Str(s string) *Value { return &Value{Kind: String, Str: s} }
+
+// Obj returns an empty JSON object.
+func Obj() *Value { return &Value{Kind: Object, Obj: map[string]*Value{}} }
+
+// Set sets a member of an object, keeping the position of an existing key.
+func (v *Value) Set(key string, val *Value) {
+	if _, ok := v.Obj[key]; !ok {
+		v.Keys = append(v.Keys, key)
+	}
+	v.Obj[key] = val
+}
+
+// MarshalJSON lets encoding/json embed a Value.
+func (v *Value) MarshalJSON() ([]byte, error) { return v.Marshal(), nil }

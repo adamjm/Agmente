@@ -75,28 +75,28 @@ Plan notes:
 Goal: sessions keep running with the phone offline; git state is correct and safe. Closes T-18 to T-31. Uses the fake agent; APNs delivery (3.11) needs an APNs key.
 
 Gateway:
-- [ ] 3.1 Extend `gateway/test/fixtures/fake-agent.mjs` with Bob's behaviours: turns that take time, `session/request_permission`, `session/load` and `session/resume` that are refused with `-32600` while a turn runs and that rebuild the session and replay coalesced history after the response when idle (F-12), session persistence across restarts, and a shared-store mode that loses the earlier writer's turn when two fake processes open one session (F-21).
-- [ ] 3.2 Choose the SQLite driver for the Go gateway in a D-n entry (D-007's `node:sqlite` no longer applies, D-021).
-- [ ] 3.3 Project registry and `_agmente/projects/*`. Check: T-25.
-- [ ] 3.4 Agent supervisor: start the project's container and Bob on the first request (FR-45, D-016); one agent per project, independent of sockets; start a replacement only after the old process emits `exit`; take an exclusive lock on the project's `HOME` (container name `agmente-<projectId>`) before spawn (D-015). Supersedes D-006. Check: two sockets for one project share one process; a second gateway on the same project is refused; re-run `gateway/scripts/probe-bob-races.mjs` and the second socket's load reaches the same Bob and is refused.
-- [ ] 3.5 Event log with sequence numbers. Check: T-20.
-- [ ] 3.6 `_agmente/sessions/subscribe` with replay. Check: T-18, T-19.
-- [ ] 3.7 Load and resume guard (FR-20). Check: T-21.
-- [ ] 3.8 `_agmente/sessions/index`.
-- [ ] 3.9 Approval queue with timeout. Check: T-22, T-23.
-- [ ] 3.10 Push payload builder. Check: T-24.
+- [x] 3.1 Extend `gateway/test/fixtures/fake-agent.mjs` with Bob's behaviours: turns that take time, `session/request_permission`, `session/load` and `session/resume` that are refused with `-32600` while a turn runs and that rebuild the session and replay coalesced history after the response when idle (F-12), session persistence across restarts, and a shared-store mode that loses the earlier writer's turn when two fake processes open one session (F-21).
+- [x] 3.2 Choose the SQLite driver for the Go gateway in a D-n entry (D-007's `node:sqlite` no longer applies, D-021).
+- [x] 3.3 Project registry and `_agmente/projects/*`. Check: T-25.
+- [x] 3.4 Agent supervisor: start the project's container and Bob on the first request (FR-45, D-016); one agent per project, independent of sockets; start a replacement only after the old process emits `exit`; take an exclusive lock on the project's `HOME` (container name `agmente-<projectId>`) before spawn (D-015). Supersedes D-006. Check: two sockets for one project share one process; a second gateway on the same project is refused; re-run `gateway/scripts/probe-bob-races.mjs` and the second socket's load reaches the same Bob and is refused.
+- [x] 3.5 Event log with sequence numbers. Check: T-20.
+- [x] 3.6 `_agmente/sessions/subscribe` with replay. Check: T-18, T-19.
+- [x] 3.7 Load and resume guard (FR-20). Check: T-21.
+- [x] 3.8 `_agmente/sessions/index`.
+- [x] 3.9 Approval queue with timeout. Check: T-22, T-23.
+- [x] 3.10 Push payload builder. Check: T-24.
 - [ ] 3.11 APNs delivery with token-based auth (`.p8`). Check: a push reaches a test device.
-- [ ] 3.12 Idle close (FR-24) and project stop when idle (FR-45): stop Bob, then the container; wait for exit before any restart. Check: T-46.
-- [ ] 3.13 Container exec runner for git with the safe flags, timeout and output cap. Check: T-26, T-27.
-- [ ] 3.14 `git/status`, `git/diff`, `git/log` with path allow-list and deny-list. Check: T-28, T-29, T-30.
-- [ ] 3.15 Turn snapshots and `git/turnDiff`. Check: T-31.
-- [ ] 3.16 File watcher and debounced `git/changed` (NFR-9).
+- [x] 3.12 Idle close (FR-24) and project stop when idle (FR-45): stop Bob, then the container; wait for exit before any restart. Check: T-46.
+- [x] 3.13 Container exec runner for git with the safe flags, timeout and output cap. Check: T-26, T-27.
+- [x] 3.14 `git/status`, `git/diff`, `git/log` with path allow-list and deny-list. Check: T-28, T-29, T-30.
+- [x] 3.15 Turn snapshots and `git/turnDiff`. Check: T-31.
+- [x] 3.16 File watcher and debounced `git/changed` (NFR-9).
 
 App:
-- [ ] 3.17 Projects and sessions home screen; new-session sheet picks a project (FR-26).
-- [ ] 3.18 When connected to the gateway, `openSession` subscribes with `afterSeq` instead of sending `session/load`. Remove the `X-Client-Id` reattach.
-- [ ] 3.19 Approvals inbox and badge.
-- [ ] 3.20 Push registration and deep link to a session.
+- [x] 3.17 Projects and sessions home screen; new-session sheet picks a project (FR-26).
+- [x] 3.18 When connected to the gateway, `openSession` subscribes with `afterSeq` instead of sending `session/load`. Remove the `X-Client-Id` reattach.
+- [x] 3.19 Approvals inbox and badge.
+- [x] 3.20 Push registration and deep link to a session. (Deep link and permission and token capture done; sending the token to the gateway and push delivery are BLOCKED, see RESULTS and D-041.)
 - [ ] 3.21 Branch chip, Git tab, and turn diff in the file-change row (FR-31).
 
 Stop condition: if T-21 shows the agent still receives a load during a turn, stop. Do not build app work on top of it.

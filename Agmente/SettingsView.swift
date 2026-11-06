@@ -47,6 +47,12 @@ struct SettingsView: View {
             }
         }
 
+#if os(iOS)
+        Section("Notifications") {
+            PushSettingsRow()
+        }
+
+#endif
         Section("Developer") {
             VStack(alignment: .leading, spacing: 6) {
                 Toggle("Developer mode", isOn: $devModeEnabled)

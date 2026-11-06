@@ -65,7 +65,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | FR-2 | The gateway refuses to start if its listen host is not a loopback address. | Must | 1 |
 | FR-3 | The gateway rejects an upgrade request that carries an `Origin` header with HTTP 403. | Must | 1 |
 | FR-4 | The gateway starts agents only from the command in its config. The client cannot set the command, arguments or environment. | Must | 1 |
-| FR-5 | The gateway caps agent processes per identity and in total. A request over the cap gets HTTP 429 before upgrade. | Must | 1 |
+| FR-5 | The gateway caps open connections per identity: a connection over the cap gets HTTP 429 before upgrade. It caps running project agents in total: a request that would start one more gets a JSON-RPC error (D-025). | Must | 1 |
 | FR-6 | The gateway rejects ACP requests whose `cwd` is not inside a configured project root (after `realpath`). It returns a JSON-RPC error and does not forward the request. | Must | 1 |
 | FR-7 | The gateway accepts exactly one JSON-RPC object per WebSocket message. It closes the socket with code 1007 for arrays, multiple lines or invalid JSON. | Must | 1 |
 | FR-8 | The gateway rate-limits failed authentication per client address. | Must | 1 |
@@ -114,7 +114,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | NFR-1 | An unauthenticated upgrade is rejected in at most 50 ms p95 on loopback. |
 | NFR-2 | The gateway adds at most 5 ms p95 per JSON-RPC round trip on loopback, for 1 KiB messages, compared with a direct pipe to the same agent. |
 | NFR-3 | The maximum WebSocket message is 16 MiB on the gateway and in the app. A larger message closes the socket with code 1009. |
-| NFR-4 | Default caps: 4 agent processes per identity, 16 in total. |
+| NFR-4 | Default caps: 8 connections per identity, 16 running project agents in total (D-025). |
 | NFR-5 | Default auth limit: after 10 failures in 60 s from one client address, the gateway returns 429 for 600 s. |
 | NFR-6 | Replay of 10,000 logged events to a subscriber takes at most 1 s on the host. |
 | NFR-7 | An event that the gateway logged before a crash is present after restart: 0 lost logged events. |
@@ -151,14 +151,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 | --- | --- | --- |
 | `_agmente/projects/list` | — | `{ projects: [{ id, name, path, defaultMode }] }` |
 | `_agmente/projects/create` | `{ name, path, defaultMode? }` | `{ project }` |
-| `_agmente/sessions/index` | `{ projectId? }` | `{ sessions: [{ sessionId, projectId, title, status, lastActivity, unread }] }` |
-| `_agmente/sessions/subscribe` | `{ sessionId, afterSeq }` | `{ headSeq }`, then notifications `_agmente/event { sessionId, seq, message }` |
-| `_agmente/approvals/pending` | — | `{ approvals: [{ sessionId, requestId, toolCall, since }] }` |
-| `_agmente/git/status` | `{ projectId }` | `{ branch, upstream, ahead, behind, files: [{ path, status, staged, added, removed }], hash }` |
-| `_agmente/git/diff` | `{ projectId, path?, staged?, fromTree?, toTree? }` | `{ diff, truncated }` |
+| `_agmente/sessions/index` | `{ projectId? }` | `{ sessions: [{ sessionId, projectId, title, status, lastActivity, headSeq, unread }] }` (D-030) |
+| `_agmente/sessions/read` | `{ sessionId, seq }` | `{ lastSeenSeq }`: the identity's read marker, which only moves forward (D-030) |
+| `_agmente/sessions/subscribe` | `{ sessionId, afterSeq }` | `{ headSeq }`, then notifications `_agmente/event { sessionId, seq, message }`: the replay up to `headSeq`, then live events (D-028) |
+| `_agmente/approvals/pending` | — | `{ approvals: [{ approvalId, sessionId, projectId, toolCall, options, since }] }` (D-031) |
+| `_agmente/approvals/answer` | `{ approvalId, optionId }` or `{ approvalId, cancelled: true }` | `{}`; a later answer gets `-32001` with the reason (D-031) |
+| `_agmente/git/status` | `{ projectId }` | `{ branch, upstream, ahead, behind, files: [{ path, status, staged, added, removed }], hash, truncated }` (D-035) |
+| `_agmente/git/diff` | `{ projectId, path?, staged?, fromTree?, toTree? }` | `{ diff, truncated, hidden }` (D-035; the tree params come with 3.15) |
 | `_agmente/git/log` | `{ projectId, limit, cursor? }` | `{ commits: [...], nextCursor? }` |
-| `_agmente/git/turnDiff` | `{ sessionId, turn }` | `{ diff, truncated }` |
-| `_agmente/git/changed` (notification) | `{ projectId, hash }` | — |
+| `_agmente/git/turnDiff` | `{ sessionId, turn }` | `{ diff, truncated, hidden, fromTree, toTree }` (D-036) |
+| `_agmente/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
 | `_agmente/files/url` | `{ projectId, path }` | `{ url, expiresAt }` |
 | `_agmente/mcp/list`, `_agmente/mcp/set` | `{ projectId?, name, disabled?, alwaysAllow? }` | `{ servers }` |
 | `_agmente/skills/list`, `put`, `delete` | `{ scope, name, content? }` | `{ skills }` |
@@ -167,7 +169,7 @@ Shapes are a draft. Each phase confirms them in its plan notes and records chang
 
 ### 6.3 Gateway config file
 
-JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `limits` (`maxMessageBytes`, `maxAgentsPerIdentity`, `maxAgentsTotal`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`).
+JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)).
 
 ### 6.4 Gateway CLI
 
@@ -186,7 +188,7 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 | T-4 | Upgrade with an `Origin` header and a valid token | HTTP 403; no spawn | FR-3 |
 | T-5 | Start with `listen.host` = `0.0.0.0` | Config error; process exits non-zero | FR-2 |
 | T-6 | Send a message larger than `maxMessageBytes` | Socket closes with 1009 | FR-7, NFR-3 |
-| T-7 | Open `maxAgentsPerIdentity + 1` sockets for one identity | Last one gets 429; spawn count equals the cap | FR-5, NFR-4 |
+| T-7 | Open `maxConnectionsPerIdentity + 1` sockets for one identity; then start projects past `maxAgentsTotal` | Last socket gets 429 and no agent starts for any socket; the project over the cap gets a JSON-RPC error | FR-5, NFR-4 |
 | T-8 | `session/new` with `cwd` outside roots, and through a symlink that points outside | JSON-RPC error `-32602`; agent receives nothing | FR-6 |
 | T-9 | Send a JSON array, two lines in one message, and invalid JSON | Socket closes with 1007 each time | FR-7 |
 | T-10 | 10 bad tokens from one address in 60 s, then a good token | 11th request gets 429 | FR-8, NFR-5 |
@@ -249,8 +251,8 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 - Apple Developer Program membership: device builds, Keychain sharing, APNs key (`.p8`).
 - IBM Bob licence and `BOB_API_KEY` (phase 4 onward). Review the licence with `bob --show-license acp`.
 - A Linux host with Docker or Podman, a DNS name, Caddy 2 with a client CA for mutual TLS.
-- Go 1.24 or later for the gateway, with one dependency, `github.com/coder/websocket` (D-021).
-- Node.js 22.12 or later for the wire test suite and the fake agent (one npm dependency, `ws`), and for Bob.
+- Go 1.26 or later for the gateway, with two dependencies: `github.com/coder/websocket` (D-021) and `modernc.org/sqlite` (D-023).
+- Node.js 22.13 or later for the wire test suite (it reads `gateway.db` with `node:sqlite`, D-027) and the fake agent (one npm dependency, `ws`), and for Bob.
 
 ## 10. Sources
 

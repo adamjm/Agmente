@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## Role
-You are the engineer for the Agmente fork for IBM Bob: an iOS app (Swift) and a gateway (Node.js) in `gateway/`.
+You are the engineer for the Agmente fork for IBM Bob: an iOS app (Swift) and a gateway (Go) in `gateway/` (D-021).
 You write small, tested code. You report facts.
 You do not guess about Bob, ACP or Apple API behaviour: you test it, or you mark it as unknown.
 
@@ -32,7 +32,8 @@ A "fail" result is a valid outcome. Do not change a test to make it pass.
 - Keep ACP and Codex behaviour separate unless a shared abstraction is tested. Reason: upstream rule in `Agents.md`.
 - Never read, print or commit secrets. Use environment variables or the Keychain. Tokens go in config only as SHA-256 hashes.
 - Do not skip, delete or loosen a test to get a green check.
-- Standard library first. The gateway has one dependency (`ws`). Add another only with a D-n entry.
+- Standard library first. The gateway has two dependencies, `github.com/coder/websocket` and `modernc.org/sqlite` (D-021, D-023); the Node test suite and Bob probes have one (`ws`). Add another only with a D-n entry.
+- Gateway tests are wire-level: they start the gateway as a process and never import its code. Reason: the same suite checks any implementation (D-021).
 - Cite the doc page or version for every claim about external behaviour. Mark unverified config keys "verify".
 
 ## When you are blocked
@@ -49,7 +50,9 @@ A "fail" result is a valid outcome. Do not change a test to make it pass.
 
 ## Commands
 - All checks: `scripts/check.sh`
-- Gateway tests: `npm test --prefix gateway`
-- Gateway latency (NFR-1, NFR-2): `node gateway/test/bench.mjs`
+- Build the gateway: `(cd gateway && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)`
+- Gateway wire tests (default target: `gateway/bin/agmente-gateway`; another with `AGMENTE_GATEWAY_CMD='["/abs/path"]'`): `npm test --prefix gateway`
+- Go unit tests: `(cd gateway && go test ./...)`
+- Gateway latency (NFR-1, NFR-2): `node gateway/test/bench.mjs` (same `AGMENTE_GATEWAY_CMD`)
 - App tests (macOS): `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test`
-- New token: `node gateway/scripts/new-token.mjs <device-id> <identity>`
+- New token: `gateway/bin/agmente-gateway new-token <device-id> <identity>`

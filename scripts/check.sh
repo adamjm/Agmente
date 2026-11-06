@@ -7,10 +7,10 @@ cd "$ROOT"
 
 step() { printf '\n== %s\n' "$1"; }
 
-step "Node version (>= 22.12)"
+step "Node version (>= 22.13: node:sqlite in the wire tests)"
 node -e '
   const [maj, min] = process.versions.node.split(".").map(Number);
-  if (maj < 22 || (maj === 22 && min < 12)) { console.error("Node >= 22.12 required, found " + process.version); process.exit(1); }
+  if (maj < 22 || (maj === 22 && min < 13)) { console.error("Node >= 22.13 required, found " + process.version); process.exit(1); }
   console.log(process.version);
 '
 
@@ -33,9 +33,9 @@ while IFS= read -r -d '' f; do
 done < <(find gateway/test gateway/scripts scripts -type f \( -name '*.js' -o -name '*.mjs' \) -print0)
 echo "ok"
 
-step "Go toolchain (>= 1.24)"
+step "Go toolchain (>= 1.26)"
 if ! command -v go > /dev/null 2>&1; then
-  echo "Go is missing. Install Go 1.24 or later (macOS: brew install go)." >&2
+  echo "Go is missing. Install Go 1.26 or later (macOS: brew install go)." >&2
   exit 1
 fi
 go version

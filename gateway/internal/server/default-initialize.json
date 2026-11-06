@@ -1,0 +1,36 @@
+{
+  "protocolVersion": 1,
+  "agentCapabilities": {
+    "_meta": {
+      "bob/extensions": {
+        "version": 1
+      }
+    },
+    "loadSession": true,
+    "sessionCapabilities": {
+      "list": {},
+      "delete": {},
+      "resume": {},
+      "close": {}
+    },
+    "promptCapabilities": {
+      "embeddedContext": true,
+      "image": true
+    },
+    "mcpCapabilities": {
+      "http": true
+    }
+  },
+  "authMethods": [
+    {
+      "id": "sso",
+      "name": "Log in with SSO",
+      "description": "Opens your browser to authenticate with IBM SSO"
+    }
+  ],
+  "agentInfo": {
+    "name": "bob-shell",
+    "title": "Bob",
+    "version": "2.0.9"
+  }
+}

@@ -383,6 +383,14 @@ final class ACPSessionViewModel: ObservableObject {
         }
     }
 
+    /// Closes a permission card without answering it: the gateway says it was answered elsewhere or closed.
+    /// Nothing is sent to the agent.
+    func dismissPermissionRequest(id: ACP.ID) {
+        if let pending = pendingPermissionRequests.removeValue(forKey: id) {
+            clearPermissionOptionsForToolCall(pending.toolCallId)
+        }
+    }
+
     /// Cancel all pending permission requests for a session.
     func cancelPendingPermissionRequests(for sessionIdToCancel: String) {
         guard let service = dependencies.getService() else { return }

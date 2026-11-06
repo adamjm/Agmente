@@ -69,7 +69,7 @@
   - The app uses `thread/list` for summaries and `thread/resume` for full history.
   - `cwd`/timestamp metadata comes from `thread/list` when provided; if missing on older servers, cached values are preserved.
   - New prompts are sent with `turn/start`, and streaming updates are rendered from turn/item notifications.
-- **Persistence with `@rebornix/stdio-to-ws`**: when using `--persist`, the server keeps the child process alive during disconnections and buffers messages. Agmente sends a persistent `X-Client-Id` header on every connection so reconnecting clients can replay buffered messages.
+- **Persistence with `@rebornix/stdio-to-ws`**: when using `--persist`, the server keeps the child process alive during disconnections and buffers messages. Agmente no longer sends an `X-Client-Id` header (removed in the gateway work, PLAN 3.18): that header was the only credential for reattaching to a live agent (F-3). With the Agmente gateway the app subscribes to a session with `afterSeq` instead.
 - Each session/thread opens a chat transcript view; tool calls are surfaced as system messages.
 
 ## Running Local Agents
@@ -124,7 +124,7 @@ npx -y @rebornix/stdio-to-ws --persist --grace-period 604800 "qwen --experimenta
 
 Add a server with endpoint: `ws://localhost:8765`
 
-> Tip: Always use `--persist` flag with `stdio-to-ws`. This keeps the child process alive during brief disconnections (e.g., iOS app backgrounding) and buffers messages for replay on reconnect. Agmente automatically sends a persistent `X-Client-Id` header to enable this feature. Use `--grace-period` to keep the process alive for a set time (seconds) after disconnect.
+> Tip: Always use `--persist` flag with `stdio-to-ws`. This keeps the child process alive during brief disconnections (e.g., iOS app backgrounding) and buffers messages for replay on reconnect. Use `--grace-period` to keep the process alive for a set time (seconds) after disconnect.
 
 ---
 

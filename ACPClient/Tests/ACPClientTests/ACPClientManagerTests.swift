@@ -51,43 +51,46 @@ final class ACPClientManagerTests: XCTestCase {
         )
     }
 
-    // MARK: - Client ID Persistence
+    // MARK: - No client ID (PLAN 3.18, F-3)
 
-    func testGeneratesAndPersistsClientId() {
+    /// The app used to send a persistent `X-Client-Id` so a stdio-to-ws `--persist` server could hand a
+    /// reconnecting client the buffered output of a live agent. That header was the whole credential for
+    /// the reattach (F-3). A gateway keeps sessions itself and replays them by `afterSeq`, so the app
+    /// sends no client id, and stores none.
+    func testSendsNoClientIdHeaderAndStoresNoClientId() async {
         let suiteName = "test-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        defaults.set("an-old-id", forKey: "ACPClientManager.clientId") // left over from an older app version
 
-        let manager = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false)
+        var sentHeaders: [String: String]?
+        let connection = MockWebSocketConnection()
+        let factory: (ACPClientConfiguration, JSONEncoder) -> ACPService = { config, encoder in
+            sentHeaders = config.additionalHeaders
+            let client = ACPClient(configuration: config, socketProvider: MockWebSocketProvider(connection: connection), logger: NoOpLogger(), encoder: encoder)
+            return ACPService(client: client)
+        }
+        let manager = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false, serviceFactory: factory)
+        let config = ACPConnectionConfig(endpoint: URL(string: "ws://localhost:8765")!, cloudflareAccessClientId: "cf-id", cloudflareAccessClientSecret: "cf-secret")
 
-        XCTAssertFalse(manager.clientId.isEmpty, "Should generate a non-empty client ID")
-        XCTAssertEqual(defaults.string(forKey: "ACPClientManager.clientId"), manager.clientId)
+        let success = await manager.connectAndWait(config: config)
+
+        XCTAssertTrue(success)
+        let headers = try? XCTUnwrap(sentHeaders)
+        XCTAssertEqual(headers?["CF-Access-Client-Id"], "cf-id", "the other headers still go out")
+        XCTAssertNil(headers?["X-Client-Id"])
+        XCTAssertEqual(headers?.keys.filter { $0.lowercased().contains("client-id") && !$0.hasPrefix("CF-") }, [])
+        manager.disconnect()
     }
 
-    func testReusesPersistedClientId() {
+    func testAFreshManagerWritesNoClientIdToDefaults() {
         let suiteName = "test-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
 
-        let existingId = "test-client-id-123"
-        defaults.set(existingId, forKey: "ACPClientManager.clientId")
+        _ = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false)
 
-        let manager = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false)
-
-        XCTAssertEqual(manager.clientId, existingId)
-    }
-
-    func testUsesProvidedClientId() {
-        let suiteName = "test-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
-
-        defaults.set("stored-id", forKey: "ACPClientManager.clientId")
-        let providedId = "provided-id-456"
-
-        let manager = ACPClientManager(defaults: defaults, clientId: providedId, shouldStartNetworkMonitoring: false)
-
-        XCTAssertEqual(manager.clientId, providedId, "Should use provided client ID over stored")
+        XCTAssertNil(defaults.string(forKey: "ACPClientManager.clientId"))
     }
 
     // MARK: - Initial State

@@ -14,12 +14,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
 	"agmente/gateway/internal/audit"
 	"agmente/gateway/internal/config"
 	"agmente/gateway/internal/server"
+	"agmente/gateway/internal/store"
 )
 
 const usage = "Usage: agmente-gateway --config <file> [--dry-run]\n       agmente-gateway new-token <device-id> <identity>\n"
@@ -50,8 +52,15 @@ func run(args []string) int {
 		return printSummary(cfg)
 	}
 
+	db, err := store.Open(filepath.Join(cfg.StateDir, "gateway.db"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot open the database in %s: %v\n", cfg.StateDir, err)
+		return 1
+	}
+	defer db.Close()
+
 	logger := audit.New(os.Stderr)
-	srv := server.New(cfg, logger)
+	srv := server.New(cfg, logger, db)
 	ln, err := srv.Listen()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot listen: %v\n", err)
@@ -93,19 +102,23 @@ func printSummary(cfg *config.Config) int {
 	}
 	summary := struct {
 		Listen         string        `json:"listen"`
+		Runner         config.Runner `json:"runner"`
 		TrustProxy     bool          `json:"trustProxy"`
 		Tokens         []string      `json:"tokens"`
 		AgentCommand   string        `json:"agentCommand"`
 		EnvPassthrough []string      `json:"envPassthrough"`
 		Roots          []string      `json:"roots"`
+		StateDir       string        `json:"stateDir"`
 		Limits         config.Limits `json:"limits"`
 	}{
 		Listen:         fmt.Sprintf("%s:%d", cfg.ListenHost, cfg.ListenPort),
+		Runner:         cfg.Runner,
 		TrustProxy:     cfg.TrustProxy,
 		Tokens:         tokens,
 		AgentCommand:   strings.Join(cfg.AgentCommand, " "),
 		EnvPassthrough: append([]string{}, cfg.EnvPassthrough...),
 		Roots:          roots,
+		StateDir:       cfg.StateDir,
 		Limits:         cfg.Limits,
 	}
 	enc := json.NewEncoder(os.Stdout)

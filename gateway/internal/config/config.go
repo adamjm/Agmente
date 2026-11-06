@@ -27,15 +27,30 @@ type Token struct {
 }
 
 type Limits struct {
-	MaxMessageBytes       int64 `json:"maxMessageBytes"`
-	MaxAgentsPerIdentity  int64 `json:"maxAgentsPerIdentity"`
-	MaxAgentsTotal        int64 `json:"maxAgentsTotal"`
-	AuthFailuresPerWindow int64 `json:"authFailuresPerWindow"`
-	AuthWindowSeconds     int64 `json:"authWindowSeconds"`
-	LockoutSeconds        int64 `json:"lockoutSeconds"`
+	MaxMessageBytes int64 `json:"maxMessageBytes"`
+	// MaxAgentsPerIdentity is accepted but no longer used: since D-025 agents run per project,
+	// not per connection. Connections are capped by MaxConnectionsPerIdentity.
+
+	MaxAgentsPerIdentity      int64 `json:"maxAgentsPerIdentity"`
+	MaxAgentsTotal            int64 `json:"maxAgentsTotal"`
+	MaxConnectionsPerIdentity int64 `json:"maxConnectionsPerIdentity"`
+	AuthFailuresPerWindow     int64 `json:"authFailuresPerWindow"`
+	AuthWindowSeconds         int64 `json:"authWindowSeconds"`
+	LockoutSeconds            int64 `json:"lockoutSeconds"`
+	ApprovalTimeoutSeconds    int64 `json:"approvalTimeoutSeconds"`
+	IdleSeconds               int64 `json:"idleSeconds"`
+}
+
+// Runner says how a project's agent starts (D-025): "host" (tests and development only) or
+// "podman" (one container per project, D-008).
+type Runner struct {
+	Kind   string `json:"kind"`
+	Image  string `json:"image,omitempty"`
+	Podman string `json:"podman,omitempty"`
 }
 
 type Config struct {
+	Runner         Runner
 	ListenHost     string
 	ListenPort     int
 	TrustProxy     bool
@@ -43,19 +58,23 @@ type Config struct {
 	AgentCommand   []string
 	EnvPassthrough []string
 	Roots          []string
+	StateDir       string
 	Limits         Limits
 }
 
 // limitKeys in the order of DEFAULT_LIMITS (SPEC NFR-3, NFR-4, NFR-5).
-var limitKeys = []string{"maxMessageBytes", "maxAgentsPerIdentity", "maxAgentsTotal", "authFailuresPerWindow", "authWindowSeconds", "lockoutSeconds"}
+var limitKeys = []string{"maxMessageBytes", "maxAgentsPerIdentity", "maxAgentsTotal", "maxConnectionsPerIdentity", "authFailuresPerWindow", "authWindowSeconds", "lockoutSeconds", "approvalTimeoutSeconds", "idleSeconds"}
 
 var defaultLimits = map[string]int64{
-	"maxMessageBytes":       16 * 1024 * 1024, // NFR-3
-	"maxAgentsPerIdentity":  4,                // NFR-4
-	"maxAgentsTotal":        16,               // NFR-4
-	"authFailuresPerWindow": 10,               // NFR-5
-	"authWindowSeconds":     60,               // NFR-5
-	"lockoutSeconds":        600,              // NFR-5
+	"maxMessageBytes":           16 * 1024 * 1024, // NFR-3
+	"maxAgentsPerIdentity":      4,                // NFR-4
+	"maxAgentsTotal":            16,               // NFR-4
+	"maxConnectionsPerIdentity": 8,                // D-025
+	"authFailuresPerWindow":     10,               // NFR-5
+	"authWindowSeconds":         60,               // NFR-5
+	"lockoutSeconds":            600,              // NFR-5
+	"approvalTimeoutSeconds":    43200,            // NFR-10: 12 h, then reject (D-031)
+	"idleSeconds":               1800,             // NFR-10: idle close after 30 min (D-032)
 }
 
 var (
@@ -194,6 +213,38 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		}
 	}
 
+	stateDir, stateOK := raw.Get("stateDir").StringValue()
+	if !stateOK || !filepath.IsAbs(stateDir) || filepath.Clean(stateDir) == "/" {
+		add("stateDir must be an absolute path other than \"/\" (the gateway keeps its database and project homes there)")
+	}
+
+	var runner Runner
+	rv := raw.Get("runner")
+	kind, _ := rv.Get("kind").StringValue()
+	switch kind {
+	case "host":
+		if allow := rv.Get("allowHost"); allow == nil || allow.Kind != jsonv.Bool || !allow.B {
+			add("runner.kind \"host\" runs agents without a container; it needs runner.allowHost: true and is for tests and development only (D-008)")
+		}
+		runner = Runner{Kind: "host"}
+	case "podman":
+		image, ok := rv.Get("image").StringValue()
+		if !ok || image == "" || strings.HasPrefix(image, "-") {
+			add("runner.image must name the project image, for example \"agmente-bob:2.0.9\"")
+		}
+		podman := "podman"
+		if p := rv.Get("podman"); !p.IsNull() {
+			s, ok := p.StringValue()
+			if !ok || !filepath.IsAbs(s) {
+				add("runner.podman must be an absolute path to the podman binary")
+			}
+			podman = s
+		}
+		runner = Runner{Kind: "podman", Image: image, Podman: podman}
+	default:
+		add("runner.kind must be \"podman\" or \"host\"")
+	}
+
 	limits := map[string]int64{}
 	for k, v := range defaultLimits {
 		limits[k] = v
@@ -235,6 +286,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		return nil, &Error{errs}
 	}
 	return &Config{
+		Runner:         runner,
 		ListenHost:     host,
 		ListenPort:     int(port),
 		TrustProxy:     trustProxy,
@@ -242,13 +294,17 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		AgentCommand:   command,
 		EnvPassthrough: envPassthrough,
 		Roots:          roots,
+		StateDir:       filepath.Clean(stateDir),
 		Limits: Limits{
-			MaxMessageBytes:       limits["maxMessageBytes"],
-			MaxAgentsPerIdentity:  limits["maxAgentsPerIdentity"],
-			MaxAgentsTotal:        limits["maxAgentsTotal"],
-			AuthFailuresPerWindow: limits["authFailuresPerWindow"],
-			AuthWindowSeconds:     limits["authWindowSeconds"],
-			LockoutSeconds:        min(limits["lockoutSeconds"], math.MaxInt32),
+			MaxMessageBytes:           limits["maxMessageBytes"],
+			MaxAgentsPerIdentity:      limits["maxAgentsPerIdentity"],
+			MaxAgentsTotal:            limits["maxAgentsTotal"],
+			MaxConnectionsPerIdentity: limits["maxConnectionsPerIdentity"],
+			AuthFailuresPerWindow:     limits["authFailuresPerWindow"],
+			AuthWindowSeconds:         limits["authWindowSeconds"],
+			ApprovalTimeoutSeconds:    min(limits["approvalTimeoutSeconds"], math.MaxInt32),
+			IdleSeconds:               min(limits["idleSeconds"], math.MaxInt32),
+			LockoutSeconds:            min(limits["lockoutSeconds"], math.MaxInt32),
 		},
 	}, nil
 }

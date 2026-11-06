@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { auth, connect, nextClose, rpc, startGateway } from './helpers.mjs';
+import { auth, connect, nextClose, rpc, startGateway, useProject } from './helpers.mjs';
 
 /** Send one raw payload on a fresh socket and return the close code. */
 async function closeCodeFor(gw, payload, options) {
@@ -47,6 +47,7 @@ test('a single trailing LF or CRLF is allowed', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     for (const [id, end] of [[1, '\n'], [2, '\r\n']]) {
       const reply = await new Promise((resolve) => {
         ws.once('message', (d) => resolve(JSON.parse(d.toString())));
@@ -64,11 +65,12 @@ test('the agent receives exactly one line per message, even for a message with e
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     const text = 'line1\nline2\r\n{"jsonrpc":"2.0","id":99,"method":"session/new","params":{"cwd":"/etc"}}';
     const reply = await rpc(ws, '_test/echo', { text });
     assert.equal(reply.result.text, text);
     const received = await rpc(ws, '_test/received', {});
-    assert.equal(received.result.methods.includes('session/new'), false);
+    assert.deepEqual(received.result.methods.filter((m) => m === 'session/new'), ['session/new'], 'only the one from useProject');
     ws.close();
   } finally {
     await gw.stop();
@@ -79,6 +81,7 @@ test('U+2028 and U+2029 in a message cannot split it into two agent lines', asyn
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     // The fake agent reads stdin with Node's readline, which ends a line at U+2028 and U+2029.
     for (const sep of ['\u2028', '\u2029']) {
       const text = `a${sep}{"jsonrpc":"2.0","id":5,"method":"_test/exit"}`;
@@ -86,7 +89,7 @@ test('U+2028 and U+2029 in a message cannot split it into two agent lines', asyn
       assert.equal(reply.result.text, text);
     }
     const received = await rpc(ws, '_test/received', {});
-    assert.deepEqual(received.result.methods, ['_test/echo', '_test/echo', '_test/received']);
+    assert.deepEqual(received.result.methods.filter((m) => m.startsWith('_test/')), ['_test/echo', '_test/echo', '_test/received']);
     ws.close();
   } finally {
     await gw.stop();
@@ -123,6 +126,7 @@ test('T-6: a message of exactly maxMessageBytes is accepted', async () => {
   const gw = await startGateway({ limits: { maxMessageBytes: 64 * 1024 } });
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     const head = '{"jsonrpc":"2.0","id":7,"method":"_test/echo","params":{"pad":"';
     const tail = '"}}';
     const msg = head + 'x'.repeat(64 * 1024 - head.length - tail.length) + tail;
@@ -139,27 +143,32 @@ test('T-6: a message of exactly maxMessageBytes is accepted', async () => {
   }
 });
 
-test('T-6: an agent line over maxMessageBytes closes with 1009', async () => {
+test('T-6: an agent line over maxMessageBytes stops the agent; the phone socket stays open', async () => {
   const gw = await startGateway({ limits: { maxMessageBytes: 64 * 1024 } });
   try {
     const { ws } = await connect(gw.url, auth());
-    const closed = nextClose(ws);
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: '_test/big', params: { bytes: 200 * 1024 } }));
-    assert.equal((await closed).code, 1009);
+    await useProject(gw, ws);
+    const reply = await rpc(ws, '_test/big', { bytes: 200 * 1024 });
+    assert.deepEqual(reply.error, { code: -32000, message: 'agent exited' });
     await gw.waitForAudit((l) => l.event === 'agent_line_too_big');
+    await gw.waitForAudit((l) => l.event === 'agent_exit');
+    // The socket is still usable, and the next request starts a new agent.
+    assert.deepEqual((await rpc(ws, '_test/echo', { ok: 1 })).result, { ok: 1 });
+    assert.equal(gw.spawned(), 2);
+    ws.close();
   } finally {
     await gw.stop();
   }
 });
-
-test('T-8: cwd inside a root is forwarded; outside and symlink escape are refused', async () => {
+test('T-8: cwd inside a project is forwarded; outside the roots, a symlink escape and an unregistered folder are refused', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    const inside = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
-    assert.match(inside.result.sessionId, /^sess-/);
-    const atRoot = await rpc(ws, 'session/new', { cwd: gw.dirs.root, mcpServers: [] });
-    assert.match(atRoot.result.sessionId, /^sess-/);
+    await useProject(gw, ws); // session/new in the project: forwarded
+    const sub = join(gw.dirs.project, 'sub');
+    await mkdir(sub);
+    const inSub = await rpc(ws, 'session/new', { cwd: sub, mcpServers: [] });
+    assert.match(inSub.result.sessionId, /^sess-/, 'a folder inside a project belongs to it');
 
     const outside = await rpc(ws, 'session/new', { cwd: gw.dirs.outside, mcpServers: [] });
     assert.equal(outside.error.code, -32602);
@@ -169,12 +178,17 @@ test('T-8: cwd inside a root is forwarded; outside and symlink escape are refuse
     await symlink(gw.dirs.outside, link);
     const viaLink = await rpc(ws, 'session/new', { cwd: link, mcpServers: [] });
     assert.equal(viaLink.error.code, -32602);
+    assert.equal(viaLink.error.message, 'cwd is outside the allowed project roots');
 
     // A sibling whose name starts with the root's name is outside.
     const sibling = `${gw.dirs.root}-evil`;
     await mkdir(sibling);
     const viaSibling = await rpc(ws, 'session/new', { cwd: sibling, mcpServers: [] });
     assert.equal(viaSibling.error.code, -32602);
+
+    // Inside a root but in no registered project: refused by routing (D-025).
+    const atRoot = await rpc(ws, 'session/new', { cwd: gw.dirs.root, mcpServers: [] });
+    assert.deepEqual(atRoot.error, { code: -32602, message: 'cwd is not inside a registered project' });
 
     for (const cwd of ['relative/path', `${gw.dirs.project}/../../outside`, '/', `${gw.dirs.project}/missing`, '', 42, true, {}, []]) {
       const res = await rpc(ws, 'session/load', { cwd, sessionId: 'x', mcpServers: [] });
@@ -193,7 +207,6 @@ test('T-8: cwd inside a root is forwarded; outside and symlink escape are refuse
     await gw.stop();
   }
 });
-
 test('T-8: a refusal echoes the request id unchanged', async () => {
   const gw = await startGateway();
   try {
@@ -243,6 +256,7 @@ test('backpressure: a stalled agent pauses the phone socket and nothing is lost'
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     const replies = new Set();
     ws.on('message', (d) => replies.add(JSON.parse(d.toString()).id));
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'stall', method: '_test/stall', params: { ms: 300 } }));

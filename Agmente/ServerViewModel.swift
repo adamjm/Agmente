@@ -107,6 +107,84 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     private let connectionManager: ACPClientManager
     /// Convenience accessor for the active service.
     private var service: ACPService? { connectionManager.service }
+    /// A client for the gateway's `_agmente/*` methods on the current connection (nil when not connected).
+    var gatewayClient: GatewayClient? { service.map { GatewayClient($0) } }
+
+    // MARK: - Agmente gateway (D-026, D-028, D-029)
+
+    /// Set from `initialize` when the server is the gateway.
+    private(set) var gatewayInfo: GatewayInfo?
+    /// Per session, the last gateway event applied (in memory only: a cold start replays from 0).
+    private var gatewaySequences: [String: GatewaySequence] = [:]
+    /// Per session, the text of the prompt this device just sent, until the gateway's event for it arrives.
+    private var gatewayPromptEchoes: [String: String] = [:]
+
+    /// The gateway logs a prompt as a turn_started event and sends it back to this device too. The
+    /// device already shows its own message, so it notes the text here and skips that one event.
+    func rememberLocalPromptForGatewayEcho(sessionId: String, text: String) {
+        guard isGatewayServer else { return }
+        gatewayPromptEchoes[sessionId] = text
+    }
+
+    /// True once, for the `turn_started` event that is this device's own prompt coming back.
+    func consumeGatewayPromptEcho(sessionId: String, text: String) -> Bool {
+        guard let sent = gatewayPromptEchoes[sessionId], sent == text else { return false }
+        gatewayPromptEchoes.removeValue(forKey: sessionId)
+        return true
+    }
+
+    func updateGatewayInfo(_ info: GatewayInfo?) {
+        gatewayInfo = info
+    }
+
+    /// True when the server is the gateway and offers `_agmente/sessions/subscribe`. A gateway never
+    /// gets `session/load` or `session/resume` from the app: it answers a reopen from its log (FR-20).
+    var isGatewayServer: Bool { gatewayInfo?.supports("sessions") == true }
+
+    /// Decides what to do with an event of a session: apply it, drop a repeat, or resubscribe after a gap.
+    func acceptGatewayEvent(sessionId: String, seq: Int) -> GatewaySequence.Decision {
+        var sequence = gatewaySequences[sessionId] ?? GatewaySequence()
+        let decision = sequence.accept(seq)
+        gatewaySequences[sessionId] = sequence
+        return decision
+    }
+
+    func gatewayLastSeq(for sessionId: String) -> Int {
+        gatewaySequences[sessionId]?.lastSeq ?? 0
+    }
+
+    /// Opens a session on the gateway by subscribing with `afterSeq` (FR-19). The first time in this run
+    /// (nothing applied yet) the chat is cleared and the whole log is replayed; after that it continues
+    /// from the last event applied, so a reconnect or a switch back misses nothing and repeats nothing.
+    func subscribeToGatewaySession(_ id: String) {
+        guard let client = gatewayClient, connectionState == .connected else {
+            pendingSessionLoad = id
+            return
+        }
+        let after = gatewayLastSeq(for: id)
+        if after == 0 {
+            gatewaySequences[id] = GatewaySequence()
+            currentSessionViewModel?.setChatMessages([])
+            currentSessionViewModel?.resetStreamingState()
+        }
+        connectionManager.markSessionMaterialized(id)
+        pendingSessionLoad = nil
+        Task { @MainActor in
+            do {
+                try await client.subscribe(sessionId: id, afterSeq: after)
+            } catch {
+                connectionManager.markSessionUnmaterialized(id)
+                currentSessionViewModel?.loadChatState(serverId: self.id, sessionId: id, canLoadFromStorage: true)
+                appendClosure("Failed to open session: \((error as? GatewayError)?.message ?? error.localizedDescription)")
+            }
+        }
+    }
+
+    /// After a reconnect the gateway has forgotten this socket's subscription: subscribe again.
+    func resubscribeGatewaySessionIfNeeded() {
+        guard isGatewayServer, let id = selectedSessionId, !id.isEmpty, !pendingLocalSessions.contains(id) else { return }
+        subscribeToGatewaySession(id)
+    }
 
     /// Detected protocol for this server.
     private var connectedProtocol: ACPConnectedProtocol?
@@ -246,7 +324,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     private func canLoadSession() -> Bool {
         // Default to true - try server load first (will fail gracefully if not supported)
         // We can't default to false because agentInfo might not be set yet on startup
-        agentInfo?.capabilities.loadSession ?? true
+        isGatewayServer || (agentInfo?.capabilities.loadSession ?? true)
     }
 
     /// Check if this server supports session/resume capability.
@@ -735,6 +813,11 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             return
         }
 
+        if isGatewayServer {
+            subscribeToGatewaySession(sessionIdToLoad)
+            return
+        }
+
         // Clear messages before loading from server - the server will replay history.
         currentSessionViewModel?.setChatMessages([])
         currentSessionViewModel?.resetStreamingState()
@@ -804,6 +887,18 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         if pendingLocalSessions.contains(id) || pendingLocalSessions.contains(resolvedId) {
             pendingSessionLoad = nil
             lastLoadedSession = resolvedId
+            return
+        }
+
+        if isGatewayServer {
+            // Always subscribe: events of a session that was not on screen were not applied, and a
+            // subscribe from the last applied event brings them in (D-028).
+            lastLoadedSession = resolvedId
+            if connectionState == .connected, isInitialized {
+                subscribeToGatewaySession(resolvedId)
+            } else {
+                pendingSessionLoad = resolvedId
+            }
             return
         }
 
@@ -1191,6 +1286,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             let chatImages = images.map { ChatImageData(from: $0) }
             currentSessionViewModel?.addUserMessage(content: prompt, images: chatImages)
             currentSessionViewModel?.startNewStreamingResponse()
+            rememberLocalPromptForGatewayEcho(sessionId: sessionId, text: prompt)
 
             if !isInitialized {
                 appendClosure("Initialize needed but not yet moved to ServerViewModel")
@@ -1279,7 +1375,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
             // Handle session re-materialization if needed
             // Try session/load first (for agents that support it), then session/resume
-            if canLoadSession(),
+            // A gateway opens the session itself when a prompt needs it (D-032): the app sends no load.
+            if !isGatewayServer,
+               canLoadSession(),
                !pendingLocalSessions.contains(sessionId),
                !connectionManager.isSessionMaterialized(sessionId) {
                 let sessionToLoad = sessionId
@@ -1309,7 +1407,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                 }
             }
 
-            if canLoadSession() == false,
+            if !isGatewayServer,
+               canLoadSession() == false,
                canResumeSession(),
                !pendingLocalSessions.contains(sessionId),
                !connectionManager.isSessionMaterialized(sessionId),

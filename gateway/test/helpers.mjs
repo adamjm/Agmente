@@ -9,15 +9,17 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 
+const liveGateways = new Set();
+process.on('exit', () => { for (const child of liveGateways) child.kill('SIGKILL'); });
+
 export const TOKEN = 'test-token-abcdefghijklmnop';
 export const OTHER_TOKEN = 'other-token-abcdefghijklmnop';
 export const FAKE_AGENT = fileURLToPath(new URL('./fixtures/fake-agent.mjs', import.meta.url));
-export const SLOW_EXIT_AGENT = fileURLToPath(new URL('./fixtures/slow-exit-agent.mjs', import.meta.url));
 const GO_BINARY = fileURLToPath(new URL('../bin/agmente-gateway', import.meta.url));
 
 /** The gateway command under test, without `--config`. Relative paths resolve from the cwd. */
@@ -53,6 +55,8 @@ export function rawConfig(root, overrides = {}) {
     ],
     agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH'] },
     projects: { roots: [root] },
+    stateDir: join(dirname(root), 'state'),
+    runner: { kind: 'host', allowHost: true },
     ...overrides,
     limits: { ...(overrides.limits ?? {}) },
   };
@@ -119,6 +123,11 @@ export async function spawnGateway(config, { env = {}, replaceEnv = false, cwd, 
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   const exited = new Promise((r) => child.once('exit', (code, signal) => r({ code, signal })));
+  // A test that times out must not keep the runner alive, or leave a gateway behind.
+  child.unref();
+  child.stderr.unref();
+  liveGateways.add(child);
+  exited.then(() => liveGateways.delete(child));
   const audit = [];
   const stderrNoise = [];
   const waiters = new Set();
@@ -171,8 +180,8 @@ export async function spawnGateway(config, { env = {}, replaceEnv = false, cwd, 
     httpUrl: `http://127.0.0.1:${port}/`,
     audit,
     pid: child.pid,
-    /** Agent processes started so far: one `connect` audit line each (FR-9). */
-    spawned: () => audit.filter((a) => a.event === 'connect').length,
+    /** Agent processes started so far: one `agent_start` audit line each (FR-9, D-025). */
+    spawned: () => audit.filter((a) => a.event === 'agent_start').length,
     waitForAudit,
     /** Give the gateway's stderr time to arrive before a negative check. */
     settle: (ms = 150) => sleep(ms),
@@ -227,3 +236,20 @@ export function nextClose(ws) {
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Register gw.dirs.project (or `path`) as a project and open a session in it on this socket.
+ * Requests with no cwd or sessionId then go to this project (D-025). Returns { project, sessionId }.
+ */
+export async function useProject(gw, ws, path = gw.dirs.project) {
+  let res = await rpc(ws, '_agmente/projects/create', { name: 'test', path });
+  let project = res.result?.project;
+  if (!project) {
+    const list = await rpc(ws, '_agmente/projects/list', {});
+    project = list.result.projects.find((p) => p.path === path);
+    if (!project) throw new Error(`cannot use project: ${JSON.stringify(res.error)}`);
+  }
+  res = await rpc(ws, 'session/new', { cwd: path, mcpServers: [] });
+  if (!res.result) throw new Error(`session/new failed: ${JSON.stringify(res.error)}`);
+  return { project, sessionId: res.result.sessionId };
+}

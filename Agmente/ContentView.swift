@@ -13,7 +13,35 @@ struct ContentView: View {
     @State private var serverToDelete: ACPServerConfiguration?
     @State private var serverToEdit: ACPServerConfiguration?
     @State private var previousServerId: UUID?
+    @State private var deepLinkNotice: String?
     @Environment(\.scenePhase) private var scenePhase
+
+    /// Opens the session a link or a tapped notification names. A link only navigates (D-041): it never
+    /// sends a prompt, answers an approval or changes a setting.
+    private func handleDeepLink(_ url: URL) {
+        switch model.resolveDeepLink(url) {
+        case .open(let sessionId):
+            openLinkedSession(sessionId)
+        case .unknownServer:
+            deepLinkNotice = "That link is for a server this device does not have."
+        case .invalid:
+            deepLinkNotice = "That link could not be read."
+        }
+    }
+
+    private func openLinkedSession(_ sessionId: String) {
+#if os(macOS)
+        splitSelection = .session(sessionId)
+#else
+        let preserved = navigationPath.filter { destination in
+            switch destination {
+            case .developerLogs, .folderSessions: return true
+            default: return false
+            }
+        }
+        navigationPath = preserved + [.session(sessionId)]
+#endif
+    }
 
     private func startupLog(_ message: String) {
         print("[APP][STARTUP] \(message)")
@@ -129,6 +157,20 @@ struct ContentView: View {
                 navigationPath = preserved + [.session(sessionId)]
             }
 #endif
+        }
+        .onOpenURL { handleDeepLink($0) }
+#if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: .agmenteOpenDeepLink)) { note in
+            if let sessionId = note.userInfo?["sessionId"] as? String { openLinkedSession(sessionId) }
+        }
+#endif
+        .alert("Link not opened", isPresented: .init(
+            get: { deepLinkNotice != nil },
+            set: { if !$0 { deepLinkNotice = nil } }
+        )) {
+            Button("OK", role: .cancel) { deepLinkNotice = nil }
+        } message: {
+            Text(deepLinkNotice ?? "")
         }
         .alert("Delete Server", isPresented: .init(
             get: { serverToDelete != nil },
@@ -443,6 +485,8 @@ private struct SessionListPage: View {
     @State private var sessionSearchText: String = ""
     @State private var showingNewSessionSheet: Bool = false
     @State private var customWorkingDirectory: String = ""
+    @StateObject private var gatewayHome = GatewayHomeModel()
+    @State private var showingApprovals: Bool = false
     @AppStorage("summaryCardCollapsed") private var summaryCardCollapsed: Bool = false
     @AppStorage("sessionGroupingMode") private var groupingMode: SessionGroupingMode = .byTime
     private static let lastConnectedFormatter: DateFormatter = {
@@ -666,8 +710,13 @@ private struct SessionListPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     summaryCard
-                    
-                    if model.serverSessionSummaries.isEmpty {
+
+                    if model.selectedServerIsGatewayHome {
+                        ApprovalsBanner(inbox: model.gatewayApprovals) { showingApprovals = true }
+                        GatewayHomeSections(home: gatewayHome, search: sessionSearchText) { sessionId in
+                            navigate(to: .session(sessionId))
+                        }
+                    } else if model.serverSessionSummaries.isEmpty {
                         PixelBot()
                             .frame(maxWidth: .infinity)
                             .padding(.top, 28)
@@ -701,7 +750,13 @@ private struct SessionListPage: View {
                 .padding(.horizontal, 16)
             }
             .refreshable {
-                await model.refreshSessions()
+                if model.selectedServerIsGatewayHome {
+                    async let home: Void = gatewayHome.refresh()
+                    async let approvals: Void = model.gatewayApprovals.refresh()
+                    _ = await (home, approvals)
+                } else {
+                    await model.refreshSessions()
+                }
             }
             
             #if os(iOS)
@@ -723,16 +778,36 @@ private struct SessionListPage: View {
         .textInputAutocapitalization(.never)
 #endif
         .disableAutocorrection(true)
-        .sheet(isPresented: $showingNewSessionSheet) {
-            NewSessionSheet(
-                workingDirectory: $customWorkingDirectory,
-                usedWorkingDirectories: model.usedWorkingDirectoryHistory,
-                onCancel: { showingNewSessionSheet = false },
-                onCreate: {
-                    model.sendNewSession(workingDirectory: customWorkingDirectory)
-                    showingNewSessionSheet = false
-                }
+        .sheet(isPresented: $showingApprovals) {
+            ApprovalsInboxView(
+                inbox: model.gatewayApprovals,
+                projects: gatewayHome.projects,
+                sessions: gatewayHome.sessions,
+                onClose: { showingApprovals = false }
             )
+        }
+        .sheet(isPresented: $showingNewSessionSheet) {
+            if model.selectedServerIsGatewayHome {
+                // A gateway server picks a project, not a path (FR-26).
+                GatewayNewSessionSheet(
+                    projects: gatewayHome.projects,
+                    onCancel: { showingNewSessionSheet = false },
+                    onCreate: { project in
+                        model.sendNewSession(workingDirectory: project.path)
+                        showingNewSessionSheet = false
+                    }
+                )
+            } else {
+                NewSessionSheet(
+                    workingDirectory: $customWorkingDirectory,
+                    usedWorkingDirectories: model.usedWorkingDirectoryHistory,
+                    onCancel: { showingNewSessionSheet = false },
+                    onCreate: {
+                        model.sendNewSession(workingDirectory: customWorkingDirectory)
+                        showingNewSessionSheet = false
+                    }
+                )
+            }
         }
         .toolbar {
             if !model.serverSessionSummaries.isEmpty {
@@ -769,6 +844,24 @@ private struct SessionListPage: View {
             }
 #endif
         }
+        .task(id: gatewayRefreshKey) {
+            // The gateway answers the projects, sessions and approvals from its own database. While the home
+            // is on screen they refresh every 15 s; a leave or a server change ends the loop.
+            guard model.selectedServerIsGatewayHome else {
+                gatewayHome.configure(clientProvider: nil)
+                model.gatewayApprovals.configure(clientProvider: nil)
+                return
+            }
+            let provider: () -> GatewayClient? = { [weak model] in model?.selectedGatewayClient() }
+            gatewayHome.configure(clientProvider: provider)
+            model.gatewayApprovals.configure(clientProvider: provider)
+            while !Task.isCancelled {
+                async let home: Void = gatewayHome.refresh()
+                async let approvals: Void = model.gatewayApprovals.refresh()
+                _ = await (home, approvals)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+            }
+        }
         .onAppear {
             startupLog(
                 "SessionListPage.onAppear connectionState=\(model.connectionState) isConnecting=\(model.isConnecting) selectedServerId=\(model.selectedServerId?.uuidString ?? "nil") isInitialAppLaunch=\(model.isInitialAppLaunch)"
@@ -784,9 +877,15 @@ private struct SessionListPage: View {
         }
     }
 
+    /// Changes when the gateway loop must restart: another server, or the same one connected again.
+    private var gatewayRefreshKey: String {
+        "\(model.selectedServerId?.uuidString ?? "-")|\(model.selectedServerIsGatewayHome)|\(model.connectionState)"
+    }
+
     private var summaryCard: some View {
-        let active = activeSessions.count
-        let idle = idleSessions.count
+        // A gateway server counts its own sessions by their status; others count the streaming one.
+        let active = model.selectedServerIsGatewayHome ? gatewayHome.activeCount : activeSessions.count
+        let idle = model.selectedServerIsGatewayHome ? gatewayHome.idleCount : idleSessions.count
         // Use serverAgentInfo (reads from @Published ServerViewModel.agentInfo) instead of
         // currentAgentInfo (reads from non-@Published agentInfoCache) to ensure view updates
         let agentDisplayName = model.serverAgentInfo?.displayNameWithVersion

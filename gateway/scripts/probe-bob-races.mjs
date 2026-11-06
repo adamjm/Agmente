@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Live race probes on IBM Bob behind the gateway (follow-up to T-34, Q-1 and Q-5).
 //   R1: session/resume while a turn runs, same Bob process.
-//   R2: a second socket (so a second Bob process, D-006; needs caps above 1, so the probe sets
-//       none and gets the defaults) loads, then prompts, a session that is
-//       running in the first process. Both processes share HOME and the project folder.
-//   R3: a third process loads the session afterwards; which user prompts are in the replay?
+//   R2: a second socket loads, then prompts, the session while A's turn runs. Since D-025 both
+//       sockets reach the same Bob process (one agent per project), so Bob's in-process check
+//       refuses the load (PLAN 3.4 check). Before D-025 this was a second process and lost a write.
+//   R3: a third socket loads the session afterwards; which user prompts are in the replay?
 // Usage (BOB_API_KEY must be in the environment; this script never prints it):
 //   node gateway/scripts/probe-bob-races.mjs [--bob <path>]
-// Bob runs with a disposable HOME and a trusted temp project, as in probe-bob.mjs.
+// The probe registers a temp project; Bob runs in it with the project's HOME under a temp stateDir.
 // Every session/request_permission is answered with a reject option (D-009).
 import { mkdtemp, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -28,10 +28,9 @@ log(`bob: ${bobPath} (${bobVersion}); BOB_API_KEY set: ${!!process.env.BOB_API_K
 const base = await realpath(await mkdtemp(join(tmpdir(), 'agmente-bob-race-')));
 const root = join(base, 'root');
 const project = join(root, 'project');
-const home = join(base, 'home');
+const stateDir = join(base, 'state');
 await mkdir(project, { recursive: true });
-await mkdir(join(home, '.bob'), { recursive: true });
-await writeFile(join(home, '.bob', 'trustedFolders.json'), JSON.stringify({ version: 1, folders: { [project]: 'TRUST_FOLDER' } }));
+let home = null; // the project home, known after registration
 
 const token = randomBytes(24).toString('base64url');
 // The gateway discards agent stderr. For this probe only, the configured command wraps Bob in
@@ -47,9 +46,11 @@ const config = {
     envPassthrough: ['PATH', 'HOME', 'LANG', 'BOB_API_KEY'],
   },
   projects: { roots: [root] },
+  stateDir,
+  runner: { kind: 'host', allowHost: true },
   limits: {},
 };
-const gateway = await spawnGateway(config, { cwd: project, env: { HOME: home } });
+const gateway = await spawnGateway(config);
 
 /** One socket = one Bob process (phase 1, D-006). */
 async function client(label) {
@@ -107,6 +108,9 @@ let a;
 let sessionId;
 try {
   a = await client('A');
+  const registered = await a.rpc('_agmente/projects/create', { name: 'race', path: project });
+  a.show('_agmente/projects/create', registered);
+  home = join(stateDir, 'homes', registered.result.project.id);
   const created = await a.rpc('session/new', { cwd: project, mcpServers: [] });
   a.show('session/new', created);
   sessionId = created.result?.sessionId;
@@ -140,11 +144,11 @@ try {
     const { turn, start } = await startLongTurn(a, sessionId, 'P2');
     const b = await client('B');
     const bLoad = await b.rpc('session/load', { sessionId, cwd: project, mcpServers: [] });
-    b.show('R2 session/load in a second process during A\'s turn', bLoad);
+    b.show('R2 session/load from a second socket during A\'s turn', bLoad);
     log(`[B] R2 replay: ${b.updates.length} updates; user prompts seen: ${JSON.stringify((b.userTexts().match(/\[P\d\]/g) ?? []))}`);
     const aBefore = a.updates.length;
     const bPrompt = await b.rpc('session/prompt', { sessionId, prompt: [{ type: 'text', text: '[PB] Reply with exactly the word: from-b. Do not use any tools.' }] });
-    b.show('R2 session/prompt in the second process during A\'s turn', bPrompt);
+    b.show('R2 session/prompt from the second socket during A\'s turn', bPrompt);
     const done = await turn;
     a.show('R2 A\'s running turn', done);
     log(`[A] R2 A kept streaming while B prompted: ${a.updates.length - aBefore} updates; A total for the turn: ${a.updates.length - start}`);
@@ -156,7 +160,7 @@ try {
   {
     const c = await client('C');
     const cLoad = await c.rpc('session/load', { sessionId, cwd: project, mcpServers: [] });
-    c.show('R3 session/load in a third process', cLoad);
+    c.show('R3 session/load from a third socket', cLoad);
     await sleep(1000);
     log(`[C] R3 load result keys: ${JSON.stringify(Object.keys(cLoad.result ?? {}))}; update kinds: ${JSON.stringify([...new Set(c.updates.map((u) => u.kind))])}`);
     const list = await c.rpc('session/list', { cwd: project });
@@ -176,6 +180,7 @@ try {
   log(`agent stderr lines matching lock|SQLITE|busy|conflict|error: ${errLines.length}`);
   for (const l of errLines.slice(0, 10)) log(`  ${l.slice(0, 300)}`);
   try { log(`HOME/.bob after run: ${JSON.stringify(await readdir(join(home, '.bob')))}`); } catch { /* none */ }
+  log(`Bob processes started: ${gateway.spawned()}`);
   await rm(base, { recursive: true, force: true });
   log(`summary: ${JSON.stringify(results)}`);
 }

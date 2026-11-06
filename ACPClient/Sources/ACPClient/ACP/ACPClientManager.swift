@@ -100,10 +100,6 @@ public final class ACPClientManager: ObservableObject {
     /// The active service instance, or nil if disconnected.
     public private(set) var service: ACPService?
 
-    /// Persistent client ID sent with every WebSocket connection.
-    /// Enables session resumption with compatible servers.
-    public let clientId: String
-
     public weak var delegate: ACPClientManagerDelegate?
 
     // MARK: - Private State
@@ -126,7 +122,6 @@ public final class ACPClientManager: ObservableObject {
     private let networkMonitorQueue = DispatchQueue(label: "ACPClientManager.NetworkMonitor")
     private let defaults: UserDefaults
     private let serviceFactory: ((ACPClientConfiguration, JSONEncoder) -> ACPService)?
-    private let clientIdKey = "ACPClientManager.clientId"
     private let lastConnectedAtKey = "ACPClientManager.lastConnectedAt"
 
     // MARK: - Errors
@@ -140,23 +135,11 @@ public final class ACPClientManager: ObservableObject {
 
     public init(
         defaults: UserDefaults = .standard,
-        clientId: String? = nil,
         shouldStartNetworkMonitoring: Bool = true,
         serviceFactory: ((ACPClientConfiguration, JSONEncoder) -> ACPService)? = nil
     ) {
         self.defaults = defaults
         self.serviceFactory = serviceFactory
-
-        // Load or generate persistent client ID
-        if let providedId = clientId {
-            self.clientId = providedId
-        } else if let storedId = defaults.string(forKey: clientIdKey), !storedId.isEmpty {
-            self.clientId = storedId
-        } else {
-            let newId = UUID().uuidString
-            defaults.set(newId, forKey: clientIdKey)
-            self.clientId = newId
-        }
 
         // Load last connected timestamp
         let timestamp = defaults.double(forKey: lastConnectedAtKey)
@@ -500,9 +483,6 @@ public final class ACPClientManager: ObservableObject {
             headers["CF-Access-Client-Secret"] = cfSecret
         }
 
-        // Persistent client ID for session resumption
-        headers["X-Client-Id"] = clientId
-
         return headers
     }
 
@@ -548,6 +528,11 @@ public final class ACPClientManager: ObservableObject {
 
     public func markSessionMaterialized(_ sessionId: String) {
         materializedSessions.insert(sessionId)
+    }
+
+    /// Forgets that a session was opened, so the next open tries again (used when a gateway subscribe fails).
+    public func markSessionUnmaterialized(_ sessionId: String) {
+        materializedSessions.remove(sessionId)
     }
 
     public func isResumingSession(_ sessionId: String) -> Bool {

@@ -4,9 +4,7 @@ import ACPClient
 @MainActor
 final class ServerLifecycleController {
     private enum DefaultsKey {
-        static let legacyClientId = "Agmente.clientId"
         static let legacyLastConnectedAt = "Agmente.lastConnectedAt"
-        static let connectionClientId = "ACPClientManager.clientId"
         static let connectionLastConnectedAt = "ACPClientManager.lastConnectedAt"
     }
 
@@ -21,13 +19,6 @@ final class ServerLifecycleController {
 
     func migrateLegacyConnectionDefaultsIfNeeded(connectionManagerProvided: Bool) {
         guard !connectionManagerProvided else { return }
-
-        let currentClientId = defaults.string(forKey: DefaultsKey.connectionClientId) ?? ""
-        if currentClientId.isEmpty,
-           let legacyId = defaults.string(forKey: DefaultsKey.legacyClientId),
-           !legacyId.isEmpty {
-            defaults.set(legacyId, forKey: DefaultsKey.connectionClientId)
-        }
 
         if defaults.object(forKey: DefaultsKey.connectionLastConnectedAt) == nil,
            let legacyTimestamp = defaults.object(forKey: DefaultsKey.legacyLastConnectedAt) as? TimeInterval {

@@ -7,14 +7,14 @@ import (
 
 func TestRoundTripMatchesJSONParseThenStringify(t *testing.T) {
 	cases := map[string]string{
-		`{"b":1,"a":2,"b":3}`:                `{"b":3,"a":2}`, // first position, last value
-		`{ "x" : [ 1 , 2.50 , -0 , 1e3 ] }`:  `{"x":[1,2.50,-0,1e3]}`,
-		`{"id":9007199254740993}`:            `{"id":9007199254740993}`, // not rounded
-		`{"s":"a\u2028b\u2029c"}`:            `{"s":"a\u2028b\u2029c"}`,
-		"{\"s\":\"a\u2028b\"}":               `{"s":"a\u2028b"}`, // raw U+2028 is escaped
-		`{"s":"q\"\\\/\b\f\n\r\t\u0001"}`:    `{"s":"q\"\\/\b\f\n\r\t\u0001"}`,
+		`{"b":1,"a":2,"b":3}`:               `{"b":3,"a":2}`, // first position, last value
+		`{ "x" : [ 1 , 2.50 , -0 , 1e3 ] }`: `{"x":[1,2.50,-0,1e3]}`,
+		`{"id":9007199254740993}`:           `{"id":9007199254740993}`, // not rounded
+		`{"s":"a\u2028b\u2029c"}`:           `{"s":"a\u2028b\u2029c"}`,
+		"{\"s\":\"a\u2028b\"}":              `{"s":"a\u2028b"}`, // raw U+2028 is escaped
+		`{"s":"q\"\\\/\b\f\n\r\t\u0001"}`:   `{"s":"q\"\\/\b\f\n\r\t\u0001"}`,
 		`{"e":{},"a":[],"n":null,"t":true}`: `{"e":{},"a":[],"n":null,"t":true}`,
-		`"just a string"`:                    `"just a string"`,
+		`"just a string"`:                   `"just a string"`,
 	}
 	for in, want := range cases {
 		v, err := Parse([]byte(in))

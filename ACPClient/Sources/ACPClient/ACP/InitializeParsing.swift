@@ -18,6 +18,20 @@ public struct ACPAuthMethod: Equatable, Sendable {
     }
 }
 
+/// What the Agmente gateway says about itself in `initialize` (`_meta["agmente/gateway"]`, D-026).
+/// A server that is not the gateway has none.
+public struct GatewayInfo: Equatable, Sendable {
+    public let version: String
+    public let extensions: [String]
+
+    public init(version: String, extensions: [String]) {
+        self.version = version
+        self.extensions = extensions
+    }
+
+    public func supports(_ name: String) -> Bool { extensions.contains(name) }
+}
+
 public struct ACPInitializeResult: Equatable, Sendable {
     public let connectedProtocol: ACPConnectedProtocol?
     public let agentInfo: AgentProfile?
@@ -25,6 +39,7 @@ public struct ACPInitializeResult: Equatable, Sendable {
     public let currentModeId: String?
     public let userAgent: String?
     public let promptCapabilitiesDeclared: Bool
+    public let gateway: GatewayInfo?
 }
 
 public enum ACPInitializeParser {
@@ -77,13 +92,21 @@ public enum ACPInitializeParser {
             agentInfo = nil
         }
 
+        var gateway: GatewayInfo?
+        if let meta = result["_meta"]?.objectValue?["agmente/gateway"]?.objectValue,
+           let version = meta["version"]?.stringValue {
+            let names = meta["extensions"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+            gateway = GatewayInfo(version: version, extensions: names)
+        }
+
         return ACPInitializeResult(
             connectedProtocol: connectedProtocol,
             agentInfo: agentInfo,
             authMethods: authMethods,
             currentModeId: currentModeId,
             userAgent: userAgent,
-            promptCapabilitiesDeclared: promptCapabilitiesDeclared
+            promptCapabilitiesDeclared: promptCapabilitiesDeclared,
+            gateway: gateway
         )
     }
 

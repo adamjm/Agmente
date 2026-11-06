@@ -3,6 +3,9 @@ import SwiftUI
 
 @main
 struct AgmenteApp: App {
+#if os(iOS)
+    @UIApplicationDelegateAdaptor(AgmenteAppDelegate.self) private var appDelegate
+#endif
     init() {
     }
     let persistenceController = PersistenceController.shared

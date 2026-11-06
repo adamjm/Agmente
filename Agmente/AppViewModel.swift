@@ -72,6 +72,22 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
 
     /// Returns the ServerViewModel for the selected server.
     /// Returns concrete ServerViewModel for ACP servers, nil for Codex (use selectedCodexServerViewModel).
+    /// The gateway's identity for the selected server, or nil when it is a plain ACP or Codex server.
+    var selectedGatewayInfo: GatewayInfo? {
+        selectedServerId.flatMap { gatewayInfos[$0] }
+    }
+
+    /// True when the selected server is the gateway and offers projects and sessions (FR-26).
+    var selectedServerIsGatewayHome: Bool {
+        guard let info = selectedGatewayInfo else { return false }
+        return info.supports("projects") && info.supports("sessions")
+    }
+
+    /// A client for the selected gateway server, or nil.
+    func selectedGatewayClient() -> GatewayClient? {
+        selectedServerViewModel?.gatewayClient
+    }
+
     var selectedServerViewModel: ServerViewModel? {
         guard let serverId = selectedServerId else { return nil }
         return serverViewModels[serverId] as? ServerViewModel
@@ -145,7 +161,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
 
     // Private computed properties for internal AppViewModel use only
     // UI should access these directly from ServerViewModel as @ObservedObject
-    private var sessionId: String {
+    var sessionId: String {
         get { selectedServerViewModelAny?.sessionId ?? "" }
         set { selectedServerViewModelAny?.sessionId = newValue }
     }
@@ -153,7 +169,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         get { selectedServerViewModelAny?.sessionSummaries ?? [] }
         set { selectedServerViewModelAny?.sessionSummaries = newValue }
     }
-    private var sessionViewModel: ACPSessionViewModel? { selectedServerViewModelAny?.currentSessionViewModel }
+    var sessionViewModel: ACPSessionViewModel? { selectedServerViewModelAny?.currentSessionViewModel }
 
     // Session Modes
     @Published private(set) var availableModes: [AgentModeOption] = []
@@ -190,6 +206,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     private var service: ACPService? { connectionManager.service }
     /// Detected protocol per server for the current app process (re-detected on reconnect if needed).
     private var connectedProtocols: [UUID: ACPConnectedProtocol] = [:]
+    /// Servers that identified themselves as the Agmente gateway in `initialize` (D-026).
+    @Published private(set) var gatewayInfos: [UUID: GatewayInfo] = [:]
+    /// The selected gateway's open approvals (FR-22). The home shows a banner for them.
+    let gatewayApprovals = ApprovalsInboxModel()
     private let encoder = JSONEncoder()
     private var pendingRequests: [ACP.ID: String] = [:]
     private var codexAckNeeded: Set<UUID> = []
@@ -1002,6 +1022,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         pendingMultiCwdFetch.removeValue(forKey: id)
         sessionViewModel?.removeServerCommandsCache(for: id)
         connectedProtocols.removeValue(forKey: id)
+        gatewayInfos.removeValue(forKey: id)
 
         // Phase 2: Remove ServerViewModel
         removeServerViewModel(for: id)
@@ -1629,20 +1650,17 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     }
 
     /// Builds the full set of additional headers for WebSocket connections.
-    /// Includes the persistent X-Client-Id header and any Cloudflare Access headers.
+    /// Includes any Cloudflare Access headers.
     /// Note: For normal connections, ACPClientManager handles headers internally.
     /// This is only used by testConnection which creates a standalone ACPService.
     private func connectionHeaders(
         cfClientId: String,
         cfClientSecret: String
     ) -> [String: String] {
-        var headers = cloudflareAccessHeaders(
+        cloudflareAccessHeaders(
             cfClientId: cfClientId.trimmingCharacters(in: .whitespacesAndNewlines),
             cfClientSecret: cfClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        // Use the same persistent clientId from connectionManager for consistency
-        headers["X-Client-Id"] = connectionManager.clientId
-        return headers
     }
 
     /// Pins and client identity of the selected server (FR-13, FR-14).
@@ -2137,6 +2155,9 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
 
     /// Respond to a pending permission request with the user's choice.
     func sendPermissionResponse(requestId: ACP.ID, optionId: String) {
+        // On a gateway the answer goes through the approvals method, so a request that someone else
+        // answered first is reported to the person instead of being dropped silently (D-031).
+        if answerGatewayApprovalIfNeeded(requestId: requestId, optionId: optionId) { return }
         sessionViewModel?.sendPermissionResponse(requestId: requestId, optionId: optionId)
     }
 
@@ -2247,6 +2268,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     }
 
     private func applyInitializeResult(_ parsed: ACPInitializeResult, serverId: UUID) {
+        gatewayInfos[serverId] = parsed.gateway
+        (serverViewModels[serverId] as? ServerViewModel)?.updateGatewayInfo(parsed.gateway)
         switch parsed.connectedProtocol {
         case .codexAppServer:
             guard let userAgent = parsed.userAgent, let agentInfo = parsed.agentInfo else { return }
@@ -2366,9 +2389,15 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
                 }
                 fetchSessionList()
                 loadPendingSessionIfPossible()
+                // A reconnect drops the gateway's subscription; subscribe again from the last event applied.
+                selectedServerViewModel?.resubscribeGatewaySessionIfNeeded()
             }
             
         case .notification(let notification):
+            if notification.method == GatewayEvent.method {
+                handleGatewayEvent(notification.params)
+                return
+            }
             append(render("Notification", method: notification.method, payload: notification.params))
             if connectedProtocols[selectedServerId ?? UUID()] == .codexAppServer {
                 selectedCodexServerViewModel?.handleCodexMessage(JSONRPCMessage(message))
@@ -2492,7 +2521,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         serverViewModels[serverId]?.updateAgentInfo(agentInfo)
     }
 
-    private func handleChatUpdate(_ params: ACP.Value?) {
+    func handleChatUpdate(_ params: ACP.Value?) {
         guard let updateSessionId = ACPSessionUpdateHandler.sessionId(from: params),
               updateSessionId == sessionId else { return }
 

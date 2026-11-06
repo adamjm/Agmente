@@ -32,13 +32,15 @@ type agentProcess struct {
 	stdout *os.File // read end
 	exited chan struct{}
 	state  *os.ProcessState
+	lock   *os.File // the project lock (host runner); closed after the process exits
+
+	stdoutDone chan struct{} // closed when the gateway has read all of stdout
 }
 
-// startAgent spawns the configured command with no shell. The client never supplies the command,
-// arguments or environment.
-func startAgent(command []string, envPassthrough []string) (*agentProcess, error) {
-	cmd := exec.Command(command[0], command[1:]...)
-	cmd.Env = buildAgentEnv(envPassthrough)
+// startProcess starts cmd with pipes the gateway owns. extra files are passed to the child as
+// fds 3 and up (the project lock, D-015). The client never supplies the command, arguments or
+// environment: runners build cmd from the config only.
+func startProcess(cmd *exec.Cmd, extra []*os.File) (*agentProcess, error) {
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -52,6 +54,7 @@ func startAgent(command []string, envPassthrough []string) (*agentProcess, error
 	cmd.Stdin = inR
 	cmd.Stdout = outW
 	cmd.Stderr = nil // /dev/null: agent logs stay on the host
+	cmd.ExtraFiles = extra
 	if err := cmd.Start(); err != nil {
 		inR.Close()
 		inW.Close()
@@ -61,7 +64,7 @@ func startAgent(command []string, envPassthrough []string) (*agentProcess, error
 	}
 	inR.Close()
 	outW.Close()
-	p := &agentProcess{cmd: cmd, stdin: inW, stdout: outR, exited: make(chan struct{})}
+	p := &agentProcess{cmd: cmd, stdin: inW, stdout: outR, exited: make(chan struct{}), stdoutDone: make(chan struct{})}
 	go func() {
 		_ = cmd.Wait() // stdio are *os.File, so Wait returns when the process exits
 		p.state = cmd.ProcessState

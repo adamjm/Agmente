@@ -13,12 +13,17 @@
     "envPassthrough": ["PATH", "HOME", "LANG", "BOB_API_KEY"]
   },
   "projects": { "roots": ["/srv/agmente/projects"] },
+  "stateDir": "/var/lib/agmente/state",
+  "runner": { "kind": "podman", "image": "agmente-bob:2.0.9" },
   "limits": {
     "maxMessageBytes": 16777216,
     "maxAgentsPerIdentity": 1,
-    "maxAgentsTotal": 1,
+    "maxAgentsTotal": 4,
+    "maxConnectionsPerIdentity": 8,
     "authFailuresPerWindow": 10,
     "authWindowSeconds": 60,
-    "lockoutSeconds": 600
+    "lockoutSeconds": 600,
+    "approvalTimeoutSeconds": 43200,
+    "idleSeconds": 1800
   }
 }

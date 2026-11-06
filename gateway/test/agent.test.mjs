@@ -1,21 +1,26 @@
-// Agent process control and audit, over the wire: FR-4, FR-9, T-13.
+// Agent process control and audit, over the wire: FR-4, FR-9, T-13 (one agent per project, D-025).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { auth, connect, FAKE_AGENT, nextClose, rpc, sleep, startGateway, TOKEN } from './helpers.mjs';
+import { join } from 'node:path';
+import { auth, connect, FAKE_AGENT, nextClose, rpc, sleep, startGateway, TOKEN, useProject } from './helpers.mjs';
 
-test('the agent environment holds only allow-listed variables', async () => {
+test('the agent environment holds only allow-listed variables, and HOME is the project home', async () => {
   const gw = await startGateway(
-    { agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'AGMENTE_TEST_PASSED'] } },
+    { agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'HOME', 'AGMENTE_TEST_PASSED'] } },
     { env: { AGMENTE_TEST_SECRET: 'must-not-leak', AGMENTE_TEST_PASSED: 'yes' } },
   );
   try {
     const { ws } = await connect(gw.url, auth());
+    const { project } = await useProject(gw, ws);
     const res = await rpc(ws, '_test/env', {});
     assert.equal(res.result.names.includes('AGMENTE_TEST_SECRET'), false);
     assert.equal(res.result.values.AGMENTE_TEST_PASSED, 'yes');
     // D-012: macOS adds __CF_USER_TEXT_ENCODING to every child process; the gateway does not pass it.
     const osSet = process.platform === 'darwin' ? ['__CF_USER_TEXT_ENCODING'] : [];
-    assert.ok(res.result.names.every((n) => n === 'PATH' || n === 'AGMENTE_TEST_PASSED' || osSet.includes(n)), res.result.names.join(','));
+    assert.ok(res.result.names.every((n) => ['PATH', 'HOME', 'AGMENTE_TEST_PASSED'].includes(n) || osSet.includes(n)), res.result.names.join(','));
+    const state = (await rpc(ws, '_test/state', {})).result;
+    assert.equal(state.home, join(gw.config.stateDir, 'homes', project.id), 'HOME is the project home, never the gateway HOME');
+    assert.equal(state.cwd, gw.dirs.project, 'the agent runs in the project folder');
     ws.close();
   } finally {
     await gw.stop();
@@ -28,6 +33,7 @@ test('the agent gets exactly the configured arguments', async () => {
   });
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     const res = await rpc(ws, '_test/argv', {});
     // No shell: the space and the `$HOME` reach the agent unchanged.
     assert.deepEqual(res.result.args, ['--flag', 'a b', '$HOME']);
@@ -44,13 +50,13 @@ test('a full ACP round trip works through the gateway', async () => {
     const init = await rpc(ws, 'initialize', { protocolVersion: 1, clientCapabilities: {} });
     assert.equal(init.result.agentInfo.name, 'bob-shell');
     assert.equal(init.result.agentCapabilities.loadSession, true);
-    const { result } = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
+    const { sessionId } = await useProject(gw, ws);
     const updates = [];
     ws.on('message', (d) => {
       const m = JSON.parse(d.toString());
       if (m.method === 'session/update') updates.push(m);
     });
-    const prompt = await rpc(ws, 'session/prompt', { sessionId: result.sessionId, prompt: [{ type: 'text', text: 'hi' }] });
+    const prompt = await rpc(ws, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hi' }] });
     assert.equal(prompt.result.stopReason, 'end_turn');
     assert.equal(updates[0].params.update.content.text, 'echo: hi');
     ws.close();
@@ -59,10 +65,11 @@ test('a full ACP round trip works through the gateway', async () => {
   }
 });
 
-test('requests, responses and notifications pass through with their ids and values', async () => {
+test('ids and values pass through; notifications reach the agent; stray responses are dropped', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    const { sessionId } = await useProject(gw, ws);
     const params = { s: 'é ✓ \u2028 "q"', n: 12345678901, f: 1.5, neg: -0, nul: null, arr: [1, { a: [] }], nested: { deep: { x: true } } };
     for (const id of ['str-id', 0, 9007199254740991]) {
       const reply = await new Promise((resolve) => {
@@ -72,14 +79,33 @@ test('requests, responses and notifications pass through with their ids and valu
       assert.equal(reply.id, id);
       assert.deepEqual(reply.result, JSON.parse(JSON.stringify(params)));
     }
-    // A client response (no method) reaches the agent, which reports it.
+    // A response to a request the gateway never sent is dropped (D-025): the agent never sees it.
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'agent-req-1', result: { outcome: { outcome: 'cancelled' } } }));
-    const received = await rpc(ws, '_test/responses', {});
-    assert.deepEqual(received.result.responses, [{ jsonrpc: '2.0', id: 'agent-req-1', result: { outcome: { outcome: 'cancelled' } } }]);
-    // A notification (no id) reaches the agent and gets no reply.
-    ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: 'x' } }));
+    await gw.waitForAudit((l) => l.event === 'response_dropped');
+    assert.deepEqual((await rpc(ws, '_test/responses', {})).result.responses.filter((r) => r.id === 'agent-req-1'), []);
+    // A notification (no id) for a known session reaches the agent and gets no reply.
+    ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } }));
+    // One for a session the gateway does not know cannot be routed, so it is dropped.
+    ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: 'unknown' } }));
+    await gw.waitForAudit((l) => l.event === 'route_refused' && l.method === 'session/cancel');
     const after = await rpc(ws, '_test/received', {});
-    assert.ok(after.result.methods.includes('session/cancel'));
+    assert.equal(after.result.methods.filter((m) => m === 'session/cancel').length, 1);
+    ws.close();
+  } finally {
+    await gw.stop();
+  }
+});
+
+test('agent requests other than permission requests are refused by the gateway', async () => {
+  const gw = await startGateway();
+  try {
+    const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
+    const seen = [];
+    ws.on('message', (d) => seen.push(JSON.parse(d.toString())));
+    const res = await rpc(ws, '_test/ask-client', { method: 'fs/read_text_file', params: { path: '/etc/passwd' } });
+    assert.deepEqual(res.result.response.error, { code: -32601, message: 'Method not found' });
+    assert.equal(seen.some((m) => m.method === 'fs/read_text_file'), false, 'the phone never saw it');
     ws.close();
   } finally {
     await gw.stop();
@@ -90,6 +116,7 @@ test('agent lines split across writes are joined; CRLF and blank lines are handl
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     const seen = [];
     ws.on('message', (d) => seen.push(JSON.parse(d.toString())));
     const one = JSON.stringify({ jsonrpc: '2.0', method: '_test/one', params: { v: 1 } });
@@ -108,6 +135,7 @@ test('non-JSON agent output is dropped, not forwarded', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     const seen = [];
     ws.on('message', (d) => seen.push(d.toString()));
     await rpc(ws, '_test/noise', {});
@@ -119,108 +147,71 @@ test('non-JSON agent output is dropped, not forwarded', async () => {
   }
 });
 
-test('the socket closes with 1011 when the agent exits, and the slot is freed', async () => {
-  const gw = await startGateway({ limits: { maxAgentsPerIdentity: 1, maxAgentsTotal: 1 } });
-  try {
-    const { ws } = await connect(gw.url, auth());
-    const closed = nextClose(ws);
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: '_test/exit' }));
-    const { code, reason } = await closed;
-    assert.equal(code, 1011);
-    assert.equal(reason, 'agent exited');
-    const exit = await gw.waitForAudit((l) => l.event === 'agent_exit');
-    assert.equal(exit.exitCode, 3);
-    await sleep(50);
-    const again = await connect(gw.url, auth());
-    assert.equal(again.status, 101);
-    again.ws.close();
-  } finally {
-    await gw.stop();
-  }
-});
-
 test('output written just before the agent exits still reaches the phone', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    const seen = [];
-    ws.on('message', (d) => seen.push(JSON.parse(d.toString())));
-    const closed = nextClose(ws);
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'last', method: '_test/say-and-exit' }));
-    assert.equal((await closed).code, 1011);
-    assert.deepEqual(seen.map((m) => m.id), ['last']);
+    await useProject(gw, ws);
+    const reply = await rpc(ws, '_test/say-and-exit', {});
+    assert.deepEqual(reply.result, { bye: true });
+    await gw.waitForAudit((l) => l.event === 'agent_exit');
+    ws.close();
   } finally {
     await gw.stop();
   }
 });
 
-test('an agent command that cannot start closes the socket with 1011 and frees the slot', async () => {
+test('an agent command that cannot start gives a JSON-RPC error and frees its slot', async () => {
   const gw = await startGateway({
     agent: { command: ['/nonexistent/agmente-agent'], envPassthrough: ['PATH'] },
     limits: { maxAgentsPerIdentity: 1, maxAgentsTotal: 1 },
   });
   try {
-    for (let i = 0; i < 2; i++) {
-      const res = await connect(gw.url, auth());
-      assert.equal(res.status, 101);
-      const { code, reason } = await nextClose(res.ws);
-      assert.equal(code, 1011);
-      assert.equal(reason, 'agent failed to start');
-      await sleep(50);
-    }
-  } finally {
-    await gw.stop();
-  }
-});
-
-test('closing the socket kills the agent (D-006)', async () => {
-  const gw = await startGateway({ limits: { maxAgentsPerIdentity: 1, maxAgentsTotal: 1 } });
-  try {
     const { ws } = await connect(gw.url, auth());
-    await rpc(ws, '_test/echo', {});
+    assert.ok((await rpc(ws, '_agmente/projects/create', { name: 'p', path: gw.dirs.project })).result);
+    for (let i = 0; i < 2; i++) {
+      const res = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
+      assert.deepEqual(res.error, { code: -32000, message: 'agent failed to start' }, `attempt ${i + 1}`);
+    }
+    await gw.waitForAudit((l) => l.event === 'agent_error' && l.reason === 'ENOENT');
     ws.close();
-    await nextClose(ws);
-    const exit = await gw.waitForAudit((l) => l.event === 'agent_exit');
-    assert.ok(exit.signal === 'SIGTERM' || exit.exitCode !== null, JSON.stringify(exit));
-    await gw.waitForAudit((l) => l.event === 'disconnect');
-    // The slot is free: a new agent may start.
-    await sleep(50);
-    const again = await connect(gw.url, auth());
-    assert.equal(again.status, 101);
-    again.ws.close();
   } finally {
     await gw.stop();
   }
 });
 
 test('an agent that ignores SIGTERM is killed after the grace period', async () => {
-  const gw = await startGateway({ limits: { maxAgentsPerIdentity: 1, maxAgentsTotal: 1 } });
+  const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
+    await useProject(gw, ws);
     await rpc(ws, '_test/ignore-sigterm', {});
-    ws.close();
-    await nextClose(ws);
-    const exit = await gw.waitForAudit((l) => l.event === 'agent_exit', 6000);
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'big', method: '_test/big', params: { bytes: 17 * 1024 * 1024 } }));
+    const exit = await gw.waitForAudit((l) => l.event === 'agent_exit', 8000);
     assert.equal(exit.signal, 'SIGKILL');
+    ws.close();
   } finally {
     await gw.stop();
   }
 });
 
-test('stopping the gateway with SIGTERM logs shutdown and exits 0', async () => {
+test('stopping the gateway with SIGTERM stops its agents, logs shutdown and exits 0', async () => {
   const gw = await startGateway();
   const { ws } = await connect(gw.url, auth());
-  await rpc(ws, '_test/echo', {});
+  await useProject(gw, ws);
+  const { pid } = (await rpc(ws, '_test/state', {})).result;
   await gw.stop();
   assert.ok(gw.audit.some((l) => l.event === 'shutdown' && l.signal === 'SIGTERM'));
+  assert.ok(gw.audit.some((l) => l.event === 'agent_exit' && l.pid === pid), 'the agent exited before the gateway');
+  assert.throws(() => process.kill(pid, 0), /ESRCH/, 'no agent outlives the gateway');
 });
 
 test('T-13: the audit log holds method names but no prompt text or token', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    const { result } = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
-    await rpc(ws, 'session/prompt', { sessionId: result.sessionId, prompt: [{ type: 'text', text: 'SECRET-PROMPT-TEXT' }] });
+    const { sessionId } = await useProject(gw, ws);
+    await rpc(ws, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'SECRET-PROMPT-TEXT' }] });
     ws.close();
     await nextClose(ws);
     await gw.waitForAudit((l) => l.event === 'disconnect');
@@ -231,7 +222,7 @@ test('T-13: the audit log holds method names but no prompt text or token', async
     assert.equal(text.includes(TOKEN), false);
     assert.equal(text.includes(gw.dirs.project), false, 'no paths from params');
     // Each line has a timestamp and an event name, and only known fields.
-    const allowed = new Set(['ts', 'event', 'identity', 'device', 'client', 'conn', 'status', 'reason', 'method', 'dir', 'code', 'pid', 'exitCode', 'signal']);
+    const allowed = new Set(['ts', 'event', 'identity', 'device', 'client', 'conn', 'status', 'reason', 'method', 'dir', 'code', 'pid', 'exitCode', 'signal', 'project']);
     for (const line of gw.audit) {
       assert.match(line.ts, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
       assert.equal(typeof line.event, 'string');
