@@ -50,11 +50,13 @@ func TestSnapshotRunsNoFilterUnderPodman(t *testing.T) {
 	s, p := gitTestServer(t)
 	s.cfg.Runner = config.Runner{Kind: "podman", Image: image, Podman: podman}
 	s.runner = podmanRunner{cfg: s.cfg}
+	// Owner-only folders, as the gateway makes them: the container user reaches them through
+	// `--userns=keep-id` (D-051), not through open modes.
 	for _, dir := range []string{p.Path, s.projectHome(p.ID)} {
-		if err := os.MkdirAll(dir, 0o777); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(dir, 0o777); err != nil {
+		if err := os.Chmod(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -69,18 +71,6 @@ func TestSnapshotRunsNoFilterUnderPodman(t *testing.T) {
 	mustGit(t, p.Path, "config", "filter.evil.required", "true")
 	_ = os.WriteFile(filepath.Join(p.Path, "a.txt"), []byte("TWO\n"), 0o644)
 
-	// The container user is not the host user, so the gateway's 0700 folders would not be writable
-	// from inside; this test makes the snapshot folders open, as the Linux deployment must by other
-	// means (user namespace mapping, PLAN 4.1). Without this git fails with "not a git repository".
-	objects := filepath.Join(s.snapshotDir(p), "objects")
-	if err := os.MkdirAll(objects, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	for _, dir := range []string{s.snapshotDir(p), objects} {
-		if err := os.Chmod(dir, 0o777); err != nil {
-			t.Fatal(err)
-		}
-	}
 	tree, err := s.takeSnapshot(context.Background(), p)
 	if err != nil {
 		var ee *gitExitError

@@ -9,6 +9,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -21,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -74,6 +75,11 @@ var schemaV2 = []string{
 		end_tree TEXT,
 		PRIMARY KEY (session_id, turn)
 	) WITHOUT ROWID`,
+}
+
+// schemaV3 adds a project's own deny-list entries (D-050): a JSON array, NULL when none.
+var schemaV3 = []string{
+	`ALTER TABLE projects ADD COLUMN deny_paths TEXT`,
 }
 
 // Store is one open database. It is safe for concurrent use.
@@ -136,7 +142,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -214,6 +220,7 @@ type Project struct {
 	Path        string // realpath on the gateway host
 	DefaultMode string // "" when unset
 	Created     string
+	DenyPaths   []string // additions to the secret deny-list (D-050); the built-ins always apply
 }
 
 // ErrDuplicatePath means a project with the same path is already registered.
@@ -225,9 +232,17 @@ func (s *Store) CreateProject(ctx context.Context, p Project) error {
 	if p.DefaultMode != "" {
 		mode = p.DefaultMode
 	}
+	var deny any
+	if len(p.DenyPaths) > 0 {
+		b, err := json.Marshal(p.DenyPaths)
+		if err != nil {
+			return err
+		}
+		deny = string(b)
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, path, default_mode, created) VALUES (?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, mode, p.Created)
+		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths) VALUES (?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, mode, p.Created, deny)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: projects.path") {
 		return ErrDuplicatePath
 	}
@@ -236,7 +251,7 @@ func (s *Store) CreateProject(ctx context.Context, p Project) error {
 
 // Projects lists every project, oldest first.
 func (s *Store) Projects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created FROM projects ORDER BY created, id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, '') FROM projects ORDER BY created, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +259,11 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 	out := []Project{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created); err != nil {
+		var deny string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny); err != nil {
+			return nil, err
+		}
+		if p.DenyPaths, err = parseDeny(deny); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -255,12 +274,16 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 // ProjectByPath returns the project registered at path, or nil.
 func (s *Store) ProjectByPath(ctx context.Context, path string) (*Project, error) {
 	var p Project
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created FROM projects WHERE path = ?`, path).
-		Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created)
+	var deny string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, '') FROM projects WHERE path = ?`, path).
+		Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if p.DenyPaths, err = parseDeny(deny); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -269,12 +292,16 @@ func (s *Store) ProjectByPath(ctx context.Context, path string) (*Project, error
 // ProjectByID returns the project with this id, or nil.
 func (s *Store) ProjectByID(ctx context.Context, id string) (*Project, error) {
 	var p Project
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created)
+	var deny string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, '') FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if p.DenyPaths, err = parseDeny(deny); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -484,4 +511,16 @@ func (s *Store) Snapshot(ctx context.Context, sessionID string, turn int64) (sta
 		return "", "", false, nil
 	}
 	return a.String, b.String, err == nil, err
+}
+
+// parseDeny reads a stored deny_paths value ("" when none).
+func parseDeny(v string) ([]string, error) {
+	if v == "" {
+		return nil, nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(v), &out); err != nil {
+		return nil, fmt.Errorf("stored denyPaths: %w", err)
+	}
+	return out, nil
 }

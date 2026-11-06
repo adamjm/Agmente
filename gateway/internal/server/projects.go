@@ -48,10 +48,12 @@ type projectJSON struct {
 	Name        string  `json:"name"`
 	Path        string  `json:"path"`
 	DefaultMode *string `json:"defaultMode"`
+	// DenyPaths are the project's additions to the secret deny-list (D-050); left out when none.
+	DenyPaths []string `json:"denyPaths,omitempty"`
 }
 
 func toProjectJSON(p store.Project) projectJSON {
-	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path}
+	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths}
 	if p.DefaultMode != "" {
 		mode := p.DefaultMode
 		out.DefaultMode = &mode
@@ -126,6 +128,24 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 		}
 		mode = v
 	}
+	var deny []string
+	if dv := params.Get("denyPaths"); !dv.IsNull() {
+		if dv.Kind != jsonv.Array {
+			return nil, invalidParams("denyPaths must be a list of glob strings")
+		}
+		in := []string{}
+		for _, item := range dv.Arr {
+			str, ok := item.StringValue()
+			if !ok {
+				return nil, invalidParams("denyPaths must be a list of glob strings")
+			}
+			in = append(in, str)
+		}
+		var err error
+		if deny, err = validateDenyPaths(in); err != nil {
+			return nil, invalidParams("%s", err.Error())
+		}
+	}
 	rawPath, ok := params.Get("path").StringValue()
 	if !ok || !filepath.IsAbs(rawPath) {
 		return nil, invalidParams("path must be an absolute path")
@@ -155,7 +175,7 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 		_ = os.RemoveAll(home)
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create the project home"}
 	}
-	p := store.Project{ID: id, Name: name, Path: real, DefaultMode: mode, Created: time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
+	p := store.Project{ID: id, Name: name, Path: real, DefaultMode: mode, DenyPaths: deny, Created: time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
 	if err := s.store.CreateProject(ctx, p); err != nil {
 		_ = os.RemoveAll(home)
 		if errors.Is(err, store.ErrDuplicatePath) {

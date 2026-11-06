@@ -160,11 +160,13 @@ func (r hostRunner) exec(ctx context.Context, p store.Project, home string, argv
 // agent's name is the project lock, D-015, and git never touches the task store), no network, the
 // project folder and the project home mounted at their host paths, and the same image.
 func (r podmanRunner) gitArgs(name string, p store.Project, home string, argv, extraEnv []string) []string {
-	args := []string{"run", "--rm", "-i", "--name", name, "--pull=never", "--init", "--network=none",
-		"-v", home + ":" + home,
-		"-v", p.Path + ":" + p.Path,
+	args := []string{"run", "--rm", "-i", "--name", name, "--pull=never", "--init", "--network=none"}
+	args = append(args, r.userArgs()...)
+	args = append(args,
+		"-v", home+":"+home,
+		"-v", p.Path+":"+p.Path,
 		"-w", p.Path,
-	}
+	)
 	for _, kv := range gitEnv(home, extraEnv) {
 		args = append(args, "-e", kv)
 	}

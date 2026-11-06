@@ -6,6 +6,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 RUN npm install -g --save-exact @ibm/bob@2.0.9 && npm cache clean --force
+# The gateway runs this image with --userns=keep-id:uid=10001,gid=10001 --user 10001:10001 (D-051), so
+# this uid owns the project home and folders. If you change it, set runner.containerUid/containerGid.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin bob
 USER bob
 ENV HOME=/home/bob

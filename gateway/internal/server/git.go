@@ -330,7 +330,7 @@ func (s *Server) gitDiff(ctx context.Context, params *jsonv.Value) (any, *rpcErr
 		if f == nil {
 			return nil, invalidParams("path is not in the current status")
 		}
-		if isSecretPath(target) {
+		if isSecretFor(p.DenyPaths, target) {
 			return hiddenDiff([]string{target}), nil
 		}
 		var res gitResult
@@ -351,7 +351,7 @@ func (s *Server) gitDiff(ctx context.Context, params *jsonv.Value) (any, *rpcErr
 	}
 
 	// Whole tree: the deny-list is excluded by git, then its changed files are named.
-	args := append(append(base, "--", "."), secretExcludes()...)
+	args := append(append(base, "--", "."), secretExcludesFor(p.DenyPaths)...)
 	res, err := s.runGit(ctx, *p, nil, nil, args...)
 	if err != nil {
 		return nil, gitError(err)
@@ -359,7 +359,7 @@ func (s *Server) gitDiff(ctx context.Context, params *jsonv.Value) (any, *rpcErr
 	hidden := []string{}
 	if state := s.gits.get(p.ID); state != nil {
 		for name, f := range state.paths {
-			if f.Staged == staged && f.orig != name && isSecretPath(name) {
+			if f.Staged == staged && f.orig != name && isSecretFor(p.DenyPaths, name) {
 				hidden = append(hidden, name)
 			}
 		}

@@ -47,7 +47,16 @@ type Runner struct {
 	Kind   string `json:"kind"`
 	Image  string `json:"image,omitempty"`
 	Podman string `json:"podman,omitempty"`
+	// ContainerUID and ContainerGID are the user inside the project image (D-051). The podman
+	// runner maps the gateway's own user onto it (`--userns=keep-id`), so the container user owns
+	// the project home, the snapshot folder and the project folder as the gateway user does. Zero
+	// means DefaultContainerID.
+	ContainerUID int `json:"containerUid,omitempty"`
+	ContainerGID int `json:"containerGid,omitempty"`
 }
+
+// DefaultContainerID is the uid and gid of the user in deploy/bob-project.Containerfile.
+const DefaultContainerID = 10001
 
 type Config struct {
 	Runner         Runner
@@ -241,6 +250,21 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			podman = s
 		}
 		runner = Runner{Kind: "podman", Image: image, Podman: podman}
+		for _, id := range []struct {
+			key string
+			dst *int
+		}{{"containerUid", &runner.ContainerUID}, {"containerGid", &runner.ContainerGID}} {
+			v := rv.Get(id.key)
+			if v.IsNull() {
+				continue
+			}
+			n, ok := v.Int()
+			if !ok || n < 1 || n > 65535 {
+				add("runner.%s must be an integer from 1 to 65535 (the user inside the image; 0 would be root)", id.key)
+				continue
+			}
+			*id.dst = int(n)
+		}
 	default:
 		add("runner.kind must be \"podman\" or \"host\"")
 	}

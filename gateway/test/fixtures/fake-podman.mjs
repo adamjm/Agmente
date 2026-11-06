@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fake `podman` for T-46 (FR-45, D-015, D-016). It understands only what the gateway's podman
-// runner sends: `run --rm -i --name NAME --pull=never --init -e K=V | -e K -v A:B -w DIR IMAGE CMD...`.
+// runner sends: `run --rm -i --name NAME --pull=never --init --userns=keep-id:uid=U,gid=G --user U:G -e K=V | -e K -v A:B -w DIR IMAGE CMD...`.
 // Like Podman, it refuses a second container with a name that is in use (the project lock, D-015).
 // It runs CMD as the "container", passes SIGTERM and SIGINT on to it, and exits with its code.
 //
@@ -25,12 +25,16 @@ if (args[0] !== 'run') {
   process.exit(125);
 }
 let name = null;
+let keepId = false;
+let user = null;
 let cwd = process.cwd();
 const env = { PATH: process.env.PATH };
 let i = 1;
 for (; i < args.length; i += 1) {
   const a = args[i];
   if (a === '--rm' || a === '-i' || a === '--init' || a.startsWith('--pull=')) continue;
+  if (/^--userns=keep-id:uid=\d+,gid=\d+$/.test(a)) { keepId = true; continue; } // D-051
+  if (a === '--user') { user = args[++i]; continue; }
   if (a === '--name') name = args[++i];
   else if (a === '-w') cwd = args[++i];
   else if (a === '-v') i += 1;
@@ -46,6 +50,10 @@ i += 1; // the image
 const command = args.slice(i);
 if (!name || command.length === 0) {
   process.stderr.write('fake-podman: need --name, an image and a command\n');
+  process.exit(125);
+}
+if (!keepId || !/^\d+:\d+$/.test(user ?? '')) { // the runner must map the container user (D-051)
+  process.stderr.write('fake-podman: missing --userns=keep-id:uid=U,gid=G or --user U:G\n');
   process.exit(125);
 }
 

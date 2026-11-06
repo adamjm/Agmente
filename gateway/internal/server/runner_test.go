@@ -21,7 +21,7 @@ func TestPodmanArgsMountPathsAsIsAndPassSecretsByNameOnly(t *testing.T) {
 	t.Setenv("BOB_API_KEY", "must-not-appear")
 	args := podmanRunner{cfg: cfg}.args(store.Project{ID: "0123456789ab", Path: "/srv/p/x"}, "/var/lib/agmente/state/homes/0123456789ab")
 	got := strings.Join(args, " ")
-	want := "run --rm -i --name agmente-0123456789ab --pull=never --init" +
+	want := "run --rm -i --name agmente-0123456789ab --pull=never --init --userns=keep-id:uid=10001,gid=10001 --user 10001:10001" +
 		" -e HOME=/var/lib/agmente/state/homes/0123456789ab" +
 		" -v /var/lib/agmente/state/homes/0123456789ab:/var/lib/agmente/state/homes/0123456789ab" +
 		" -v /srv/p/x:/srv/p/x -w /srv/p/x -e LANG -e BOB_API_KEY agmente-bob:2.0.9 bob acp --accept-license"

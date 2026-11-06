@@ -99,13 +99,32 @@ func lockHome(home string) (*os.File, error) {
 // Status: built and unit-tested; not yet run live (verify in PLAN 4.1).
 type podmanRunner struct{ cfg *config.Config }
 
-func (r podmanRunner) args(p store.Project, home string) []string {
-	args := []string{"run", "--rm", "-i", "--name", "agmente-" + p.ID, "--pull=never", "--init",
-		"-e", "HOME=" + home,
-		"-v", home + ":" + home,
-		"-v", p.Path + ":" + p.Path,
-		"-w", p.Path,
+// userArgs makes the container user the owner of what the gateway user owns (D-051). Rootless
+// Podman maps the user who runs it to root in the container by default, and every other uid to a
+// sub-uid that owns nothing on the host; so the image's user could not write the project home
+// (0700), the snapshot folder (0700) or the project folder. `--userns=keep-id:uid=U,gid=G` maps
+// the gateway's own uid and gid to U and G inside, `--user U:G` runs as them, and the 0700 folders
+// stay 0700: no folder is made world-writable, and nobody else on the host can use them.
+func (r podmanRunner) userArgs() []string {
+	uid, gid := r.cfg.Runner.ContainerUID, r.cfg.Runner.ContainerGID
+	if uid == 0 {
+		uid = config.DefaultContainerID
 	}
+	if gid == 0 {
+		gid = config.DefaultContainerID
+	}
+	return []string{fmt.Sprintf("--userns=keep-id:uid=%d,gid=%d", uid, gid), "--user", fmt.Sprintf("%d:%d", uid, gid)}
+}
+
+func (r podmanRunner) args(p store.Project, home string) []string {
+	args := []string{"run", "--rm", "-i", "--name", "agmente-" + p.ID, "--pull=never", "--init"}
+	args = append(args, r.userArgs()...)
+	args = append(args,
+		"-e", "HOME="+home,
+		"-v", home+":"+home,
+		"-v", p.Path+":"+p.Path,
+		"-w", p.Path,
+	)
 	for _, name := range r.cfg.EnvPassthrough {
 		if name != "HOME" && name != "PATH" { // PATH and HOME come from the image and the line above
 			args = append(args, "-e", name)

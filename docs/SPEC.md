@@ -150,7 +150,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 | Method | Params | Result |
 | --- | --- | --- |
 | `_agmente/projects/list` | — | `{ projects: [{ id, name, path, defaultMode }] }` |
-| `_agmente/projects/create` | `{ name, path, defaultMode? }` | `{ project }` |
+| `_agmente/projects/create` | `{ name, path, defaultMode?, denyPaths? }` | `{ project }` (`denyPaths`: additions to the secret deny-list, D-050; returned only when not empty) |
 | `_agmente/sessions/index` | `{ projectId? }` | `{ sessions: [{ sessionId, projectId, title, status, lastActivity, headSeq, unread }] }` (D-030) |
 | `_agmente/sessions/read` | `{ sessionId, seq }` | `{ lastSeenSeq }`: the identity's read marker, which only moves forward (D-030) |
 | `_agmente/sessions/subscribe` | `{ sessionId, afterSeq }` | `{ headSeq }`, then notifications `_agmente/event { sessionId, seq, message }`: the replay up to `headSeq`, then live events (D-028) |
@@ -169,7 +169,7 @@ Shapes are a draft. Each phase confirms them in its plan notes and records chang
 
 ### 6.3 Gateway config file
 
-JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)).
+JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)).
 
 ### 6.4 Gateway CLI
 

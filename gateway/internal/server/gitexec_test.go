@@ -194,7 +194,7 @@ func TestPodmanGitArgs(t *testing.T) {
 	cfg := &config.Config{Runner: config.Runner{Kind: "podman", Image: "img:1", Podman: "podman"}}
 	t.Setenv("BOB_API_KEY", "must-not-appear")
 	args := strings.Join(podmanRunner{cfg: cfg}.gitArgs("agmente-git-x", store.Project{ID: "p", Path: "/srv/p"}, "/h", gitCommand("/srv/p", "status"), []string{"GIT_INDEX_FILE=/h/i"}), " ")
-	for _, want := range []string{"run --rm -i --name agmente-git-x --pull=never --init --network=none", "-v /h:/h -v /srv/p:/srv/p -w /srv/p", "-e GIT_CONFIG_NOSYSTEM=1", "-e GIT_INDEX_FILE=/h/i", "--entrypoint git img:1 --no-pager --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null -c safe.directory=/srv/p status"} {
+	for _, want := range []string{"run --rm -i --name agmente-git-x --pull=never --init --network=none --userns=keep-id:uid=10001,gid=10001 --user 10001:10001", "-v /h:/h -v /srv/p:/srv/p -w /srv/p", "-e GIT_CONFIG_NOSYSTEM=1", "-e GIT_INDEX_FILE=/h/i", "--entrypoint git img:1 --no-pager --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null -c safe.directory=/srv/p status"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("missing %q in:\n%s", want, args)
 		}

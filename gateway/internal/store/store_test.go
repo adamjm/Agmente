@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -196,10 +197,10 @@ func TestProjectsCreateListAndUniquePath(t *testing.T) {
 		t.Fatalf("duplicate path: %v", err)
 	}
 	list, err := s.Projects(ctx)
-	if err != nil || len(list) != 2 || list[0] != a || list[1] != b {
+	if err != nil || len(list) != 2 || !reflect.DeepEqual(list[0], a) || !reflect.DeepEqual(list[1], b) {
 		t.Fatalf("list = %+v, %v", list, err)
 	}
-	if got, _ := s.ProjectByPath(ctx, b.Path); got == nil || *got != b {
+	if got, _ := s.ProjectByPath(ctx, b.Path); got == nil || !reflect.DeepEqual(*got, b) {
 		t.Fatalf("by path = %+v", got)
 	}
 	if got, _ := s.ProjectByPath(ctx, "/nope"); got != nil {
@@ -246,7 +247,7 @@ func TestASchema1DatabaseIsMigratedAndKeepsItsData(t *testing.T) {
 	if _, err := s.AppendEvent(ctx, "sess-1", "update", []byte(`{"a":1}`)); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`DROP TABLE snapshots`, `PRAGMA user_version = 1`} {
+	for _, q := range []string{`DROP TABLE snapshots`, `ALTER TABLE projects DROP COLUMN deny_paths`, `PRAGMA user_version = 1`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

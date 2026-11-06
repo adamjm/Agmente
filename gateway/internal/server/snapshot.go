@@ -252,7 +252,7 @@ func (s *Server) gitTreeDiff(ctx context.Context, p store.Project, from, to stri
 	}
 	hidden := []string{}
 	for name := range changed {
-		if isSecretPath(name) {
+		if isSecretFor(p.DenyPaths, name) {
 			hidden = append(hidden, name)
 		}
 	}
@@ -262,12 +262,12 @@ func (s *Server) gitTreeDiff(ctx context.Context, p store.Project, from, to stri
 		if !changed[path] {
 			return nil, invalidParams("path is not in this diff")
 		}
-		if isSecretPath(path) {
+		if isSecretFor(p.DenyPaths, path) {
 			return hiddenDiff([]string{path}), nil
 		}
 		args = append(args, ":(literal)"+path)
 	} else {
-		args = append(append(args, "."), secretExcludes()...)
+		args = append(append(args, "."), secretExcludesFor(p.DenyPaths)...)
 	}
 	res, err := s.runGit(ctx, p, env, nil, args...)
 	if err != nil {
