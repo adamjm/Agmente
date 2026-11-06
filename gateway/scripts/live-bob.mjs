@@ -66,7 +66,7 @@ const config = {
   limits: { idleSeconds: Number(values['idle-seconds']) },
 };
 log(`runner: ${values.runner}; project: ${project}; key present: ${!!env.BOB_API_KEY}`);
-const gw = await spawnGateway(config, { env, configDir: base });
+const gw = await spawnGateway(config, { env, replaceEnv: true, configDir: base });
 const audit = gw.audit;
 
 // --- client -----------------------------------------------------------------
@@ -142,7 +142,12 @@ try {
   if (values['no-key']) {
     const res = await a.rpc('session/new', { cwd: project, mcpServers: [] });
     log(`T-35 session/new without a key -> ${JSON.stringify(res.error ?? res.result).slice(0, 400)}`);
-    check('T-35 recorded (see line above)', true);
+    const nk = res.result?.sessionId;
+    if (nk) {
+      const pr = await a.rpc('session/prompt', { sessionId: nk, prompt: [{ type: 'text', text: 'Reply with the word: pong' }] }, 90_000);
+      log(`T-35 session/prompt without a key -> ${JSON.stringify(pr.error ?? pr.result).slice(0, 600)}`);
+    }
+    check('T-35 recorded (see lines above)', true);
     throw new Error('done');
   }
 
