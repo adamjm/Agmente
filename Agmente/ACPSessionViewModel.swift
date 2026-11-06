@@ -689,6 +689,9 @@ final class ACPSessionViewModel: ObservableObject {
         case .agentMessage(let text):
             appendAssistantText(text, kind: .message)
 
+        case .media(let block):
+            appendMedia(ForkMediaIngest.item(for: block))
+
         case .toolCall(let info):
             appendToolCall(
                 toolCallId: info.toolCallId,
@@ -809,6 +812,13 @@ final class ACPSessionViewModel: ObservableObject {
         saveChatState()
     }
 
+    func appendMedia(_ item: ForkMediaItem) {
+        let index = ensureStreamingAssistantMessage()
+        chatMessages[index].segments.append(AssistantSegment(kind: .message, text: item.fallbackText, media: item))
+        rebuildAssistantContent(at: index)
+        saveChatState()
+    }
+
     func appendAssistantText(_ text: String, kind: AssistantSegment.Kind) {
         guard !text.isEmpty else { return }
         let index = ensureStreamingAssistantMessage()
@@ -824,7 +834,8 @@ final class ACPSessionViewModel: ObservableObject {
 
         if let lastIndex = chatMessages[index].segments.indices.last,
            chatMessages[index].segments[lastIndex].kind == kind,
-           chatMessages[index].segments[lastIndex].toolCall == nil {
+           chatMessages[index].segments[lastIndex].toolCall == nil,
+           chatMessages[index].segments[lastIndex].media == nil {
             let lastText = chatMessages[index].segments[lastIndex].text
             if lastText.hasSuffix("characters)") {
                 chatMessages[index].segments.append(AssistantSegment(kind: kind, text: text))

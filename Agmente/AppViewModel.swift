@@ -3102,12 +3102,15 @@ struct AssistantSegment: Identifiable, Equatable {
     var kind: Kind
     var text: String
     var toolCall: ToolCallDisplay?
+    /// Transient agent image/resource (Agmente/Fork/ForkMedia.swift). Not persisted; `text` is its fallback.
+    var media: ForkMediaItem?
 
-    init(kind: Kind, text: String = "", toolCall: ToolCallDisplay? = nil) {
+    init(kind: Kind, text: String = "", toolCall: ToolCallDisplay? = nil, media: ForkMediaItem? = nil) {
         self.id = UUID()
         self.kind = kind
         self.text = text
         self.toolCall = toolCall
+        self.media = media
     }
 }
 

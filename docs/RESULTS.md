@@ -40,6 +40,7 @@
 | T-33 | PASS on Bob 2.0.9 (and 2.0.7): new, prompt, load, resume, list, delete all succeed | 2026-11-06 |
 | T-34 | Recorded (differs from F-12): on 2.0.7 and 2.0.9, `session/load` and (2.0.9) `session/resume` during a turn are refused with `-32600`; the turn completes. A second Bob process is not refused (see Q-5 entry) | 2026-11-06 |
 | T-35 | Partial: Bob's error recorded; app part not built | 2026-11-05 |
+| T-36 | PASS in the iOS Simulator (unit tests, not on a device): 50 MP PNG downsampled to 2048x1600, peak footprint increase 17 MiB; oversized, wrong MIME, corrupt data and 108 MP bomb refused | 2026-11-06 |
 | All others | Not run | — |
 
 ## Entries
@@ -835,3 +836,19 @@
   - **NOT VERIFIED (needs a Linux host):** the minimum Podman version for the `uid=`/`gid=` suboptions; a service user with `/etc/subuid` ranges; SELinux volume labels; a full Bob agent start with the flags (only the git and exec path ran live here); start-up time under T-47.
 - **Task 3, per-project watcher skip list:** not done. It needs another column and create parameter, validation, and plumbing into `watch.go` plus a timing test; that is not a small change. `skipDirs` stays hardcoded (D-037).
 - **Found while testing:** under heavy machine load, two timing tests failed once each in full runs: `TestGitTimeoutKillsTheProcessGroup` (took 30 s; it passed 3 of 3 alone in 0.5 s) and `TestSnapshotRunsNoFilterUnderPodman` (a git run hit the 5 s limit; it passes alone). I did not change either. The first full run also failed 6 wire tests, which was my fault: `fake-podman.mjs` did not know the new flags; fixed above.
+
+### 2026-11-06 — T-36 image decoding limits (PLAN 5.1, 5.2; D-060)
+- **Environment:** macOS, Xcode 27.2, iPhone 17e simulator, `-derivedDataPath /tmp/dd-img`.
+- **Command:** `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17e' -derivedDataPath /tmp/dd-img -only-testing:AgmenteTests/ForkMediaTests test`, and `swift test --package-path ACPClient`.
+- **Output (trimmed):**
+  ```
+  T-36 50MP PNG: encoded 231825 bytes, output 2048x1600, peak increase 17 MiB
+  ForkMediaTests: 17 tests passed (small png/jpeg/gif, MIME normalization, svg + 6 other MIME refused, declared png with jpeg data,
+    non-image data, bad base64, truncated/corrupt PNG, base64 over limit, >20 MiB decoded, 108 MP bomb (growth < 50 MiB), 30000 px side,
+    ingest placeholders, resource_link row, mapper)
+  ACPClient: 165 XCTest, 0 failures (7 new in ContentBlockParsingTests)
+  Existing app suites unchanged and passing: CodexServerViewModelTests, ViewModelSyncTests, ACPSessionViewModelTests (73 XCTest), ChatRenderingTests
+  ```
+- **Mutation checks (each made a test fail, then the file was restored):** pixel and side limits removed -> `hugePixelCountIsRefusedWithoutDecoding` and `extremeSideLengthIsRefused` fail; display cap raised to 8000 -> the 50 MP test fails (output 8000x6250, +95 MiB); SVG added to the allow-list -> `svgAndOtherMimeTypesAreRefused` and the ingest placeholder test fail. A cap of 100000 hung the test host (ImageIO upscales to the requested size), so it was not used.
+- **Not verified:** a real device; a real Bob image block (T-39, task 5.5); Codex (no inbound image item exists); the row on screen (only the mapper and decoder are unit tested, no screenshot was taken); `scripts/check.sh` result is below.
+
