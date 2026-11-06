@@ -713,9 +713,10 @@ private struct SessionListPage: View {
 
                     if model.selectedServerIsGatewayHome {
                         ApprovalsBanner(inbox: model.gatewayApprovals) { showingApprovals = true }
-                        GatewayHomeSections(home: gatewayHome, search: sessionSearchText) { sessionId in
+                        GatewayHomeSections(home: gatewayHome, search: sessionSearchText, git: model.gitStore) { sessionId in
                             navigate(to: .session(sessionId))
                         }
+                        .gitHomeTabSheet(store: model.gitStore)
                     } else if model.serverSessionSummaries.isEmpty {
                         PixelBot()
                             .frame(maxWidth: .infinity)

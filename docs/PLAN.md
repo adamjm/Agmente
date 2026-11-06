@@ -97,7 +97,7 @@ App:
 - [x] 3.18 When connected to the gateway, `openSession` subscribes with `afterSeq` instead of sending `session/load`. Remove the `X-Client-Id` reattach.
 - [x] 3.19 Approvals inbox and badge.
 - [x] 3.20 Push registration and deep link to a session. (Deep link and permission and token capture done; sending the token to the gateway and push delivery are BLOCKED, see RESULTS and D-041.)
-- [ ] 3.21 Branch chip, Git tab, and turn diff in the file-change row (FR-31).
+- [x] 3.21 Branch chip, Git tab, and turn diff in the file-change row (FR-31). (Built and unit-tested; not run against a live gateway in the simulator, see RESULTS and D-042.)
 
 Stop condition: if T-21 shows the agent still receives a load during a turn, stop. Do not build app work on top of it.
 
