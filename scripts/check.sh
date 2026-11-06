@@ -30,14 +30,25 @@ echo "ok  ws $(node -p 'require("./gateway/node_modules/ws/package.json").versio
 step "Syntax check"
 while IFS= read -r -d '' f; do
   node --check "$f"
-done < <(find gateway/src gateway/test gateway/scripts scripts -type f \( -name '*.js' -o -name '*.mjs' \) -print0)
+done < <(find gateway/test gateway/scripts scripts -type f \( -name '*.js' -o -name '*.mjs' \) -print0)
 echo "ok"
 
-step "Gateway tests"
-npm test --prefix gateway --silent
+step "Go toolchain (>= 1.24)"
+if ! command -v go > /dev/null 2>&1; then
+  echo "Go is missing. Install Go 1.24 or later (macOS: brew install go)." >&2
+  exit 1
+fi
+go version
+
+step "Go gateway: vet, unit tests, build"
+(cd gateway && go vet ./... && go test ./... && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)
+echo "ok  gateway/bin/agmente-gateway"
+
+step "Gateway wire tests against the Go gateway"
+AGMENTE_GATEWAY_CMD="[\"$ROOT/gateway/bin/agmente-gateway\"]" npm test --prefix gateway --silent
 
 step "Gateway dry run with the example config"
-node gateway/src/main.js --config gateway/config.example.json --dry-run > /dev/null
+gateway/bin/agmente-gateway --config gateway/config.example.json --dry-run > /dev/null
 echo "ok"
 
 step "No secrets in the overlay"

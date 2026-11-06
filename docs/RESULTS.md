@@ -340,3 +340,59 @@
   - **Caddy and SNI:** a connection by IP sends no SNI. Caddy's client-auth policy did not match, the handshake completed without a client certificate, and every request got HTTP 421. Clients must use the host name. This is noted in `deploy/Caddyfile`.
   - The local Caddy, the gateway and all keys lived in the scratch folder and were stopped and left there. Nothing was added to the system trust store (`skip_install_trust`; Caddy logged "root certificate trust store installation disabled").
 
+
+### 2026-11-06 — Wire-level gateway tests, and the Go gateway (D-021)
+- **Environment:** macOS, Node v24.5.0, Go 1.27.3 (Homebrew), `github.com/coder/websocket` v1.8.15.
+- **Commands:**
+  - `npm test --prefix gateway` (Node gateway, the default target), three runs
+  - `go vet ./... && go test ./... && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway` (in `gateway/`)
+  - `AGMENTE_GATEWAY_CMD='["<abs>/gateway/bin/agmente-gateway"]' npm test --prefix gateway`, four runs
+  - `node gateway/test/bench.mjs` with and without `AGMENTE_GATEWAY_CMD`
+  - Idle RSS: each gateway started on the example config (port 0, one empty root), `ps -o rss` after 2 s, no connections
+  - `scripts/check.sh`
+- **Output (trimmed):**
+  ```
+  Node gateway: tests 53, pass 53, fail 0   (before the U+2028 fix: 52/53, see notes)
+  Go gateway:   tests 53, pass 53, fail 0   (4 runs in a row; about 5.4 s each)
+  go test:      ok agmente/gateway/internal/jsonv; ok agmente/gateway/internal/server
+  bench, 2000 calls, 1 KiB:   Go   gateway p95 0.163 ms, direct p95 0.143 ms, overhead p95 0.020 ms; reject p95 0.348 ms (n=500)
+                              Node gateway p95 0.177 ms, direct p95 0.044 ms, overhead p95 0.133 ms; reject p95 0.358 ms
+                              spawnedDuringRejects 0; nfr1 PASS, nfr2 PASS (both)
+  idle RSS:     Go 12.9 MB; Node 58.1 MB
+  check.sh:     Go vet/test/build ok; wire suite 53/53 on Go and on Node; docs ok;
+                AgmenteTransport 12 (1 skipped), ACPClient 158, AppServerClient 9; "All checks passed."
+  ```
+- **Result:** T-2 to T-10 and T-13 PASS on both gateways, over the wire. T-11 and T-12 PASS on both. T-5 is checked through the CLI.
+- **Notes:**
+  - **The suite is wire-level now (D-021).** `gateway/test/helpers.mjs` starts the gateway from `AGMENTE_GATEWAY_CMD` (a JSON array; default the Node gateway), writes a real config file, and reads the audit log from stderr. Agent spawn counts come from `connect` audit lines; the old in-process `stats` counters are gone. Config checks run through `--dry-run` and the exit code.
+  - **Old tests and what replaced them** (none was dropped or loosened):
+    - Unit tests of `parseBearer`, `findTokenEntry`, `FailureLimiter`, `LineSplitter`, `isInsideRoots`, `parseClientMessage`, `isLoopbackAddress` and `validateConfig` became wire tests of the same cases: header variants at the upgrade, lockout expiry with `lockoutSeconds: 1`, chunked agent output (`_test/chunks`), a `<root>-evil` sibling, each bad message shape, each listen host through `--dry-run`, and each config error through stderr.
+    - `buildAgentEnv` is covered by the env test: one passed variable with its value, and an unlisted secret that must be absent.
+    - "a valid config is normalized and frozen": the defaults are checked in the dry-run summary. Freezing is a JavaScript detail and is not observable over the wire.
+    - The backpressure test now checks for a `backpressure` audit line (`dir: "in"`) instead of an in-process counter. Both gateways write that line.
+  - **New cases:** argv passed without a shell; ids, values, client responses and notifications pass through; CRLF and blank agent lines; last output before exit; a command that cannot start (1011, slot freed); SIGKILL after the grace period for an agent that ignores SIGTERM; shutdown on SIGTERM; audit fields limited to the allow-list with an ISO timestamp; no project path in the audit; bare CR, two trailing newlines, trailing data, a non-string `jsonrpc`, the empty message, invalid UTF-8 (1007); a fragmented message over the cap (1009); a message of exactly the cap (accepted); refusal ids echoed unchanged; a missing root allows nothing; U+2028 and U+2029; port, token entry, agent, roots and limit errors; unreadable and non-JSON config files; usage exit code 2; the example config.
+  - **Bug found, fixed in the Node gateway:** Node's `readline` ends a line at U+2028 and U+2029 (checked: `printf '{"a":"x\xe2\x80\xa8y"}\n' | node -e '...readline...'` prints two lines). The Node gateway re-serialized with `JSON.stringify`, which leaves both raw, so a phone message containing U+2028 reached the fake agent as two lines and got no reply. The Node gateway now escapes both characters; the Go encoder always escapes them. Test: "U+2028 and U+2029 in a message cannot split it into two agent lines". Not verified: whether Bob's stdin reader splits on them.
+  - The bench now measures the gateway named by `AGMENTE_GATEWAY_CMD`.
+  - The old in-process figure of 75 MB idle for the Node gateway (Phase 3 planning) and today's 58 MB differ in setup; both are this Mac, idle, no agent.
+
+### 2026-11-06 — Node gateway removed (D-022); Bob probes through the Go gateway
+- **Environment:** macOS, Go 1.27.3, Node v24.5.0, `@ibm/bob` 2.0.9 (global), `BOB_API_KEY` from `.env` (never printed).
+- **Commands:**
+  - `scripts/check.sh`
+  - `node gateway/scripts/probe-bob.mjs --trust-project`
+  - `node gateway/scripts/probe-bob-races.mjs`
+  - Wrapper check: `/bin/sh -c 'exec "$@" 2>>file' sh node -e '<one stderr line, one stdout line>'`
+- **Output (trimmed):**
+  ```
+  check.sh: Go vet/test/build ok; wire suite 53/53 (Go, the only target); dry run ok; docs ok (22 decisions);
+            Swift packages pass; "All checks passed."
+  probe-bob: initialize matches fixture (ignoring version): true; session/new outside roots -> -32602;
+             prompt end_turn; load (idle) ok; resume (idle) ok;
+             load during running turn -> -32600 "Session is already running a prompt"; running turn end_turn
+             summary {"T32":true,"sessionNew":true,"prompt":true,"load":true,"resume":true,"Q1":"end_turn"}
+  races:     R1 resume during turn -> -32600, turn end_turn; R2 second-process load ok, prompt end_turn, A end_turn;
+             R3 history prompts ["[P0]","[P1]","[P2]"] (B's [PB] missing); agent stderr lines matching lock|SQLITE|busy|conflict|error: 0
+  wrapper:   stdout passed through; the stderr line landed in the file
+  ```
+- **Result:** T-32, T-33 and T-34 PASS again through the Go gateway, with the same Bob behaviour as through the Node gateway (F-12). F-21 reproduces through the Go gateway: the second process's completed prompt is missing from the history, and Bob logs no lock error.
+- **Notes:** `gateway/src/` and `gateway/scripts/new-token.mjs` are deleted. The wire suite and the bench default to `gateway/bin/agmente-gateway`. Both probes now start the gateway as a process (`spawnGateway` in `gateway/test/helpers.mjs`), with the agent's working directory and a disposable `HOME`. The race probe keeps Bob's stderr with an `sh -c 'exec "$@" 2>>file'` wrapper in its own config, checked above.

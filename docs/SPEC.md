@@ -14,7 +14,7 @@ The app gets the session experience of the Claude mobile app: start a session in
 
 **In scope**
 
-- Gateway (Node.js, folder `gateway/`): authentication, ACP proxy, agent process control, project registry, event log, approval queue, push notifications, read-only git state, signed file URLs, MCP and skill management.
+- Gateway (Go, folder `gateway/`, D-021): authentication, ACP proxy, agent process control, project registry, event log, approval queue, push notifications, read-only git state, signed file URLs, MCP and skill management.
 - iOS app changes: secret storage, transport hardening, projects and sessions home, Bob support, image and HTML rendering, git views, MCP and skill screens.
 - Deployment examples: Caddy with mutual TLS, systemd unit, one container per project.
 - IBM Bob Shell as the primary agent. Other ACP agents must keep working where they do today.
@@ -171,9 +171,10 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 
 ### 6.4 Gateway CLI
 
-- `node gateway/src/main.js --config <file>`: run.
-- `node gateway/src/main.js --config <file> --dry-run`: validate config, print a summary, exit.
-- `node gateway/scripts/new-token.mjs <id> <identity>`: print a new token once and its config entry.
+- `agmente-gateway --config <file>`: run.
+- `agmente-gateway --config <file> --dry-run`: validate config, print a summary, exit.
+- `agmente-gateway new-token <id> <identity>`: print a new token once and its config entry.
+- The binary is built to `gateway/bin/agmente-gateway` (D-021). The Node gateway was removed (D-022).
 
 ## 7. Test plan
 
@@ -238,7 +239,7 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 | Q-5 | Answered 2026-11-06 (RESULTS): no. Two processes lose a write without an error (F-21). The gateway must never run two Bob processes on one task store (D-014). | T-18 runs with one process; record any lock error |
 | Q-6 | Answered 2026-11-06 (RESULTS): Bob checks trust before auth, against its process working directory. On 2.0.9 it trusts folders with no entry. The gateway `cwd` guard (FR-6), the per-project agent `cwd` and the container are the folder controls (D-013). | T-33 with a key set: record the result of `session/new` in an untrusted folder |
 | R-1 | Bob's `_bob/*` methods and `_meta` keys are not part of ACP and can change. Pin the version; keep T-32 as a probe. | T-32 |
-| R-2 | `node:sqlite` is experimental in Node 22 (D-007). | T-20 |
+| R-2 | The SQLite driver for the Go gateway is not chosen yet (D-007 no longer applies, D-021). | T-20 |
 | R-3 | Closed 2026-11-06: this is a hard fork that takes no upstream merges (D-017). | — |
 | R-4 | APNs needs an Apple Developer account and a device. | T-24 covers the payload offline |
 
@@ -248,7 +249,8 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 - Apple Developer Program membership: device builds, Keychain sharing, APNs key (`.p8`).
 - IBM Bob licence and `BOB_API_KEY` (phase 4 onward). Review the licence with `bob --show-license acp`.
 - A Linux host with Docker or Podman, a DNS name, Caddy 2 with a client CA for mutual TLS.
-- Node.js 22 LTS. One npm dependency: `ws` (D-001).
+- Go 1.24 or later for the gateway, with one dependency, `github.com/coder/websocket` (D-021).
+- Node.js 22.12 or later for the wire test suite and the fake agent (one npm dependency, `ws`), and for Bob.
 
 ## 10. Sources
 

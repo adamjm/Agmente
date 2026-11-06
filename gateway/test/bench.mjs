@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Measure NFR-1 (T-11) and NFR-2 (T-12). Prints JSON. Exit 1 if a limit is missed.
 // Usage: node test/bench.mjs [--calls 2000] [--rejects 500]
+// Target: the gateway in AGMENTE_GATEWAY_CMD (see helpers.mjs); default the Go binary.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { parseArgs } from 'node:util';
-import { auth, connect, FAKE_AGENT, startGateway } from './helpers.mjs';
+import { auth, connect, FAKE_AGENT, gatewayCommand, startGateway } from './helpers.mjs';
 
 const { values } = parseArgs({
   options: { calls: { type: 'string', default: '2000' }, rejects: { type: 'string', default: '500' } },
@@ -81,6 +82,7 @@ try {
   const viaGateway = await gatewayRtts(gw.url);
   const rejects = await rejectLatencies(gw.url);
   const result = {
+    gateway: gatewayCommand().map((p) => p.split('/').pop()).join(' '),
     node: process.version,
     calls: CALLS,
     messageBytes: JSON.stringify({ jsonrpc: '2.0', id: 1, method: '_test/echo', params: PAYLOAD }).length,
@@ -88,7 +90,7 @@ try {
     gatewayMs: { p50: round(pct(viaGateway, 50)), p95: round(pct(viaGateway, 95)) },
     overheadP95Ms: round(pct(viaGateway, 95) - pct(direct, 95)),
     rejectMs: { n: REJECTS, p50: round(pct(rejects, 50)), p95: round(pct(rejects, 95)) },
-    spawnedDuringRejects: gw.gateway.stats.spawned - 1, // 1 = the measured gateway connection
+    spawnedDuringRejects: (await gw.settle(), gw.spawned() - 1), // 1 = the measured gateway connection
   };
   result.nfr1 = result.rejectMs.p95 <= 50 ? 'PASS' : 'FAIL';
   result.nfr2 = result.overheadP95Ms <= 5 ? 'PASS' : 'FAIL';

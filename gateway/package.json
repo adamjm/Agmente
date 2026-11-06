@@ -2,14 +2,13 @@
   "name": "agmente-gateway",
   "version": "0.1.0",
   "private": true,
-  "description": "Authenticated ACP gateway for the Agmente fork (replaces stdio-to-ws).",
+  "description": "Wire-level tests, fake agent and Bob probes for the Go gateway (D-021).",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
-    "start": "node src/main.js --config config.json",
-    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "test": "node --test --test-concurrency=1 --test-timeout=30000 test/*.test.mjs",
     "bench": "node test/bench.mjs"
   },
   "dependencies": {

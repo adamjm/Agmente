@@ -28,7 +28,26 @@ const handlers = {
   },
   // Test-only methods.
   '_test/echo': (msg) => reply(msg.id, msg.params ?? null),
-  '_test/env': (msg) => reply(msg.id, { names: Object.keys(process.env).sort() }),
+  // Names of every variable, and values only for AGMENTE_TEST_* names.
+  '_test/env': (msg) => reply(msg.id, {
+    names: Object.keys(process.env).sort(),
+    values: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('AGMENTE_TEST_'))),
+  }),
+  '_test/argv': (msg) => reply(msg.id, { args: process.argv.slice(2) }),
+  '_test/responses': (msg) => reply(msg.id, { responses }),
+  // Write raw stdout parts with a delay between them, then reply.
+  '_test/chunks': async (msg) => {
+    for (const part of msg.params.parts) {
+      process.stdout.write(part);
+      await new Promise((r) => setTimeout(r, msg.params.delayMs ?? 0));
+    }
+    reply(msg.id, { ok: true });
+  },
+  '_test/say-and-exit': (msg) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { bye: true } })}\n`, () => process.exit(0)),
+  '_test/ignore-sigterm': (msg) => {
+    process.on('SIGTERM', () => {});
+    reply(msg.id, { ok: true });
+  },
   '_test/received': (msg) => reply(msg.id, { methods: received }),
   '_test/big': (msg) => {
     process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', method: '_test/blob', params: { pad: 'x'.repeat(msg.params.bytes) } })}\n`);
@@ -49,6 +68,7 @@ const handlers = {
 };
 
 const received = [];
+const responses = [];
 const rl = createInterface({ input: process.stdin });
 rl.on('line', (line) => {
   let msg;
@@ -58,6 +78,7 @@ rl.on('line', (line) => {
     return;
   }
   if (typeof msg.method === 'string') received.push(msg.method);
+  else if (msg.id !== undefined) responses.push(msg);
   const handler = handlers[msg.method];
   if (handler) handler(msg);
   else if (msg.id !== undefined && msg.method) send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } });

@@ -1,24 +1,22 @@
 #!/usr/bin/env node
 // Live race probes on IBM Bob behind the gateway (follow-up to T-34, Q-1 and Q-5).
 //   R1: session/resume while a turn runs, same Bob process.
-//   R2: a second socket (so a second Bob process, D-006) loads, then prompts, a session that is
+//   R2: a second socket (so a second Bob process, D-006; needs caps above 1, so the probe sets
+//       none and gets the defaults) loads, then prompts, a session that is
 //       running in the first process. Both processes share HOME and the project folder.
 //   R3: a third process loads the session afterwards; which user prompts are in the replay?
 // Usage (BOB_API_KEY must be in the environment; this script never prints it):
 //   node gateway/scripts/probe-bob-races.mjs [--bob <path>]
 // Bob runs with a disposable HOME and a trusted temp project, as in probe-bob.mjs.
 // Every session/request_permission is answered with a reject option (D-009).
-import { mkdtemp, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
-import { validateConfig } from '../src/config.js';
-import { hashToken } from '../src/auth.js';
-import { createGateway } from '../src/server.js';
-import { spawnAgent } from '../src/agent-process.js';
+import { hashToken, spawnGateway } from '../test/helpers.mjs';
 
 const { values } = parseArgs({ options: { bob: { type: 'string' } } });
 const bobPath = values.bob ?? execFileSync('/usr/bin/which', ['bob'], { encoding: 'utf8' }).trim();
@@ -36,34 +34,26 @@ await mkdir(join(home, '.bob'), { recursive: true });
 await writeFile(join(home, '.bob', 'trustedFolders.json'), JSON.stringify({ version: 1, folders: { [project]: 'TRUST_FOLDER' } }));
 
 const token = randomBytes(24).toString('base64url');
-const config = validateConfig({
+// The gateway discards agent stderr. For this probe only, the configured command wraps Bob in
+// `sh -c 'exec "$@" 2>>file'`, so every Bob process appends its stderr to one file. It is still an
+// argv array from the config; the client sets nothing.
+const stderrFile = join(base, 'agent-stderr.log');
+const config = {
   listen: { host: '127.0.0.1', port: 0 },
   trustProxy: false,
   tokens: [{ id: 'probe', identity: 'owner', sha256: hashToken(token) }],
-  agent: { command: [bobPath, 'acp', '--accept-license', '--log-level', 'warn'], envPassthrough: ['PATH', 'HOME', 'LANG', 'BOB_API_KEY'] },
+  agent: {
+    command: ['/bin/sh', '-c', `exec "$@" 2>>'${stderrFile}'`, 'sh', bobPath, 'acp', '--accept-license', '--log-level', 'warn'],
+    envPassthrough: ['PATH', 'HOME', 'LANG', 'BOB_API_KEY'],
+  },
   projects: { roots: [root] },
   limits: {},
-});
-const stderrByPid = new Map();
-const probeSpawn = (agentConfig) => {
-  const saved = process.env.HOME;
-  process.env.HOME = home;
-  try {
-    const child = spawnAgent(agentConfig, { cwd: project });
-    const chunks = [];
-    stderrByPid.set(child.pid, chunks);
-    child.stderr.on('data', (d) => chunks.push(d.toString()));
-    return child;
-  } finally {
-    process.env.HOME = saved;
-  }
 };
-const gateway = createGateway(config, { audit: () => {}, spawn: probeSpawn });
-const address = await gateway.listen(0, '127.0.0.1');
+const gateway = await spawnGateway(config, { cwd: project, env: { HOME: home } });
 
 /** One socket = one Bob process (phase 1, D-006). */
 async function client(label) {
-  const ws = new WebSocket(`ws://127.0.0.1:${address.port}/`, { headers: { Authorization: `Bearer ${token}` }, perMessageDeflate: false });
+  const ws = new WebSocket(gateway.url, { headers: { Authorization: `Bearer ${token}` }, perMessageDeflate: false });
   await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
   let nextId = 1;
   const pending = new Map();
@@ -181,8 +171,8 @@ try {
   a.show('session/delete', await a.rpc('session/delete', { sessionId }));
 } finally {
   if (a) await a.close();
-  await gateway.close();
-  const errLines = [...stderrByPid.values()].flat().join('').split('\n').filter((l) => /lock|SQLITE|busy|conflict|error/i.test(l));
+  await gateway.stop();
+  const errLines = (await readFile(stderrFile, 'utf8').catch(() => '')).split('\n').filter((l) => /lock|SQLITE|busy|conflict|error/i.test(l));
   log(`agent stderr lines matching lock|SQLITE|busy|conflict|error: ${errLines.length}`);
   for (const l of errLines.slice(0, 10)) log(`  ${l.slice(0, 300)}`);
   try { log(`HOME/.bob after run: ${JSON.stringify(await readdir(join(home, '.bob')))}`); } catch { /* none */ }

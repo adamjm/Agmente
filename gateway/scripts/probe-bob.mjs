@@ -15,10 +15,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
-import { validateConfig } from '../src/config.js';
-import { hashToken } from '../src/auth.js';
-import { createGateway } from '../src/server.js';
-import { spawnAgent } from '../src/agent-process.js';
+import { hashToken, spawnGateway } from '../test/helpers.mjs';
 import { writeFile } from 'node:fs/promises';
 
 const { values } = parseArgs({
@@ -57,7 +54,7 @@ if (values['distrust-project']) {
 log(`deny root: ${values['deny-root']}; agent cwd: ${values['agent-cwd']}; project trust: ${values['trust-project'] ? 'TRUST_FOLDER' : values['distrust-project'] ? 'DONT_TRUST' : 'none'}; HOME: disposable`);
 
 const token = randomBytes(24).toString('base64url');
-const config = validateConfig({
+const config = {
   listen: { host: '127.0.0.1', port: 0 },
   trustProxy: false,
   tokens: [{ id: 'probe', identity: 'owner', sha256: hashToken(token) }],
@@ -67,22 +64,13 @@ const config = validateConfig({
   },
   projects: { roots: [root] },
   limits: {},
-});
-const auditLines = [];
-// The probe's spawner sets the agent's cwd and a disposable HOME. Command and allow-list stay from config.
-const probeSpawn = (agentConfig) => {
-  const saved = process.env.HOME;
-  process.env.HOME = home;
-  try {
-    return spawnAgent(agentConfig, { cwd: values['agent-cwd'] === 'project' ? project : process.cwd() });
-  } finally {
-    process.env.HOME = saved;
-  }
 };
-const gateway = createGateway(config, { audit: (event, fields = {}) => auditLines.push({ event, ...fields }), spawn: probeSpawn });
-const address = await gateway.listen(0, '127.0.0.1');
+// The gateway process (from AGMENTE_GATEWAY_CMD, default the Go binary) runs with the agent's cwd
+// and a disposable HOME; the agent inherits the cwd and gets HOME through envPassthrough.
+const gateway = await spawnGateway(config, { cwd: values['agent-cwd'] === 'project' ? project : process.cwd(), env: { HOME: home } });
+const auditLines = gateway.audit;
 
-const ws = new WebSocket(`ws://127.0.0.1:${address.port}/`, {
+const ws = new WebSocket(gateway.url, {
   headers: { Authorization: `Bearer ${token}` },
   perMessageDeflate: false,
 });
@@ -209,7 +197,7 @@ try {
 } finally {
   ws.close();
   await new Promise((r) => setTimeout(r, 300));
-  await gateway.close();
+  await gateway.stop();
   await rm(base, { recursive: true, force: true });
   log(`audit events: ${auditLines.map((l) => (l.method ? `${l.event}:${l.method}` : l.event)).join(', ')}`);
   log(`summary: ${JSON.stringify(results)}`);

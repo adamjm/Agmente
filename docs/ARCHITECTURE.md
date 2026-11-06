@@ -7,12 +7,13 @@ Read with [SPEC.md](SPEC.md). Decision IDs (D-n) refer to [DECISIONS.md](DECISIO
 | Layer | Component | Job | Folder |
 | --- | --- | --- | --- |
 | Edge | Caddy | Terminate TLS. Require a client certificate (mutual TLS). Forward to loopback. | `deploy/Caddyfile` |
-| Gateway: admission | `server.js`, `auth.js` | Reject before upgrade: Origin, rate limit, token, capacity. | `gateway/src/` |
-| Gateway: protocol guard | `acp-guard.js` | One JSON object per message; `cwd` inside roots; size caps. | `gateway/src/` |
-| Gateway: agent control | `agent-process.js` | Spawn the configured agent; pipe line-delimited JSON. | `gateway/src/` |
-| Gateway: sessions (phase 3) | `sessions/` | Project registry, event log, subscribe and replay, approval queue, idle close. | `gateway/src/sessions/` (planned) |
-| Gateway: project data (phases 3, 5, 6) | `git/`, `files/`, `mcp/`, `skills/` | Read-only git, signed file URLs, MCP and skill config. | `gateway/src/` (planned) |
-| Gateway: notify (phase 3) | `push/` | APNs payloads and delivery. | `gateway/src/push/` (planned) |
+| Gateway: admission | `server.go`, `auth.go` | Reject before upgrade: Origin, rate limit, token, capacity. | `gateway/internal/server/` |
+| Gateway: protocol guard | `guard.go`, `jsonv` | One JSON object per message; `cwd` inside roots; size caps; re-serialized as one line. | `gateway/internal/` |
+| Gateway: agent control | `agent.go` | Spawn the configured agent; pipe line-delimited JSON. | `gateway/internal/server/` |
+| Gateway: config and audit | `config`, `audit` | Validate the config file; one JSON audit line per event on stderr. | `gateway/internal/` |
+| Gateway: sessions (phase 3) | `sessions/` | Project registry, event log, subscribe and replay, approval queue, idle close. | `gateway/internal/sessions/` (planned) |
+| Gateway: project data (phases 3, 5, 6) | `git/`, `files/`, `mcp/`, `skills/` | Read-only git, signed file URLs, MCP and skill config. | `gateway/internal/` (planned) |
+| Gateway: notify (phase 3) | `push/` | APNs payloads and delivery. | `gateway/internal/push/` (planned) |
 | Project runtime | One container per project | Run `bob acp` and git as the project user. | `deploy/` (planned) |
 | App: transport | `AgmenteTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `AgmenteTransport/`, upstream folders |
 | App: security | Keychain store | Tokens, client identity, MCP headers. | `Agmente/Security/` (new) |
@@ -106,13 +107,13 @@ The preview host is a different hostname from the ACP endpoint. A hostile page c
 
 ## 4. Design choices
 
-- Node.js gateway with one dependency, `ws`. See D-001.
+- Go gateway with one dependency, `coder/websocket`, checked by a wire-level test suite in Node. See D-021, which supersedes D-001.
 - ACP on the wire, plus `_agmente/*` methods. See D-002.
 - Mutual TLS at Caddy and hashed bearer tokens at the gateway. See D-003.
 - Phases ordered so that no-credential work comes first; sessions and git are built against a fake agent. See D-004.
 - Gateway lives in `gateway/` in the fork. See D-005.
 - Phase 1 keeps one agent per connection; phase 3 moves to one per project. See D-006.
-- Event log in SQLite through `node:sqlite` (proposed). See D-007.
+- Event log in SQLite (proposed in D-007 through `node:sqlite`; the Go driver is chosen in task 3.2, D-021).
 - Git and Bob run in the project container. See D-008.
 - The gateway never approves. See D-009.
 - The overlay replaces `CLAUDE.md` and leaves the upstream `README.md`. See D-010.

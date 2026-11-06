@@ -19,7 +19,8 @@ Wants=network-online.target
 User=agmente
 Group=agmente
 WorkingDirectory=/opt/agmente/gateway
-ExecStart=/usr/bin/node src/main.js --config /etc/agmente/gateway.json
+# Build: go build -trimpath -o /opt/agmente/gateway/bin/agmente-gateway ./cmd/agmente-gateway (D-021)
+ExecStart=/opt/agmente/gateway/bin/agmente-gateway --config /etc/agmente/gateway.json
 EnvironmentFile=/etc/agmente/gateway.env
 Restart=on-failure
 RestartSec=2
