@@ -139,10 +139,10 @@ Goal: Bob runs safely behind the gateway. Closes T-32 to T-35.
 - [x] 4.4 Probe `initialize` through the gateway. Check: T-32.
 - [x] 4.5 Session lifecycle on Bob. Check: T-33.
 - [x] 4.6 Answer Q-1 live. Check: T-34.
-- [ ] 4.7 App: handle `plan_update`, `plan_removed`, `session_info_update`, `usage_update` (FR-33).
-- [ ] 4.8 App: mode picker (FR-34).
+- [x] 4.7 App: handle `plan_update`, `plan_removed`, `session_info_update`, `usage_update` (FR-33).
+- [x] 4.8 App: mode picker (FR-34).
 - [ ] 4.9 App: auth error (FR-35). Check: T-35.
-- [ ] 4.10 App: `session/delete` (FR-36).
+- [x] 4.10 App: `session/delete` (FR-36).
 
 Plan notes:
 

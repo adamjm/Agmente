@@ -31,6 +31,18 @@ public enum ACPSessionUpdateEvent: Equatable, Sendable {
     
     /// Available slash commands have been updated.
     case availableCommandsUpdate(commands: [SessionCommand])
+
+    /// The agent's plan (FR-33). Replaces the previous plan.
+    case planUpdate(entries: [ACPPlanEntry])
+
+    /// The agent removed its plan (FR-33).
+    case planRemoved
+
+    /// The session's title, or nil when the agent sent none (FR-33).
+    case sessionInfo(title: String?)
+
+    /// Token and cost figures (FR-33).
+    case usage(ACPSessionUsage)
 }
 
 // MARK: - Tool Call Models
@@ -152,7 +164,20 @@ public final class ACPSessionUpdateHandler: Sendable {
         case "available_commands_update":
             let commands = parseAvailableCommands(from: update)
             return [.availableCommandsUpdate(commands: commands)]
-            
+
+        case "plan", "plan_update":
+            return [.planUpdate(entries: ACPSessionMetaUpdateParser.planEntries(from: update))]
+
+        case "plan_removed":
+            return [.planRemoved]
+
+        case "session_info_update":
+            return [.sessionInfo(title: ACPSessionMetaUpdateParser.sessionTitle(from: update))]
+
+        case "usage_update":
+            let usage = ACPSessionMetaUpdateParser.usage(from: update)
+            return usage.isEmpty ? [] : [.usage(usage)]
+
         default:
             // Unknown kind - try to extract text as fallback
             let text = ACPSessionUpdateParser.extractText(from: update)

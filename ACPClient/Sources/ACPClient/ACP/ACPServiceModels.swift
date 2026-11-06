@@ -57,17 +57,21 @@ public struct ACPSessionCreatePayload: Sendable {
     public var mcpServers: [ACP.Value]
     public var agent: String?
     public var metadata: [String: ACP.Value]
+    /// Sent as `_meta` (for example `["bob/mode": "plan"]`, FR-34).
+    public var meta: [String: ACP.Value]
 
     public init(
         workingDirectory: String,
         mcpServers: [ACP.Value] = [],
         agent: String? = nil,
-        metadata: [String: ACP.Value] = [:]
+        metadata: [String: ACP.Value] = [:],
+        meta: [String: ACP.Value] = [:]
     ) {
         self.workingDirectory = workingDirectory
         self.mcpServers = mcpServers
         self.agent = agent
         self.metadata = metadata
+        self.meta = meta
     }
 
     func params() -> ACP.Value {
@@ -80,6 +84,9 @@ public struct ACPSessionCreatePayload: Sendable {
         }
         if !metadata.isEmpty {
             object["metadata"] = .object(metadata)
+        }
+        if !meta.isEmpty {
+            object["_meta"] = .object(meta)
         }
         return .object(object.compactMapValues { $0 })
     }
@@ -163,6 +170,19 @@ public struct ACPSessionPromptPayload: Sendable {
             object["stream"] = .bool(stream)
         }
         return .object(object.compactMapValues { $0 })
+    }
+}
+
+/// `session/delete` (FR-36). Only sent when the agent advertises `sessionCapabilities.delete`.
+public struct ACPSessionDeletePayload: Sendable {
+    public var sessionId: String
+
+    public init(sessionId: String) {
+        self.sessionId = sessionId
+    }
+
+    func params() -> ACP.Value {
+        .object(["sessionId": .string(sessionId)])
     }
 }
 

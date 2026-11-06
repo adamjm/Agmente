@@ -101,6 +101,9 @@ public struct AgentCapabilityState: Equatable, Sendable {
     /// Prompt capabilities (image, audio, embedded context).
     public var promptCapabilities: PromptCapabilityState
 
+    /// Whether the agent advertises `sessionCapabilities.delete` (session/delete, FR-36).
+    public var deleteSession: Bool = false
+
     public init(
         loadSession: Bool = false,
         resumeSession: Bool = false,
@@ -323,6 +326,9 @@ public extension AgentProfile {
             if sessionCaps["resume"] != nil {
                 capabilities.resumeSession = true
             }
+            if sessionCaps["delete"] != nil {
+                capabilities.deleteSession = true
+            }
         }
 
         if let listSessions = capabilitiesObj["listSessions"]?.boolValue {
@@ -403,6 +409,9 @@ public extension AgentProfile {
             // { "sessionCapabilities": { "resume": {} } }
             if sessionCaps["resume"] != nil {
                 capabilities.resumeSession = true
+            }
+            if sessionCaps["delete"] != nil {
+                capabilities.deleteSession = true
             }
         }
 

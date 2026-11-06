@@ -39,7 +39,7 @@
 | T-32 | PASS on Bob 2.0.9: `initialize` equals the fixture (also matched on 2.0.7 except the version) | 2026-11-06 |
 | T-33 | PASS on Bob 2.0.9 (and 2.0.7): new, prompt, load, resume, list, delete all succeed | 2026-11-06 |
 | T-34 | Recorded (differs from F-12): on 2.0.7 and 2.0.9, `session/load` and (2.0.9) `session/resume` during a turn are refused with `-32600`; the turn completes. A second Bob process is not refused (see Q-5 entry) | 2026-11-06 |
-| T-35 | Partial: Bob's error recorded; app part not built | 2026-11-05 |
+| T-35 | Partial: Bob's error recorded (2026-11-05); app mapping unit-tested 2026-11-07, on-screen check not run | 2026-11-07 |
 | T-36 | PASS in the iOS Simulator (unit tests, not on a device): 50 MP PNG downsampled to 2048x1600, peak footprint increase 17 MiB; oversized, wrong MIME, corrupt data and 108 MP bomb refused | 2026-11-06 |
 | All others | Not run | — |
 
@@ -893,3 +893,30 @@
   - **Mutation check:** widening the token pattern to `{0,200}` made the bad-token wire test fail (141 pass, 1 fail); restored. Not run for the app side.
 - **BLOCKED:** APNs delivery (JWT with `.p8`, HTTP/2 send, invalid-token cleanup), the Push entitlement, and any check on a device. Steps: `docs/PUSH-TESTING.md`.
 - **Unverified:** that `sandbox` for Debug and `production` otherwise matches the real signing; that the app's token reaches the gateway on a real device (the simulator cannot register for remote notifications).
+
+## 2026-11-07 Phase 4 app: plan and usage, start mode, auth error, session delete (4.7 to 4.10, D-070 to D-073)
+- **Done:**
+  - 4.7 (FR-33): `plan`/`plan_update`, `plan_removed`, `session_info_update` (title), `usage_update` parsed defensively in `ACPClient` (`SessionMetaUpdateParsing.swift`, four new `ACPSessionUpdateEvent` cases). App: `ForkSessionMeta`, a collapsible plan (`SessionPlanView`), a usage line (`SessionUsageFooter`), the agent's title in the navigation title.
+  - 4.8 (FR-34): `_meta["bob/mode"]` on `session/new` from the project's `defaultMode` (`ServerViewModel.gatewayStartMeta`, `ForkSessionAgentRules.startMode`). The mode picker and `current_mode_update` already existed and are unchanged.
+  - 4.9 (FR-35): `ACPAgentErrorText`: `-32000` "Authentication required" shows "Bob needs authentication. Set BOB_API_KEY on the gateway host." in session create, load, resume and prompt failures. The on-screen text is not checked.
+  - 4.10 (FR-36): `initialize` `sessionCapabilities.delete` parsed; "Delete Session" sends `session/delete` first when advertised and the session exists on the agent; local removal only after the agent accepts; errors shown in an alert.
+- **Commands and results:**
+  - `swift test --package-path ACPClient` → 210 tests, 0 failures (18 new in `SessionMetaUpdateTests`).
+  - `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/dd-phase4 -only-testing:AgmenteTests test` → TEST SUCCEEDED, 222 tests, 0 failures (new `ForkSessionMetaTests`, 15 tests).
+  - `node --test --test-timeout=30000 test/start-mode.test.mjs` (gateway) → 1 pass (new: `_meta["bob/mode"]` reaches the agent; no `_meta` gives the agent default).
+  - `go vet`, `go test ./...`, build of the gateway → pass.
+  - `node scripts/check-docs.mjs` → "47 tests, 45 FRs, 15 NFRs, 50 decisions; all tests scheduled".
+  - `swift test` for `AgmenteTransport` and `AppServerClient` → pass. `ACPClient` → pass (above).
+  - `scripts/check.sh` itself: not green. In this worktree `.claude/settings.json` is not tracked, so its JSON step fails before anything else (pre-existing, not changed here). I ran the same steps without that one file: the wire suite then failed (below), so the gate did not reach its end.
+- **Mutation checks** (each restored, then re-run green):
+  - FR-33: removing the `plan_removed` case → `testPlanRemoved` fails (`[]` vs `[planRemoved]`).
+  - FR-34: dropping `_meta` from `ACPSessionCreatePayload.params()` → `testSessionNewSendsStartModeAsMeta` fails.
+  - FR-35: matching `-32001` instead of `-32000` → `testAuthenticationRequiredGetsItsOwnText` fails (2 assertions).
+  - FR-36: `sendsDeleteToAgent` ignoring the capability → `deleteIsSentOnlyWhenAgentAdvertisesItAndSessionExists` fails (app test, 1 issue).
+- **Wire suite is not stable on this machine (not caused by this change, not fixed):**
+  - Run 1 (full `npm test`, Go gateway): 140 pass, 3 fail: "a permission request is logged as phones see it" (`logged` undefined), "T-28 diff path" (`status` undefined), "FR-24 idle session closed" (closed with 1006). Each passes when run alone.
+  - Run 2 (full): 142 pass, 1 fail: "T-46 subscriber keeps the container running". It passed alone once and failed again inside a filtered run.
+  - The gateway code and wire tests in `internal/` were not changed by this task; only `gateway/test/start-mode.test.mjs` was added. The failing tests have 2 to 5 s timeouts and fail under load, which fits a timing race. Not proven. Another Claude session was using the simulator during these runs.
+- **Not verified:** how the plan, usage line, title and delete alert look on screen (the simulator was not driven, per the owner's instruction). The shapes of Bob's `plan_update`, `plan_removed` and `usage_update` (no recorded payload; D-070 marks them "verify"). Bob's real `session/delete` and the `-32000` text were not run with a live key. Whether Bob's `session_info_update` after a `session/new` with `_meta` behaves the same (the start mode was tested against the fake agent only).
+- **Unverified (tick check):** 4.7, 4.8 and 4.10 are ticked on unit, mutation and wire evidence. 4.9 stays open: T-35 asks for the on-screen auth message, and that was not seen.
+
