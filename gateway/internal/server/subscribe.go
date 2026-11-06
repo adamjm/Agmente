@@ -191,19 +191,23 @@ func (s *Server) replay(ctx context.Context, sub *subscription, after, head int6
 	sub.pending, sub.pendingN, sub.replaying = nil, 0, false
 }
 
-// unsubscribeAll drops every subscription of a closed socket.
-func (s *Server) unsubscribeAll(c *client) {
+// unsubscribeAll drops every subscription of a closed socket and returns the sessions it was
+// subscribed to, so the caller can count the departure as activity (D-078).
+func (s *Server) unsubscribeAll(c *client) []string {
 	s.evMu.Lock()
 	defer s.evMu.Unlock()
+	var left []string
 	for sid, set := range s.subs {
 		if sub := set[c]; sub != nil {
 			sub.cancel()
+			left = append(left, sid)
 			delete(set, c)
 			if len(set) == 0 {
 				delete(s.subs, sid)
 			}
 		}
 	}
+	return left
 }
 
 // plainKind reports whether a socket that does not subscribe gets events of this kind as they

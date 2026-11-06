@@ -393,7 +393,7 @@ func (s *Server) handleConnection(ws *websocket.Conn, entry *config.Token, clien
 	s.mu.Unlock()
 	defer func() {
 		close(c.done)
-		s.unsubscribeAll(c)
+		left := s.unsubscribeAll(c)
 		s.mu.Lock()
 		delete(s.clients, c)
 		agents := make([]*projectAgent, 0, len(s.agents))
@@ -403,6 +403,7 @@ func (s *Server) handleConnection(ws *websocket.Conn, entry *config.Token, clien
 		s.mu.Unlock()
 		for _, a := range agents {
 			a.detach(c) // the agents keep running (D-025)
+			a.touchSessions(left)
 		}
 	}()
 

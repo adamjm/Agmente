@@ -34,6 +34,21 @@ func (a *projectAgent) touchLocked(sid string) {
 	}
 }
 
+// touchSessions counts a subscriber leaving the given sessions as activity, so the idle time runs
+// from the moment it left and not from the last periodic check that saw it (D-078).
+func (a *projectAgent) touchSessions(sids []string) {
+	if len(sids) == 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, sid := range sids {
+		if a.live[sid] != nil {
+			a.touchLocked(sid)
+		}
+	}
+}
+
 func (s *Server) idleTime() time.Duration {
 	return time.Duration(s.cfg.Limits.IdleSeconds) * time.Second
 }

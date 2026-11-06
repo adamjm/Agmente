@@ -564,3 +564,8 @@ Append only. To change a decision, add a new entry that supersedes the old one. 
   - A control test loads the same page in an unrestricted `WKWebView`, and must see at least one connection. Without it, zero counts could mean the probe is blind. The control polls for up to 15 s, because a cold WebKit start can take several seconds.
   - Mutation checks are recorded in RESULTS 2026-11-07. Removing the rule list alone, or allowing all navigation alone, does not fail T-38 (each is covered by another layer). Both together fail the scripts-on case. All three layers removed fail both cases.
 - **Reason:** T-38 has to exercise the real engine, and only a control proves the detector works. Recording which layer catches what is more useful than a single pass.
+
+## D-078 A subscriber leaving counts as activity for the idle stop
+- **Date:** 2026-11-07
+- **Decision:** Refines D-032. When a socket closes, each session it was subscribed to is touched (the project's and that live session's last-activity time are set to now) before the idle check can see the project without a subscriber. The idle time then runs from the moment the subscriber left. The check interval and everything else in D-032 stay as they were.
+- **Reason:** D-032 said a stop comes between 1 and 1.25 idle times after the last activity, but a subscriber was only counted as activity at the periodic check (every quarter of the idle time). A subscriber leaving just after a check was therefore followed by a stop after as little as 0.75 idle times. Four agents saw `T-46 a subscriber keeps the container running` fail under load for this reason, and an A/B on the untouched base failed 2 of 5 runs. Found by the test, not by a new requirement; the test was not changed.
