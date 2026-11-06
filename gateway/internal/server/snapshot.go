@@ -187,7 +187,7 @@ func (a *projectAgent) snapshotTurnStart(sessionID string) {
 	a.s.snaps.mu.Unlock()
 	tree, err := a.s.takeSnapshot(ctx, a.project())
 	if err != nil {
-		a.s.audit.Log("snapshot_failed", a.fields(audit.Fields{Reason: "start"}))
+		a.s.audit.Log("snapshot_failed", a.fields(audit.Fields{Reason: "start: " + err.Error()}))
 		return
 	}
 	if err := a.s.store.SetStartTree(ctx, sessionID, turn, tree); err != nil {
@@ -224,7 +224,7 @@ func (a *projectAgent) snapshotTurnEnd(sessionID string) {
 		defer cancel()
 		tree, err := a.s.takeSnapshot(ctx, a.project())
 		if err != nil {
-			a.s.audit.Log("snapshot_failed", a.fields(audit.Fields{Reason: "end"}))
+			a.s.audit.Log("snapshot_failed", a.fields(audit.Fields{Reason: "end: " + err.Error()}))
 			return
 		}
 		if err := a.s.store.SetEndTree(ctx, sessionID, turn, tree); err != nil {

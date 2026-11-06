@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -174,7 +175,33 @@ func (r podmanRunner) gitArgs(name string, p store.Project, home string, argv, e
 	return append(args, argv[1:]...)
 }
 
+// maxContainerStarts is how many times one git command is tried when Podman fails to create its
+// container (see containerNeverStarted).
+const maxContainerStarts = 3
+
+// containerNeverStarted reports a failure of Podman or the OCI runtime to set the container up:
+// exit code 126 with an "OCI runtime error". Git never ran, so running the command again cannot
+// repeat any effect. Seen live under Podman 5.6.2 on a Mac (RESULTS 2026-11-07): roughly 1 start in
+// 25 failed with "write to /proc/sys/net/ipv4/ping_group_range ... Invalid argument" while several
+// git containers started at once with --userns=keep-id.
+func containerNeverStarted(err error) bool {
+	var ee *gitExitError
+	return errors.As(err, &ee) && ee.Code == 126 && strings.Contains(ee.Stderr, "OCI runtime error")
+}
+
 func (r podmanRunner) exec(ctx context.Context, p store.Project, home string, argv, extraEnv []string, stdin []byte) (gitResult, error) {
+	var res gitResult
+	var err error
+	for attempt := 0; attempt < maxContainerStarts; attempt++ {
+		res, err = r.execOnce(ctx, p, home, argv, extraEnv, stdin)
+		if !containerNeverStarted(err) || ctx.Err() != nil {
+			break
+		}
+	}
+	return res, err
+}
+
+func (r podmanRunner) execOnce(ctx context.Context, p store.Project, home string, argv, extraEnv []string, stdin []byte) (gitResult, error) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return gitResult{}, err
 	}

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -264,5 +265,61 @@ func TestCleanFilterRunsOnlyInsideTheContainer(t *testing.T) {
 	}
 	if _, err := os.Stat(hostMarker); err != nil {
 		t.Fatalf("control: the host runner did not run the filter: %v", err)
+	}
+}
+
+// fakePodman writes a podman stand-in that fails the first `failures` calls like a container that
+// could not be created, then prints "ok". It counts its calls in a file.
+func fakePodman(t *testing.T, failures int, stderr string, code int) (path, counter string) {
+	t.Helper()
+	dir := t.TempDir()
+	counter = filepath.Join(dir, "calls")
+	path = filepath.Join(dir, "podman")
+	script := fmt.Sprintf("#!/bin/sh\necho x >> %q\nn=$(wc -l < %q)\nif [ \"$n\" -le %d ]; then echo %q >&2; exit %d; fi\necho ok\n", counter, counter, failures, stderr, code)
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path, counter
+}
+
+func podmanGitRun(t *testing.T, failures int, stderr string, code int) (gitResult, error, int) {
+	t.Helper()
+	bin, counter := fakePodman(t, failures, stderr, code)
+	r := podmanRunner{cfg: &config.Config{Runner: config.Runner{Kind: "podman", Image: "img:1", Podman: bin}}}
+	proj := t.TempDir()
+	res, err := r.exec(context.Background(), store.Project{ID: "p", Path: proj}, filepath.Join(t.TempDir(), "home"), gitCommand(proj, "status"), nil, nil)
+	data, _ := os.ReadFile(counter)
+	return res, err, strings.Count(string(data), "x")
+}
+
+const ociFailure = "Error: preparing container abc for attach: crun: write to `/proc/sys/net/ipv4/ping_group_range`: Invalid argument: OCI runtime error"
+
+func TestAContainerThatNeverStartedIsTriedAgain(t *testing.T) {
+	res, err, calls := podmanGitRun(t, 2, ociFailure, 126)
+	if err != nil || strings.TrimSpace(string(res.Out)) != "ok" || calls != 3 {
+		t.Fatalf("res %q, err %v, calls %d", res.Out, err, calls)
+	}
+}
+
+func TestStartRetriesStopAfterThreeTries(t *testing.T) {
+	_, err, calls := podmanGitRun(t, 99, ociFailure, 126)
+	if !containerNeverStarted(err) || calls != maxContainerStarts {
+		t.Fatalf("err %v, calls %d", err, calls)
+	}
+}
+
+func TestOtherFailuresAreNeverRetried(t *testing.T) {
+	for name, c := range map[string]struct {
+		stderr string
+		code   int
+	}{
+		"git failed":                 {"fatal: not a git repository", 128},
+		"126 without the OCI text":   {"permission denied", 126},
+		"OCI text with another code": {ociFailure, 1},
+	} {
+		_, err, calls := podmanGitRun(t, 99, c.stderr, c.code)
+		if err == nil || calls != 1 {
+			t.Errorf("%s: err %v, calls %d (want one call)", name, err, calls)
+		}
 	}
 }
