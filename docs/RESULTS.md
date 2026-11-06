@@ -884,3 +884,12 @@
 - Command: `xcodebuild ... test -only-testing:AgmenteTests/TurnDiffButtonTests` → 3 tests pass.
 - Mutation check: forcing `turnDiffButton.isHidden = true` in `FileChangesRows.swift` made `buttonIsVisibleAndFiresHandler` fail; source restored.
 - Not covered: the closure chain in `HighPerformanceChatListView` and `SessionDetailView` (`canTurnDiff`/`onTurnDiff`); still checked on screen only.
+
+## 2026-11-07 Push token registration, gateway and app (3.11 first half, D-052)
+- **Done:** `_agmente/push/register` and `unregister`, schema version 4 (`push_tokens`), `push` extension; app `GatewayClient.registerPush`, `PushGatewaySync`, `AppViewModel+Push`.
+- **Result:** PASS for the tests; nothing sent to Apple, nothing run on a device.
+  - `scripts/check.sh`: "All checks passed". Wire tests 142 (was 137; 5 new in `test/push.test.mjs`: extension advertised, register and replace, bad tokens and environments refused with nothing stored, unregister removes only the caller's token, token absent from audit and responses). Go store tests: replace and delete, schema 3 migration; two older migration tests now also drop `push_tokens` when they rebuild an old shape, and one table count went from 6 to 7.
+  - ACPClient: 3 new `GatewayPushTests`. App: 3 new `PushGatewaySyncTests` (sends token and environment; sends nothing without a token, permission or the `push` extension; a refusal is reported without the token). Full app run: TEST SUCCEEDED.
+  - **Mutation check:** widening the token pattern to `{0,200}` made the bad-token wire test fail (141 pass, 1 fail); restored. Not run for the app side.
+- **BLOCKED:** APNs delivery (JWT with `.p8`, HTTP/2 send, invalid-token cleanup), the Push entitlement, and any check on a device. Steps: `docs/PUSH-TESTING.md`.
+- **Unverified:** that `sandbox` for Debug and `production` otherwise matches the real signing; that the app's token reaches the gateway on a real device (the simulator cannot register for remote notifications).

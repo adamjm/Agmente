@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -80,6 +80,18 @@ var schemaV2 = []string{
 // schemaV3 adds a project's own deny-list entries (D-050): a JSON array, NULL when none.
 var schemaV3 = []string{
 	`ALTER TABLE projects ADD COLUMN deny_paths TEXT`,
+}
+
+// schemaV4 adds the push device tokens (D-052): one token per identity and device.
+var schemaV4 = []string{
+	`CREATE TABLE push_tokens (
+		identity TEXT NOT NULL,
+		device TEXT NOT NULL,
+		token TEXT NOT NULL,
+		environment TEXT NOT NULL,
+		updated TEXT NOT NULL,
+		PRIMARY KEY (identity, device)
+	) WITHOUT ROWID`,
 }
 
 // Store is one open database. It is safe for concurrent use.
@@ -142,7 +154,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -523,4 +535,46 @@ func parseDeny(v string) ([]string, error) {
 		return nil, fmt.Errorf("stored denyPaths: %w", err)
 	}
 	return out, nil
+}
+
+// PushToken is a device's APNs token (D-052).
+type PushToken struct {
+	Identity, Device, Token, Environment, Updated string
+}
+
+// SetPushToken stores a device's token, replacing any earlier one for the same identity and device.
+func (s *Store) SetPushToken(ctx context.Context, t PushToken) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO push_tokens (identity, device, token, environment, updated) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (identity, device) DO UPDATE SET token = excluded.token, environment = excluded.environment, updated = excluded.updated`,
+		t.Identity, t.Device, t.Token, t.Environment, t.Updated)
+	return err
+}
+
+// DeletePushToken removes a device's token and reports whether there was one.
+func (s *Store) DeletePushToken(ctx context.Context, identity, device string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM push_tokens WHERE identity = ? AND device = ?`, identity, device)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// PushTokens lists the tokens of an identity (delivery, 3.11, reads this).
+func (s *Store) PushTokens(ctx context.Context, identity string) ([]PushToken, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT identity, device, token, environment, updated FROM push_tokens WHERE identity = ? ORDER BY device`, identity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PushToken
+	for rows.Next() {
+		var t PushToken
+		if err := rows.Scan(&t.Identity, &t.Device, &t.Token, &t.Environment, &t.Updated); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }

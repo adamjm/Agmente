@@ -31,7 +31,7 @@ const killGrace = 2 * time.Second
 const Version = "0.3.0-dev"
 
 // extensions lists the _agmente/* method groups this gateway serves (D-026).
-var extensions = []string{"projects", "sessions", "approvals", "git"}
+var extensions = []string{"projects", "sessions", "approvals", "git", "push"}
 
 //go:embed default-initialize.json
 var defaultInitialize []byte // Bob 2.0.9's initialize result (F-11), until an agent has started

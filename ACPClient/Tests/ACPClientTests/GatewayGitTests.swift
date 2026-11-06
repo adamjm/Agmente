@@ -126,3 +126,29 @@ final class GatewayGitTests: XCTestCase {
         XCTAssertNil(GatewayGitChanged.parse(nil))
     }
 }
+
+final class GatewayPushTests: XCTestCase {
+    func testRegisterSendsTokenAndEnvironmentOnly() async throws {
+        let fake = GitFake()
+        try await GatewayClient(fake).registerPush(deviceToken: "ab12", environment: .sandbox)
+        XCTAssertEqual(fake.calls.last?.method, "_agmente/push/register")
+        XCTAssertEqual(fake.calls.last?.params, .object(["deviceToken": .string("ab12"), "environment": .string("sandbox")]))
+    }
+
+    func testUnregisterCallsTheMethod() async throws {
+        let fake = GitFake()
+        try await GatewayClient(fake).unregisterPush()
+        XCTAssertEqual(fake.calls.last?.method, "_agmente/push/unregister")
+    }
+
+    func testAGatewayErrorIsThrown() async {
+        let fake = GitFake()
+        fake.error = GatewayError.rpc(code: -32602, message: "deviceToken must be 64 to 200 hex digits")
+        do {
+            try await GatewayClient(fake).registerPush(deviceToken: "x", environment: .production)
+            XCTFail("expected an error")
+        } catch let error as GatewayError {
+            XCTAssertEqual(error.message, "deviceToken must be 64 to 200 hex digits")
+        } catch { XCTFail("\(error)") }
+    }
+}

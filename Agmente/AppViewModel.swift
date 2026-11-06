@@ -64,9 +64,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
 
     // Phase 2: ServerViewModel instances (one per server)
     // Uses existential type to support both ACP and Codex server view models
-    private var serverViewModels: [UUID: any ServerViewModelProtocol] = [:]
+    private(set) var serverViewModels: [UUID: any ServerViewModelProtocol] = [:]
     
     /// Cancellables for observing child view model changes.
+    private var pushTokenCancellable: AnyCancellable?
     private var serverViewModelCancellables: [UUID: AnyCancellable] = [:]
     private var codexPreferenceCancellables: [UUID: AnyCancellable] = [:]
 
@@ -340,6 +341,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
                 self?.selectedServerId.flatMap { id in self?.servers.first { $0.id == id }?.localOnly } ?? false
             }
             return TransportPolicy.check(url: url, localOnly: localOnly)
+        }
+        // D-052: a new or changed device token goes to every connected gateway that offers push.
+        pushTokenCancellable = PushRegistration.shared.$deviceToken.dropFirst().removeDuplicates().sink { [weak self] _ in
+            Task { @MainActor in await self?.syncPushTokenToAllGateways() }
         }
         // Phase 1: Observation setup moved to per-session creation
         // (no longer setting up a single sessionViewModel observation here)
@@ -2273,6 +2278,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
 
     private func applyInitializeResult(_ parsed: ACPInitializeResult, serverId: UUID) {
         gatewayInfos[serverId] = parsed.gateway
+        if parsed.gateway?.supports("push") == true { Task { @MainActor in await self.syncPushToken(serverId: serverId) } }
         (serverViewModels[serverId] as? ServerViewModel)?.updateGatewayInfo(parsed.gateway)
         switch parsed.connectedProtocol {
         case .codexAppServer:

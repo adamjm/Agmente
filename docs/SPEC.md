@@ -161,6 +161,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 | `_agmente/git/log` | `{ projectId, limit, cursor? }` | `{ commits: [...], nextCursor? }` |
 | `_agmente/git/turnDiff` | `{ sessionId, turn }` | `{ diff, truncated, hidden, fromTree, toTree }` (D-036) |
 | `_agmente/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
+| `_agmente/push/register`, `_agmente/push/unregister` | `{ deviceToken, environment }` (`sandbox` or `production`), none | `{}` (D-052; the token is kept per identity and device) |
 | `_agmente/files/url` | `{ projectId, path }` | `{ url, expiresAt }` |
 | `_agmente/mcp/list`, `_agmente/mcp/set` | `{ projectId?, name, disabled?, alwaysAllow? }` | `{ servers }` |
 | `_agmente/skills/list`, `put`, `delete` | `{ scope, name, content? }` | `{ skills }` |

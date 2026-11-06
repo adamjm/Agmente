@@ -32,7 +32,7 @@ func TestOpenUsesWALAndCreatesTheSchemaOnce(t *testing.T) {
 		t.Fatalf("journal_mode = %q, %v", mode, err)
 	}
 	var tables int
-	if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table'`).Scan(&tables); err != nil || tables != 6 { // projects, sessions, events, reads, approvals, snapshots
+	if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table'`).Scan(&tables); err != nil || tables != 7 { // projects, sessions, events, reads, approvals, snapshots, push_tokens
 		t.Fatalf("tables = %d, %v", tables, err)
 	}
 	s.Close()
@@ -247,7 +247,7 @@ func TestASchema1DatabaseIsMigratedAndKeepsItsData(t *testing.T) {
 	if _, err := s.AppendEvent(ctx, "sess-1", "update", []byte(`{"a":1}`)); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`DROP TABLE snapshots`, `ALTER TABLE projects DROP COLUMN deny_paths`, `PRAGMA user_version = 1`} {
+	for _, q := range []string{`DROP TABLE push_tokens`, `DROP TABLE snapshots`, `ALTER TABLE projects DROP COLUMN deny_paths`, `PRAGMA user_version = 1`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

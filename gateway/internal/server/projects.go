@@ -93,6 +93,10 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		return s.pendingApprovals()
 	case "_agmente/approvals/answer":
 		return s.answerApproval(ctx, who, params)
+	case "_agmente/push/register":
+		return s.pushRegister(ctx, who, params)
+	case "_agmente/push/unregister":
+		return s.pushUnregister(ctx, who)
 	case "_agmente/git/status":
 		return s.gitStatus(ctx, params)
 	case "_agmente/git/diff":

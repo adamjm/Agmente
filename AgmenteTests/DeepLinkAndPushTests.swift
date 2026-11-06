@@ -1,4 +1,6 @@
 import XCTest
+import ACP
+import ACPClient
 @testable import Agmente
 
 final class DeepLinkTests: XCTestCase {
@@ -182,5 +184,54 @@ final class PushRegistrationTests: XCTestCase {
         XCTAssertEqual(push.failure, "Registration failed: no valid “aps-environment” entitlement string found for application")
         push.didRegister(deviceToken: Data([1]))
         XCTAssertNil(push.failure, "a later success clears the failure")
+    }
+}
+
+private final class PushFakeCaller: GatewayCalling, @unchecked Sendable {
+    var calls: [String] = []
+    var params: ACP.Value?
+    var error: Error?
+    func gatewayCall(method: String, params: ACP.Value?) async throws -> ACP.Value {
+        calls.append(method)
+        self.params = params
+        if let error { throw error }
+        return .object([:])
+    }
+}
+
+final class PushGatewaySyncTests: XCTestCase {
+    private let withPush = GatewayInfo(version: "1", extensions: ["projects", "push"])
+    private let withoutPush = GatewayInfo(version: "1", extensions: ["projects"])
+
+    func testSendsTheTokenToAGatewayThatOffersPush() async {
+        let fake = PushFakeCaller()
+        let outcome = await PushGatewaySync.sync(token: "ab12", allowed: true, info: withPush, client: GatewayClient(fake), environment: .sandbox)
+        XCTAssertEqual(outcome, .sent)
+        XCTAssertEqual(fake.calls, ["_agmente/push/register"])
+        XCTAssertEqual(fake.params, .object(["deviceToken": .string("ab12"), "environment": .string("sandbox")]))
+    }
+
+    func testSendsNothingWhenAnyConditionFails() async {
+        let cases: [(String?, Bool, GatewayInfo?, PushGatewaySync.Outcome)] = [
+            (nil, true, withPush, .skippedNoToken),
+            ("", true, withPush, .skippedNoToken),
+            ("ab12", false, withPush, .skippedNotAllowed),
+            ("ab12", true, withoutPush, .skippedNoPush),
+            ("ab12", true, nil, .skippedNoPush),
+        ]
+        for (token, allowed, info, expected) in cases {
+            let fake = PushFakeCaller()
+            let outcome = await PushGatewaySync.sync(token: token, allowed: allowed, info: info, client: GatewayClient(fake))
+            XCTAssertEqual(outcome, expected)
+            XCTAssertTrue(fake.calls.isEmpty, "no call for \(expected)")
+        }
+    }
+
+    func testAGatewayRefusalIsReportedWithoutTheToken() async {
+        let fake = PushFakeCaller()
+        fake.error = GatewayError.rpc(code: -32602, message: "deviceToken must be 64 to 200 hex digits")
+        let outcome = await PushGatewaySync.sync(token: "secret-token-value", allowed: true, info: withPush, client: GatewayClient(fake))
+        XCTAssertEqual(outcome, .failed("deviceToken must be 64 to 200 hex digits"))
+        if case .failed(let message) = outcome { XCTAssertFalse(message.contains("secret-token-value")) }
     }
 }

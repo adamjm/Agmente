@@ -21,7 +21,7 @@ struct PushSettingsRow: View {
             if let failure = push.failure {
                 Text(failure).font(.footnote).foregroundStyle(.red)
             }
-            Text("Push messages are not delivered yet: this build has no push entitlement and the gateway does not take device tokens. Opening a link such as agmente://session/<server>/<session> works.")
+            Text("Push messages are not delivered yet: this build has no push entitlement and the gateway does not send them. The token is given to a gateway that accepts it. Opening a link such as agmente://session/<server>/<session> works.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
