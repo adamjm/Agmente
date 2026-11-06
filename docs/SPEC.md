@@ -54,6 +54,10 @@ All findings come from the review doc and from code at the versions below. Sourc
 | F-19 | Bob starts each configured MCP server once per ACP session. | [S4] |
 | F-20 | A repository can make git run programs through `core.fsmonitor`, `diff.external`, textconv drivers, `core.pager` and clean filters. | [S7] |
 | F-21 | Two Bob processes with one `HOME` can open the same session at once: neither refuses. A turn that the second process completed (`end_turn`) was missing from the stored history afterwards. Bob logged no lock or conflict error (D-014). | [S3] live probe on 2.0.9, 2026-11-06 |
+| F-22 | Bob 2.0.9 does not forward MCP image content over ACP. A tool that returns `[text, image/png]` gives a `tool_call_update` whose `content` holds only the text block, and whose `rawOutput` is `{"result": <text>}`. No `image` block reaches the client (RESULTS 2026-11-07). | [S3] live probe `gateway/scripts/probe-bob-open-questions.mjs`, 2026-11-07 |
+| F-23 | Bob 2.0.9 `session/resume` accepts a changed `mcpServers` list. Adding an HTTP server connects it during the resume (`server/discover`, `initialize`, `tools/list`), and its tool is callable on the next prompt. Resuming with `[]` drops it: no request reaches the server, and the tool is absent. Bob sends `server/discover` before `initialize`; a server that answers `-32601` to it still works (RESULTS 2026-11-07). | [S3] live probe, 2026-11-07 |
+| F-24 | Bob 2.0.9 invokes a skill added to `<project>/.bob/skills/<name>/SKILL.md` in a running session on the next prompt, with no `session/load`. No `available_commands_update` is sent when the file is added. The command list is refreshed by `session/load` (its replay starts with `available_commands_update`) and by a new `session/new` (RESULTS 2026-11-07). | [S3] live probe, 2026-11-07 |
+| F-25 | Bob 2.0.9 advertises `sessionCapabilities.close` and answers `session/close {sessionId}` with `{}`. The closed session stays loadable: a later `session/load` succeeds and replays history, and a prompt then completes. Not tested: close during a turn (RESULTS 2026-11-07). | [S3] live probe, 2026-11-07 |
 
 ## 4. Requirements
 
@@ -236,9 +240,9 @@ JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `liste
 | ID | Item | Test |
 | --- | --- | --- |
 | Q-1 | Answered 2026-11-06 (RESULTS): `session/load` and `session/resume` during a turn are refused, not cancelled (F-12). | T-34 |
-| Q-2 | Does Bob forward image content from MCP tools over ACP? | T-39 |
-| Q-3 | Does `session/resume` accept a changed `mcpServers` list? | T-42 |
-| Q-4 | Does a running Bob session pick up a new skill? | T-43 |
+| Q-2 | Answered 2026-11-07 (RESULTS): no. Bob drops the image block of an MCP tool result and keeps only its text (F-22). Images from Bob's MCP tools do not reach the app. | T-39 |
+| Q-3 | Answered 2026-11-07 (RESULTS): yes. `session/resume` accepts a changed `mcpServers` list; a new HTTP server connects and its tool is callable, and a removed one is gone (F-23). | T-42 |
+| Q-4 | Answered 2026-11-07 (RESULTS): partly. A running session invokes a skill added later on the next prompt without a load, but gets no `available_commands_update`; the list refreshes on load or a new session (F-24). | T-43 |
 | Q-5 | Answered 2026-11-06 (RESULTS): no. Two processes lose a write without an error (F-21). The gateway must never run two Bob processes on one task store (D-014). | T-18 runs with one process; record any lock error |
 | Q-6 | Answered 2026-11-06 (RESULTS): Bob checks trust before auth, against its process working directory. On 2.0.9 it trusts folders with no entry. The gateway `cwd` guard (FR-6), the per-project agent `cwd` and the container are the folder controls (D-013). | T-33 with a key set: record the result of `session/new` in an untrusted folder |
 | R-1 | Bob's `_bob/*` methods and `_meta` keys are not part of ACP and can change. Pin the version; keep T-32 as a probe. | T-32 |
