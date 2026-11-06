@@ -48,6 +48,15 @@ struct ChatEntryMapper {
                 let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
                 entries.append(.assistantMarkdown(messageId: message.id, segmentId: segment.id, text: text))
+                // PLAN 5.4: a fenced html block gets its own row with the "HTML preview" button, after the text.
+                for (index, html) in HTMLFenceScanner.htmlBlocks(in: text).enumerated() {
+                    entries.append(.media(
+                        messageId: message.id,
+                        segmentId: segment.id,
+                        item: ForkMediaItem(content: .html(html)),
+                        index: index
+                    ))
+                }
                 hasVisibleContent = true
             case .thought:
                 let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)

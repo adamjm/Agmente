@@ -137,6 +137,8 @@ struct ForkMediaItem: Identifiable, Hashable {
         case placeholder(title: String, detail: String)
         /// A `resource_link`. Shown as a row; never fetched (fetching is gateway work, PLAN 5.3).
         case link(title: String, uri: String, detail: String)
+        /// HTML source (a `resource` with MIME text/html, or a fenced html block). Shown only in the sandboxed preview (FR-39).
+        case html(String)
     }
 
     let id = UUID()
@@ -151,6 +153,7 @@ struct ForkMediaItem: Identifiable, Hashable {
         case .image: return "[image]"
         case .placeholder(let title, _): return "[\(title)]"
         case .link(let title, let uri, _): return "[\(title)] \(uri)"
+        case .html: return "[HTML]"
         }
     }
 
@@ -167,8 +170,11 @@ enum ForkMediaIngest {
         switch block {
         case .image(let mimeType, let data, _):
             return imageItem(base64: data, mimeType: mimeType)
-        case .resource(let uri, let mimeType, let blob, _):
+        case .resource(let uri, let mimeType, let blob, let text):
             let mime = ForkMediaLimits.normalizedMime(mimeType ?? "")
+            if mime == "text/html" {
+                return htmlItem(text: text, base64: blob)
+            }
             if let blob, mime.hasPrefix("image/") {
                 return imageItem(base64: blob, mimeType: mime)
             }
@@ -188,6 +194,23 @@ enum ForkMediaIngest {
                 detail: detail.joined(separator: ", ")
             ))
         }
+    }
+
+    /// HTML from a `resource` block: the text, or the base64 blob decoded as UTF-8. Size-capped; never fetched.
+    static func htmlItem(text: String?, base64: String?) -> ForkMediaItem {
+        if let text {
+            guard text.utf8.count <= AgentHTMLSecurity.maxSourceBytes else {
+                return ForkMediaItem(content: .placeholder(title: "HTML", detail: "HTML too large to show"))
+            }
+            return ForkMediaItem(content: .html(text))
+        }
+        guard let base64, base64.utf8.count <= ForkMediaLimits.maxBase64Characters,
+              let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters),
+              data.count <= AgentHTMLSecurity.maxSourceBytes,
+              let source = String(data: data, encoding: .utf8) else {
+            return ForkMediaItem(content: .placeholder(title: "HTML", detail: "HTML could not be read"))
+        }
+        return ForkMediaItem(content: .html(source))
     }
 
     private static func imageItem(base64: String, mimeType: String) -> ForkMediaItem {

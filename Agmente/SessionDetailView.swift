@@ -26,6 +26,7 @@ struct SessionDetailView: View {
     @State private var showDeleteSessionConfirm = false
     @State private var expandedThoughts: Set<UUID> = []
     @State private var fileChangesReviewPayload: FileChangesReviewPayload?
+    @State private var htmlPreviewPayload: AgentHTMLPreviewPayload?
     @State private var showUndoUnavailableAlert = false
     @State private var transcriptState = ChatTranscriptState()
     @State private var scrollViewHeight: CGFloat = 0
@@ -137,6 +138,7 @@ struct SessionDetailView: View {
         .sheet(item: $fileChangesReviewPayload) { payload in
             FileChangesReviewSheet(items: payload.items)
         }
+        .agentHTMLPreviewSheet($htmlPreviewPayload)
         .gitSessionToolbar(store: model.gitStore, sessionId: serverViewModel.sessionId,
                            enabled: serverViewModel.isGatewayServer && model.gitStore.supportsGit)
         .toolbar {
@@ -344,6 +346,9 @@ private extension SessionDetailView {
                 onTurnDiff: { messageId in
                     guard let message = sessionViewModel.chatMessages.first(where: { $0.id == messageId }) else { return }
                     turnDiffAction(for: message)?()
+                },
+                onPreviewHTML: { html in
+                    htmlPreviewPayload = AgentHTMLPreviewPayload(html: html)
                 }
             ),
             onAtBottomChanged: { value in

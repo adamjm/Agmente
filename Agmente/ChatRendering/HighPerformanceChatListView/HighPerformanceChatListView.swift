@@ -556,7 +556,9 @@ extension HighPerformanceChatListView: ListViewAdapter {
             )
 
         case let row as ForkMediaRowView:
-            if let media = entry.media { row.configure(item: media) }
+            if let media = entry.media {
+                row.configure(item: media, onPreviewHTML: actionHandlers.onPreviewHTML)
+            }
 
         case let row as SystemRowView:
             row.text = entry.text

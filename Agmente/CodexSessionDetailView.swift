@@ -14,6 +14,7 @@ struct CodexSessionDetailView: View {
     @State private var showArchiveSessionConfirm = false
     @State private var expandedThoughts: Set<UUID> = []
     @State private var fileChangesReviewPayload: FileChangesReviewPayload?
+    @State private var htmlPreviewPayload: AgentHTMLPreviewPayload?
     @State private var showUndoUnavailableAlert = false
     @State private var transcriptState = ChatTranscriptState()
     @State private var scrollViewHeight: CGFloat = 0
@@ -129,6 +130,7 @@ struct CodexSessionDetailView: View {
         .sheet(item: $fileChangesReviewPayload) { payload in
             FileChangesReviewSheet(items: payload.items)
         }
+        .agentHTMLPreviewSheet($htmlPreviewPayload)
         .sheet(item: $sessionViewModel.activeUserInputRequest) { request in
             UserInputQuestionsSheet(request: request) { requestId, answers in
                 serverViewModel.respondToUserInputRequest(requestId: requestId, answers: answers)
@@ -435,6 +437,9 @@ private extension CodexSessionDetailView {
                 onReviewFileChanges: { items in
                     guard !items.isEmpty else { return }
                     fileChangesReviewPayload = FileChangesReviewPayload(items: items)
+                },
+                onPreviewHTML: { html in
+                    htmlPreviewPayload = AgentHTMLPreviewPayload(html: html)
                 }
             ),
             onAtBottomChanged: { value in
