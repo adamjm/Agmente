@@ -878,3 +878,14 @@ Decision:
 - Session row (`SessionRow`, ACP sessions) shows the pill for the streaming session. Its row label is built by one testable function.
 
 Scope of phase 7.1 in this decision: session row, status pill, the composer and toolbar controls of `SessionDetailView` and `CodexSessionDetailView`, and the git branch chip. Other token uses (send-button ink, `SessionCardStyle`, connection pill, New Session states, `GatewayStatusBadge`) are deferred. `GatewayStatusBadge` is in `GatewayHomeView.swift`, which another task owns.
+
+## D-104 Project state snapshot on listing (G2)
+
+Date: 2026-11-08. Branch `feat/g2-state-snapshot` (from `31cf6de`). Extends D-092 (C2).
+
+- A socket that calls `_agmente/projects/list` or `_agmente/sessions/index` gets one `_agmente/project/state` for each project it lists, with that project's current agent state. A project no agent has run for is `stopped`. Same notification shape as C2.
+- The snapshot is sent before the listing's response, not after it. The handler runs before the response is written, and a hook after the response would need a change in `server.go`, which this task does not own. The phone app buffers states that arrive before its list loads, so either order is handled. If strict ordering after the response is wanted, it is one line in the reply path of `server.go`.
+- A snapshot is not rate limited and does not count toward the 2-per-second limit of transitions. It does not change the change-only rule: it does not touch the last state sent to the sockets.
+- A snapshot is read under the same lock as the transition broadcast, so it is never older than a broadcast sent before it.
+- A snapshot is never written to the event log and never audited. The audit still records real transitions only.
+- `since` is when the gateway last saw a transition. For a project that no agent has run for since the gateway started, it is the time of the listing.

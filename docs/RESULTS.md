@@ -1764,3 +1764,26 @@ Contrast (WCAG 2.x, measured by ForkContrast): all status tones pass 4.5:1 text 
 Tests: DesignTokensTests.swift (contrast math with pass and fail cases, resolved UIKit contrast per appearance, pill labels per GatewaySessionStatus, row label). XCTest not run (build-for-testing only). Pure table checked with a harness: passes on the real table; mutated running-light text fails (4 failures).
 
 Build: build-for-testing succeeded (iPhone 17, D-103 tree).
+
+# G2 results: project state snapshot on listing (D-104)
+
+Branch `feat/g2-state-snapshot`, commit `83c1420`, from `31cf6de`. Not pushed, not merged.
+
+Files changed:
+- `gateway/internal/server/projectstate.go`: `sendSnapshot` and `stateMessage`; `watchProjectStates` sends one snapshot per listed project. Header comment updated.
+- `gateway/test/project-state-snapshot.test.mjs` (new): 4 wire tests.
+- `gateway/test/usage-project-state.test.mjs` (outside the owned list, see below): the feeds of its four tests now start after the listing response, so the snapshot is not part of their transition assertions. Assertions unchanged.
+
+No change to `projects.go` or `sessions.go`: their hooks already call `watchProjectStates`.
+
+Checks:
+- `gofmt -l`: clean. `go vet ./...`: pass. `go test ./...`: all packages ok (server 13.2 s).
+- `node --check test/project-state-snapshot.test.mjs`: pass.
+- `node --test test/project-state-snapshot.test.mjs`: 4 of 4 pass (final run).
+- Related wire files, each run alone: auth-missing 1/1, create-folder 9/9, eventlog 5/5, denypaths 5/5, git 8/8, projectlists 6/6, projects 7/7, sessions 4/4, usage-project-state 4/4, turndiff 7/7, watchskip 5/5, usage 5/5.
+- A multi-file `node --test` call ran only one file, so each file was run separately.
+- `scripts/check.sh` not run, as instructed.
+
+Mutation: with both `a.sendSnapshot(c)` calls removed, test (a) fails ("new socket that lists ... running"). Restored from a backup copy, the file has both calls and test (a) passes.
+
+Not verified: the full wire suite (`scripts/check.sh`), and strict ordering after the response (see D-104).

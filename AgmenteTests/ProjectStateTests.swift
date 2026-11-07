@@ -191,6 +191,7 @@ final class ProjectStateRouterTests: XCTestCase {
         model.addServer(name: "Gateway", scheme: "ws", host: "localhost:1234", token: "", cfAccessClientId: "", cfAccessClientSecret: "", workingDirectory: "/tmp")
         let server = try XCTUnwrap(model.selectedServerViewModel)
         manager.setServiceForTesting(service)
+        service.delegate = manager // connect() sets this (ACPClientManager.connect); the test seam does not, so notifications would never reach the router
         Task {
             for _ in 0..<500 {
                 if let request = connection.requests().first(where: { $0["method"] as? String == "initialize" }), let id = request["id"] as? Int {
@@ -236,7 +237,9 @@ final class ProjectStateRouterTests: XCTestCase {
         await settle { h.model.gatewayHome.agentState(for: "p-api") == .stopped }
         XCTAssertEqual(h.model.gatewayHome.agentState(for: "p-site"), .running, "the router forwards the notification to the home")
         XCTAssertNil(h.model.gatewayHome.agentState(for: "p-ghost"))
-        XCTAssertFalse(h.model.updates.contains { $0.message.contains("project/state") }, "a state is not a log line")
+        // logWire writes every incoming message to the wire log, so the "← _agmente/project/state" line is there as it is for git/changed.
+        // The router's contract is that the state is not rendered as a Notification line.
+        XCTAssertFalse(h.model.updates.contains { $0.message.hasPrefix("Notification _agmente/project/state") }, "a state is not a Notification log line")
     }
 
     func testAnUnknownStateNotificationClearsTheShownState() async throws {
