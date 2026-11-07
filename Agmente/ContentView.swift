@@ -869,6 +869,8 @@ private struct SessionListPage: View {
                     .accessibilityLabel("New project")
                     .accessibilityIdentifier("gatewayNewProject")
                 }
+                // D-097: approve or deny client pairings, and manage the connected clients.
+                ToolbarItem(placement: newProjectPlacement) { GatewayConnectionsButton(clientProvider: { [weak model] in model?.selectedGatewayClient() }) }
             }
             if !model.serverSessionSummaries.isEmpty {
                 let leadingPlacement: ToolbarItemPlacement = {
