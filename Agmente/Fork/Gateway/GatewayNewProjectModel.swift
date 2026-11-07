@@ -11,7 +11,11 @@ final class GatewayNewProjectModel: ObservableObject {
             if name != oldValue { createMessage = nil }
         }
     }
-    @Published var selectedRoot: String?
+    @Published var selectedRoot: String? {
+        didSet {
+            if selectedRoot != oldValue { createMessage = nil }
+        }
+    }
     @Published private(set) var roots: [String] = []
     @Published private(set) var isLoadingRoots = false
     @Published private(set) var rootsMessage: String?
@@ -77,15 +81,20 @@ final class GatewayNewProjectModel: ObservableObject {
             createMessage = "Not connected to the gateway."
             return false
         }
+        let sentName = name
         isCreating = true
         defer { isCreating = false }
         do {
-            let project = try await client.createProject(name: name, path: root, createFolder: true)
+            let project = try await client.createProject(name: sentName, path: root, createFolder: true)
             createMessage = nil
             await onCreated(project)
             return true
         } catch {
-            createMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            // The refusal is about the name and root that were sent. If either changed while the
+            // request was in flight, the text would describe something else, so it is not shown.
+            if name == sentName && selectedRoot == root {
+                createMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            }
             return false
         }
     }
