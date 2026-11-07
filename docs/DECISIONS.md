@@ -812,3 +812,69 @@ Date: 2026-11-07. Task B2. Contract C3.
 - **Reason:** Claude needs one prompt-and-wait path that matches the phone's, so a turn looks the same on the phone and in the audit. The limits run before the agent sees anything, and the summary stays small so Claude's context is not filled by the gateway.
 - **Scope changes beyond the owned files (for the coordinator to check):** `gateway/internal/connector/connector.go` (two fields: `Options.Gateway` and `Connector.turns`), `gateway/internal/server/server.go` (one line: `Gateway: &connectorBridge{s: s}`), `gateway/internal/server/projects.go` (one line in `with`, which copies the source and grant), `gateway/internal/audit/audit.go` (`Source` and `Grant` on `Who` and `Fields`; written only when set), `gateway/internal/store/events_latest.go` (new file, one read-only query), and `gateway/test/connector.test.mjs` and `gateway/test/connector-limits.test.mjs` (one and four "not implemented" assertions updated to the implemented tools). The new bridge is `gateway/internal/server/connector_tools.go`.
 - **Known limits.** The turn's client is a server-side object and holds no socket, so a turn whose agent never answers keeps its slot until the agent exits (the phone's prompts have the same wait). `alwaysAllow` is known only while the gateway holds the session's MCP list (the list sent since the gateway started, or on load), so it is omitted after a restart until the phone sends the list again. The usage numbers still depend on Bob's real `usage_update` shape (D-070).
+
+## D-100 Connector on public TCP 8443, Caddy as a non-root LaunchAgent, DNS-01 certificate
+
+- **Date:** 2026-11-08. **Task:** P1 (branch `feat/p1-public-8443`). Supersedes the port and root parts of D-098. D-098's no-client-certificate rule, the seven paths and the 404 rule stand.
+- **Decision:** The connector is exposed on public TCP 8443, the same port as the phone's mutual-TLS site. Caddy separates the two by host name (SNI). Caddy runs as the owner's user from a LaunchAgent, not as root from a LaunchDaemon. The connector's certificate uses the DNS-01 challenge through a DNS provider plugin. Its API token is `CADDY_DNS_API_TOKEN`, loaded from the owner's secrets file and never stored in the repo.
+  - **Files.** `deploy/Caddyfile` (global `auto_https disable_redirects`; phone block unchanged; the connector import), `deploy/Caddyfile.connector` (site `{$CONNECTOR_HOST}:8443`, `tls { dns PROVIDER {env.CADDY_DNS_API_TOKEN} }`, the same seven-path matcher, no `client_auth`), `deploy/launchd/dev.agmente.caddy.plist` (LaunchAgent; `/bin/sh -c` loads the secrets file, as the gateway's plist does), `gateway/config.mac.example.json` (`publicOrigin` `https://your-public-name.example:8443`), `docs/MAC-SETUP.md` section 13.
+  - **Port 80.** Caddy's HTTP-to-HTTPS redirect listens on port 80, which a non-root process cannot bind. `auto_https disable_redirects` turns that listener off. No client uses the redirect.
+  - **Certificate.** HTTP-01 and TLS-ALPN-01 need public port 80 or 443, which is not forwarded. DNS-01 needs no inbound port. The provider module must be built in with xcaddy (`xcaddy build --with <module>`); the stock Homebrew Caddy does not include it.
+  - **Origin.** `connector.publicOrigin` includes the port: `https://<host>:8443`. The gateway uses it as the MCP resource identifier. Whether Claude accepts a non-443 origin is unverified and is probe 7.0.
+- **Reason:** No root process is needed. The router forwards only 8443, and no port below 1024 is used. The phone's listener is not changed.
+- **Consequences.**
+  - The phone's site shares the listener with the connector. Its client-certificate policy is SNI-matched, and the default (no-SNI) policy has no client auth. That default policy existed before this change, so the phone's TLS protection is unchanged. The HTTP 421 check for connections without SNI is also unchanged.
+  - Port 80 is not used. Certificate renewal runs over DNS, so there is no inbound-port dependency.
+  - The Caddy agent needs the owner's DNS provider token. A provider with scoped tokens should get a token limited to the zone.
+  - The DNS provider token is a secret. It lives only in the owner's secrets file (mode 600), outside the repo.
+- **Open.** Probe 7.0: whether Claude accepts a non-443 port in the connector URL. If it does not, the port choice comes back to the owner (443 needs root or a `pf` redirect). The `caddy-dns` provider name is a placeholder until the owner chooses a provider.
+- **Path-suffixed metadata.** The matcher forwards `/.well-known/oauth-protected-resource/mcp` (owner decision 44). The gateway serves it too (D-101).
+
+## D-101 Connector metadata: path-suffixed protected-resource URL, publicOrigin with a port, release race
+
+Date: 2026-11-08. Task D3 (branch feat/d3-connector-metadata). Owner decisions 44 and 45 (part).
+
+**Metadata URLs.** The connector serves the RFC 9728 protected-resource metadata at two URLs, with the same body:
+`/.well-known/oauth-protected-resource` (root form) and `/.well-known/oauth-protected-resource/mcp` (path-suffixed form). The MCP 2025-11-25 authorization spec, section "Protected Resource Metadata Discovery Requirements", gives both forms and says that for an MCP endpoint at `https://example.com/public/mcp` the metadata may be hosted at `https://example.com/.well-known/oauth-protected-resource/public/mcp`. For `/mcp` that is `<publicOrigin>/.well-known/oauth-protected-resource/mcp`. The spec tells clients to use the `resource_metadata` URL from `WWW-Authenticate` when present, and otherwise to try the path-suffixed form before the root form.
+
+**Challenge.** A 401 on `POST /mcp` names the path-suffixed form:
+`WWW-Authenticate: Bearer resource_metadata="<publicOrigin>/.well-known/oauth-protected-resource/mcp"`, and for a rejected token the same value followed by `, error="invalid_token"`.
+
+**Resource identifier.** The resource is `publicOrigin + "/mcp"`, kept exactly as configured, port included (for example `https://name.example:8443/mcp`). The spec's canonical-URI examples include `https://mcp.example.com:8443`. The `resource` parameter in `/authorize` and `/token` must match this string, with one trailing slash tolerated as before.
+
+**publicOrigin validation (connector block only).** The value must be an https URL with a host, an optional port from 1 to 65535, and nothing else. A path (a trailing `/` included), a query, a fragment, user info, an empty port or a missing host is a config error. `--dry-run` reports it. The same validator now also applies to `connector.allowedOrigins`, which had accepted a trailing slash; Origin headers never carry a path, so this only rejects misconfigurations. The APNs `sandboxURL` and `productionURL` checks are unchanged (they keep the old validator).
+
+**Race fix.** `sendPrompt` in the connector package inserted the turn into the registry and then set `rec.release`. A `get_turn` that found the record in that window read a nil release. The fix passes the release into `turnRegistry.add`, so the record is complete before it is inserted. The bridge's `StartPrompt` (server package) does not touch `release`; the defect was in the connector package.
+
+**Consequences.** Clients that follow the spec find the metadata at the URL the challenge names. The root form stays for clients that use it. The phone listener serves none of these routes. Owner decision 44 is recorded here; decision 45's port-in-origin rule is recorded above.
+
+## D-102 Project agent state on the gateway home
+- **Date:** 2026-11-08
+- **Decision:** Execution plan task B3 (contract C2, owner decision 47). The gateway home shows each listed project's agent state from `_agmente/project/state {projectId, agent, since}`.
+  - **Wire and decoding.** `GatewayProjectState.parse` (ACPClient, new file `Gateway/GatewayProjectState.swift`) reads the project id, the agent and the time. The four names `stopped`, `starting`, `running` and `stopping` decode to their cases. Any other or missing `agent` decodes to `.unknown`, which is never shown and clears a state already shown. A missing project id, or an empty one, is not a state.
+  - **Routing.** `handleIncoming` sends the method to `handleGatewayProjectState` and returns, so the notification is not written to the log. The state is recorded for the selected server. The one live connection belongs to the selected server, so this is the server the notification came from. `_agmente/event`, `_agmente/git/changed` and the default path for `_agmente/notice` are unchanged, and each has a test.
+  - **Home model.** `GatewayHomeModel` keeps `projectStates` for the server it belongs to. A state for a project not on the list is ignored. A state that arrives before the first list of a server loads is held until that list answers, and kept only if the project is listed. The states clear when the server changes (`configure(serverId:)`, and a state from another server). A reconnect to the same server keeps them, because the gateway does not resend a state to a new socket.
+  - **Header.** Each listed project header shows, after its unread count: "Running" with a small progress indicator, "Starting", "Stopping", or "Idle" for stopped. Nothing is shown while unknown. Accessibility labels are "Agent running", "Agent starting", "Agent stopping" and "Agent idle". The identifier is `gatewayProjectState.<projectId>`.
+  - **Ownership of the home model.** `AppViewModel` owns the `GatewayHomeModel` (`lazy var gatewayHome`) and forwards its `objectWillChange`, so the session list page redraws as before. The view no longer creates its own `@StateObject`.
+- **Reason:** The owner decided that the app shows live agent state on the gateway home. The model needs to receive the notification without the view, and the view needs to redraw when the state changes.
+- **Limits.**
+  - **No snapshot on subscribe.** The gateway sends a state only when it changes (C2). A project that is already running when the home opens, or after a reconnect, shows nothing until its next transition. A gateway snapshot on subscribe would close this. That is a gateway decision and was not made here.
+  - **Attribution during a server switch.** The one shared connection is replaced on a switch. A notification that is still in flight from the old connection is attributed to the new selected server. This window is a few milliseconds.
+  - **Progress is shown for running only.** Starting and stopping show words only.
+- **Changes outside the owned list (for the coordinator to check at merge).**
+  - `Agmente/AppViewModel.swift`: `lazy var gatewayHome` with a forwarded `objectWillChange` (a private `AnyCancellable`), and a four-line case in `handleIncoming` that forwards `_agmente/project/state` to `handleGatewayProjectState` and returns. A Swift extension cannot hold the stored property, and the router case lives in this file.
+  - `Agmente/ContentView.swift`: the gateway home's `@StateObject` becomes a computed property over `model.gatewayHome`, and the two `configure` calls in the gateway home task pass `serverId`. No session-row lines changed.
+  - `ACPClient/AGENTS.md`: the `_agmente/project/state` line says the app reads it now.
+
+## D-103 Design tokens, status pill and accessibility quick wins (iPad and UX phases 7.0 and 7.1)
+
+Status: accepted for phase 7.1 (partial, see scope).
+
+Decision:
+- Colour, type and spacing tokens live in `Agmente/Fork/Design/`. Status colours are a pure table (`ForkTokenTable`) with four appearances (light, dark, light and dark with Increase Contrast). Surfaces and text use system semantic colours. The tokens are code, not asset-catalog colour sets. The table is pure Swift, so the same values feed the unit tests and the contrast harness.
+- Text needs 4.5:1 and glyphs 3:1, on `surface.row` and `surface.grouped`, with the status fill (12% light, 16% dark) composited on the surface. Tests resolve real UIKit colours per trait collection.
+- Light values were changed from the plan's candidates. The plan's approval (#965500), error (#C02018) and ok (#1E7A3C) values pass on the white row surface but fail on the grouped surface (4.44, 4.49, 4.13). Replacements: running #0057B8, approval #7A4300, error #A31A12, ok #176433, neutral #5C5C62.
+- The status pill carries a glyph and a word. Error reads "Failed" (plan 3.5), not the current "Error" in `GatewayStatusBadge`. Idle has no pill.
+- Session row (`SessionRow`, ACP sessions) shows the pill for the streaming session. Its row label is built by one testable function.
+
+Scope of phase 7.1 in this decision: session row, status pill, the composer and toolbar controls of `SessionDetailView` and `CodexSessionDetailView`, and the git branch chip. Other token uses (send-button ink, `SessionCardStyle`, connection pill, New Session states, `GatewayStatusBadge`) are deferred. `GatewayStatusBadge` is in `GatewayHomeView.swift`, which another task owns.

@@ -254,7 +254,7 @@ Do not use `container inspect` or `container list --format json`. Both print env
 
 ## 12. Not covered
 
-- The public connector's deployment (Caddy on 443, the launchd services, the public address). It is covered in section 13.
+- The public connector's deployment (Caddy on public port 8443 as your own user, the LaunchAgent, the public address). It is covered in section 13.
 - The phone listener's Caddy site (`deploy/Caddyfile`, :8443 to 127.0.0.1:8788) and the systemd unit (`deploy/agmente-gateway.service`). This guide does not cover them.
 - Push delivery and APNs. See `docs/PUSH-TESTING.md`.
 

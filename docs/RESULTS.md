@@ -1648,3 +1648,119 @@ Notes for the coordinator
 - **`node scripts/check-docs.mjs`:** ok, 48 tests, 45 FRs, 15 NFRs, 86 decisions. **`git diff --check`:** clean.
 - **`xcodebuild ... test` (iPhone 17 simulator, one run):** TEST SUCCEEDED. XCTest: 330 tests, 0 failures, 40 suites passed. Swift Testing (in the same run): 111 passes, 0 failures. The new suites (RunningWork*, Usage*, ConnectorConnectionsModelTests) compiled and ran. No stall. The log is at `<scratchpad>/results/i2-xcodebuild.log`.
 - **Not done:** the Caddy route checks and the live phone and Claude probes (owner steps); the live `allowedOrigins` decision.
+
+## 2026-11-08 Wave 4 task notes and integration (feat/integration-wave4)
+
+# P1 public 8443, non-root, DNS-01 (D-100): results
+
+Branch `feat/p1-public-8443` (based on `feat/integration-2026-11-07` at 31cf6de). Decision text: `<scratchpad>/decisions/p1-public-8443.md`.
+
+## Changed files
+- `deploy/Caddyfile`: global `auto_https disable_redirects`; header comments; connector import comment. The phone block is unchanged (`agent.example.com:8443`, `client_auth` with `trust_pool file /etc/caddy/agmente-client-ca.pem`, `reverse_proxy 127.0.0.1:8788`).
+- `deploy/Caddyfile.connector`: site `{$CONNECTOR_HOST}:8443`; `tls { dns PROVIDER {env.CADDY_DNS_API_TOKEN} }`; seven-path matcher (the path-suffixed metadata form was already present); 404 for the rest; no `client_auth`.
+- `deploy/launchd/dev.agmente.caddy.plist`: LaunchAgent (no root, no LaunchDaemon paths); runs Caddy from `/Users/you/agmente/caddy/bin/caddy` after loading `/Users/you/agmente/secrets.env`; logs and data under the owner's folder.
+- `gateway/config.mac.example.json`: `publicOrigin` is `https://your-public-name.example:8443`. JSON has no comments, so the note is in MAC-SETUP section 13.
+- `docs/MAC-SETUP.md`: section 13 rewritten. No other section changed.
+
+## Verification
+- `caddy validate` (Caddy v2.11.9, stock): the config with the DNS line removed, phone trust path pointed at a dummy CA, and `CONNECTOR_HOST` set: **Valid configuration**. With `dns cloudflare` set and the stock build: **fails**, `module not registered: dns.providers.cloudflare`, because the stock build has no DNS module. With the `PROVIDER` placeholder left in, validation fails the same way. Expected until the owner builds with the module.
+- `caddy adapt` of the valid config: one server, `:8443`, `automatic_https: {disable_redirects: true}`. Policies: `sni: agent.example.com` with client authentication; the default (no match) with none. The original committed config has the same structure on its `:8443` server. The original `:443` server is gone.
+- `plutil -lint`: `dev.agmente.caddy.plist` OK, `dev.agmente.gateway.plist` OK.
+- JSON parse of `gateway/config.mac.example.json`: OK. The gateway's own loader (`go test ./internal/config`, plus a temporary test removed afterwards) reads `publicOrigin` with the port, and `enabled` is false.
+- Not run: no Caddy or gateway was started against any live config. The live Caddy (PID 72644) and the main checkout were not touched.
+
+## Sources (DNS-01, port rules, redirects)
+- `tls` directive, DNS syntax `dns cloudflare {env.CLOUDFLARE_API_TOKEN}`; the page says the provider plugin comes from the `caddy-dns` repositories: https://caddyserver.com/docs/caddyfile/directives/tls
+- Automatic HTTPS. DNS challenge "does not require any open ports". TLS-ALPN "requires port 443 to be externally accessible": https://caddyserver.com/docs/automatic-https
+- Global options: `auto_https disable_redirects` ("Disable only HTTP-to-HTTPS redirects"): https://caddyserver.com/docs/caddyfile/options
+- xcaddy `--with` usage: https://github.com/caddyserver/xcaddy
+
+## Not verified
+- Claude's acceptance of a non-443 port (probe 7.0).
+- Live DNS-01 issuance, router forwarding, and the public path. Needs the owner's domain, token and plugin build.
+- A DNS provider plugin build (xcaddy not installed here; the provider is not chosen).
+- Runtime binding: that `auto_https disable_redirects` stops the port 80 bind as non-root. Checked against the documentation and the adapted JSON only.
+- The phone site on a no-SNI connection with a `agent.example.com` Host header, on the shared listener. Its 421 behaviour is the same as before, but it was not re-tested.
+- The path-suffixed metadata route returns 200. That needs the gateway change (D3).
+- Section 12 of `docs/MAC-SETUP.md` still says the public connector is on port 443. Section 12 is outside this task. Integration should update it.
+
+# D3 connector metadata, port in publicOrigin, StartPrompt race (D-101)
+
+Branch feat/d3-connector-metadata, based on 31cf6de. Decision text: `<scratchpad>/decisions/d3-connector-metadata.md`.
+
+## Changes
+
+- Metadata: `GET /.well-known/oauth-protected-resource/mcp` served with the root body. `WWW-Authenticate` on `/mcp` names the path-suffixed form. All other routes and the 404/405 rules are unchanged.
+- publicOrigin validation: `validHTTPSOrigin` in the connector block (port 1 to 65535 optional, no path, query, fragment, user info or empty port). Also applied to allowedOrigins. APNs validation untouched.
+- Race: `turnRegistry.add` takes the release; a test seam `inserted` lets the test read the record in the window.
+
+## Race evidence
+
+- Before the fix: `TestReleaseIsSetBeforeTheTurnIsReadable` FAIL ("a turn was readable from the registry before its release was set").
+- After the fix: PASS. `go test -race` on the connector package: ok.
+
+## Test counts
+
+- `go vet ./...`: clean. `gofmt -l`: clean.
+- `go test ./...`: config ok, connector ok, jsonv ok, mcpconf ok, push ok, server ok, store ok.
+- `go test -race ./internal/connector/ ./internal/config/`: ok.
+- `node --check`: all five files ok.
+- `test/connector-metadata.test.mjs`: 6/6 pass (new file, includes a dry-run check).
+- `test/connector.test.mjs`: 17/17 pass (one assertion changed to the path-suffixed challenge).
+- `test/connector-limits.test.mjs`: 4/4 pass.
+- `test/connector-tools.test.mjs`: 7/7 pass on the final rerun. Two earlier runs failed 4 and 3 tests (send_prompt returning `running` before the reply, under machine load of 600 to 900). The base commit ran 7/7 under the same load, and the branch then ran 7/7 on the next two runs. Intermittent, timing-sensitive; not reproduced at quiet load.
+- `test/connector-tools-limits.test.mjs`: 2/2 pass on the final rerun (one earlier run failed 1, same cause).
+
+## Not checked
+
+- `scripts/check.sh` not run (coordinator runs it after Wave 4 merges), as instructed.
+- Real Claude client behaviour with the path-suffixed challenge: not probed (owner step 2).
+- Caddy routing for the path-suffixed URL: belongs to P1 (deploy matcher), not checked here.
+- Git worktree: the `gateway/node_modules` symlink (gitignored) is removed before the worktree is removed; `gateway/bin/` is a gitignored build output.
+
+# B3 app project agent state (D-102) results
+
+Branch `feat/b3-app-project-state`, from `feat/integration-2026-11-07` at 31cf6de. Decision: `scratchpad/decisions/b3-app-project-state.md`.
+
+## Files
+- New: `ACPClient/Sources/ACPClient/Gateway/GatewayProjectState.swift` (decoder: four states, `.unknown` default, `since`).
+- New: `ACPClient/Tests/ACPClientTests/GatewayProjectStateTests.swift` (7 tests).
+- New: `AgmenteTests/ProjectStateTests.swift` (14 app tests: `ProjectStateHomeTests` 8, `ProjectStateRouterTests` 6).
+- Changed: `Agmente/Fork/Gateway/GatewayHomeModel.swift` (per-server states, list filter, pending states before the first list, clear on server change).
+- Changed: `Agmente/Fork/Gateway/GatewayHomeView.swift` (`GatewayAgentStatePresentation`, `GatewayAgentStateLabel`, one line in the section header).
+- Changed: `Agmente/Fork/Gateway/AppViewModel+Gateway.swift` (`handleGatewayProjectState`).
+- Changed outside the owned list: `Agmente/AppViewModel.swift` (router case, `lazy var gatewayHome`, forwarded `objectWillChange`), `Agmente/ContentView.swift` (3 lines in the gateway home wiring), `ACPClient/AGENTS.md` (one doc line).
+
+## Routing and the other notifications
+- `_agmente/project/state` returns before the log line, like `_agmente/git/changed`. The state is recorded for the selected server: the one live connection belongs to it.
+- `_agmente/event`, `_agmente/git/changed` and `_agmente/notice` are unchanged. Each has a wire test in `ProjectStateRouterTests` (`testAGatewayEventStillAppliesToTheOpenSession`, `testAGitChangedNotificationStillRefreshesTheProjectStatus`, `testAGatewayNoticeStillReachesTheLog`). `_agmente/notice` has no app handler; it still goes to the log.
+
+## Tests and results
+- `swift test` in ACPClient (full package, by hand; `check.sh` not run because it needs the gateway wire suite and B3 changes no gateway code): 254 tests, 0 failures, exit 0. 7 of them are the new `GatewayProjectStateTests`.
+- `xcodebuild build-for-testing` (`-derivedDataPath scratchpad/dd/b3-app-project-state`, `platform=iOS Simulator,name=iPhone 17`): TEST BUILD SUCCEEDED. The 14 app tests are compiled, not executed (per the brief; no `xcodebuild test`).
+
+## Mutation checks
+- Decoder: the `running` mapping changed to `.unknown` in a copy of `GatewayProjectState.swift`. 2 of 7 tests fail (`testEachOfTheFourStatesDecodes`, `testAMalformedSinceKeepsTheStateAndDropsOnlyTheTime`). The file was restored and checked identical to its backup.
+- Router (not run here): removing the `if notification.method == GatewayProjectState.method` block in `AppViewModel.handleIncoming` should fail `ProjectStateRouterTests.testAProjectStateNotificationUpdatesTheHomeOfTheSelectedServer`, `testAnUnknownStateNotificationClearsTheShownState` and `testAStateForAProjectNotOnTheListIsIgnoredOverTheWire`. The coordinator runs this during integration, with the full `xcodebuild test`.
+
+## Commit
+Hash: f64a163 on `feat/b3-app-project-state`.
+
+## Not verified
+- The header on the simulator (layout, the progress indicator, VoiceOver text). Only the model and the presentation helper are tested.
+- The gateway sends no state when a socket starts listing (`projectstate.go`: "No state is assumed as the baseline"). A project running before the home opens, or after a reconnect, shows nothing until its next transition. Fixing this needs a gateway snapshot on subscribe, which is a gateway decision. Not changed here.
+
+## For integration
+1. Run the full `xcodebuild test`, and the router mutation above.
+2. Decide the snapshot-on-subscribe gap (above).
+3. Merge conflicts to expect: `ContentView.swift` (C7 touches the session row; this branch's hunks are at the gateway home state and its task block) and `AppViewModel.swift` (the `handleIncoming` notification block).
+
+# C7 results: iPad and UX phases 7.0 and 7.1 (branch feat/c7-ipad-quickwins, D-103)
+
+Baseline (phase 7.0): iPhone 17 and iPad Pro 13-inch (M5), light and dark, launch screen only. No live gateway or fixture, so the session view and the New Session sheet are not captured. Images in scratchpad design-baseline and design-after (not committed).
+
+Contrast (WCAG 2.x, measured by ForkContrast): all status tones pass 4.5:1 text and 3:1 glyph on row and grouped surfaces, light, dark and Increase Contrast. Light approval, error and ok were darkened from the plan's values (they failed on grouped).
+
+Tests: DesignTokensTests.swift (contrast math with pass and fail cases, resolved UIKit contrast per appearance, pill labels per GatewaySessionStatus, row label). XCTest not run (build-for-testing only). Pure table checked with a harness: passes on the real table; mutated running-light text fails (4 failures).
+
+Build: build-for-testing succeeded (iPhone 17, D-103 tree).

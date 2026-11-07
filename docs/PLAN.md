@@ -255,6 +255,10 @@ Branches merged into `feat/integration-2026-11-07` (the merge commit is given af
 - [x] B2 App running-now strip, derived from the event log (D-094). Branch `feat/b2-app-running` at 9b9b9c2f; merge 78e147f. Its app tests ran and passed in the final xcodebuild run.
 - [x] E1 Connector phone app: approve, deny and revoke (D-097). Branch `feat/e1-connector-app` at 210fdb40; merge fb357f6. Its app tests ran and passed in the final xcodebuild run.
 - [x] D2 Connector tools and lean context summary (D-096). Branch `feat/d2-connector-tools` at c2781f5; merge 15fc77e. Final checks: check.sh exit 0 (node wire 295 of 295), the four connector wire files 30 of 30 by name, xcodebuild test succeeded (330 XCTest tests, 0 failures).
+- [x] P1 Public connector on TCP 8443, non-root Caddy, DNS-01 certificate (D-100). Branch `feat/p1-public-8443` at bee6735; merge 8a83cbd into `feat/integration-wave4` (2026-11-08). Its static checks passed (caddy validate with the DNS line removed, adapt, plutil). Not run: DNS-01 issuance, the public path, and probe 7.0 (whether Claude accepts port 8443).
+- [x] D3 Connector metadata at the path-suffixed URL, publicOrigin with a port, StartPrompt release race (D-101). Branch `feat/d3-connector-metadata` at 04b9f7d; merge 0b34e83 into `feat/integration-wave4`. Its own checks passed (go test, go test -race on the connector, node 6/6, 17/17, 4/4, 2/2). connector-tools.test.mjs (7/7 on rerun) flaked under heavy load earlier; rerun it on a quiet machine in the final check.
+- [ ] B3 App project agent state on the gateway home (D-102). Branch `feat/b3-app-project-state` at f64a163; merge e2fe3c7 into `feat/integration-wave4`. Not ticked: its 14 app tests were compiled, not run, and the router mutation was not run. Run them in the final check.
+- [ ] C7 iPad and UX phases 7.0 and 7.1: design tokens, status pill, row labels (D-103). Branch `feat/c7-ipad-quickwins` at 3bb192c; merge f6aa309 into `feat/integration-wave4`. Not ticked: its app tests were not run (build-for-testing only). GatewayStatusBadge still uses the old colours and says "Error" (a later task, now that B3 is in).
 
 ## Backlog (set aside 2026-11-07)
 
