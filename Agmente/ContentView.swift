@@ -1543,52 +1543,56 @@ private struct SessionRow: View {
     let cwd: String?
     let isActive: Bool
     var showCwd: Bool = true
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var status: ForkStatusKind { isActive ? .running : .idle }
+    private var visibleCwd: String? { showCwd ? cwd : nil }
 
     var body: some View {
         HStack(spacing: 14) {
-            // Activity indicator
-            Circle()
-                .fill(isActive ? healthyGreen : Color(.systemGray4))
-                .frame(width: 8, height: 8)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.body.weight(.semibold))
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: ForkSpacing.s4) {
+                HStack(alignment: .firstTextBaseline, spacing: ForkSpacing.s8) {
+                    Text(title)
+                        .font(ForkType.rowTitle)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+                        .foregroundStyle(ForkColor.textPrimary)
+                    Spacer(minLength: 0)
+                    ForkStatusPill(kind: status)
+                }
 
                 if let preview = lastMessage, !preview.isEmpty {
                     Text(preview)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ForkColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                
-                if showCwd, let cwd = cwd {
-                    HStack(spacing: 4) {
+
+                if let cwd = visibleCwd {
+                    HStack(spacing: ForkSpacing.s4) {
                         Image(systemName: "folder")
-                            .font(.caption2)
+                            .font(ForkType.rowMeta)
                         Text(cwd)
-                            .font(.caption2)
+                            .font(ForkType.rowMeta)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(ForkColor.textSecondary)
                 }
             }
-
-            Spacer()
 
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ForkSpacing.rowHorizontal)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(SessionCardStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ForkSessionRowAccessibility.label(
+            title: title, status: status, preview: lastMessage, cwd: visibleCwd))
     }
 }
 

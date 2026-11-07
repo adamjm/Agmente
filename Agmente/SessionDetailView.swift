@@ -140,6 +140,7 @@ struct SessionDetailView: View {
                             .background(.ultraThinMaterial, in: Circle())
                     }
                 }
+                .forkHitTarget()
                 .padding(.trailing, 16)
                 .padding(.bottom, composerHeight + 24)
                 .accessibilityLabel("Scroll to bottom")
@@ -174,6 +175,7 @@ struct SessionDetailView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
+                            .accessibilityLabel("More actions")
                     }
                 }
             }
@@ -468,6 +470,8 @@ private extension SessionDetailView {
                         .background(Color(.systemGray5))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .foregroundStyle(model.currentSessionCwd.isEmpty ? .secondary : .primary)
+                        .forkHitTarget()
+                        .accessibilityLabel("Working directory")
                 }
 
                 if !sessionViewModel.availableCommands.isEmpty {
@@ -544,6 +548,7 @@ private extension SessionDetailView {
                     let isStreaming = serverViewModel.isStreaming
                     let isConnected = model.connectionState == .connected
                     Image(systemName: isStreaming ? "stop.fill" : "paperplane.fill")
+                        .accessibilityLabel(isStreaming ? "Stop response" : "Send message")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(isStreaming ? Color.primary : Color.white)
                         .frame(width: 44, height: 44)
@@ -614,6 +619,8 @@ private extension SessionDetailView {
                     Color(.systemGray5)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .forkHitTarget()
+                .accessibilityLabel("Commands")
         }
         .menuStyle(.borderlessButton)
         
@@ -648,6 +655,8 @@ private extension SessionDetailView {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(.secondary)
+                    .forkHitTarget()
+                    .accessibilityLabel("Clear selected command")
             }
             .buttonStyle(.plain)
         }
@@ -683,6 +692,8 @@ private extension SessionDetailView {
                 .background(supportsImages ? Color(.systemGray5) : Color(.systemGray6))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(supportsImages ? .primary : .quaternary)
+                .forkHitTarget()
+                .accessibilityLabel("Attach image")
         }
         .disabled(!canAttach)
         .photosPicker(
@@ -724,6 +735,7 @@ private extension SessionDetailView {
                                 .font(.system(size: 18))
                                 .foregroundStyle(.white, Color(.systemGray))
                                 .background(Circle().fill(Color(.systemBackground)).padding(2))
+                                .accessibilityLabel("Remove image")
                         }
                         .offset(x: 6, y: -6)
                     }

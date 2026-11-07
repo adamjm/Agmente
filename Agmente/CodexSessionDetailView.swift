@@ -181,6 +181,7 @@ struct CodexSessionDetailView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
+                            .accessibilityLabel("More actions")
                     }
                 }
             }
@@ -578,6 +579,7 @@ private extension CodexSessionDetailView {
                     let showsPendingAction = serverViewModel.isStreaming
                     let isConnected = model.connectionState == .connected
                     Image(systemName: showsPendingAction ? "stop.fill" : "paperplane.fill")
+                        .accessibilityLabel(showsPendingAction ? "Stop response" : "Send message")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(showsPendingAction ? Color.primary : Color.white)
                         .frame(width: 44, height: 44)
@@ -928,6 +930,8 @@ private extension CodexSessionDetailView {
                 .padding(8)
                 .background(Color(.systemGray5))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .forkHitTarget()
+                .accessibilityLabel("Commands")
         }
         .menuStyle(.borderlessButton)
     }
@@ -961,6 +965,8 @@ private extension CodexSessionDetailView {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(.secondary)
+                    .forkHitTarget()
+                    .accessibilityLabel("Clear selected command")
             }
             .buttonStyle(.plain)
         }
