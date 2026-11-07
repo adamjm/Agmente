@@ -9,11 +9,14 @@ private final class NewProjectFakeGateway: GatewayCalling, @unchecked Sendable {
     private var recorded: [(method: String, params: ACP.Value?)] = []
     var results: [String: ACP.Value] = [:]
     var error: Error?
+    /// Runs before each call answers, so a test can act while a request is in flight.
+    var onCall: ((String) async -> Void)?
 
     var calls: [(method: String, params: ACP.Value?)] { lock.lock(); defer { lock.unlock() }; return recorded }
 
     func gatewayCall(method: String, params: ACP.Value?) async throws -> ACP.Value {
         lock.lock(); recorded.append((method, params)); lock.unlock()
+        if let onCall { await onCall(method) }
         if let error { throw error }
         return results[method] ?? .null
     }
@@ -170,6 +173,54 @@ final class GatewayNewProjectModelTests: XCTestCase {
         let accepted = await model.create()
         XCTAssertFalse(accepted)
         XCTAssertFalse(gateway.calls.contains { $0.method == "_agmente/projects/create" })
+    }
+
+    func testChangingTheRootClearsAGatewayRefusal() async {
+        let gateway = NewProjectFakeGateway()
+        gateway.results["_agmente/projects/roots"] = rootsValue(["/srv/a", "/srv/b"])
+        let model = makeModel(gateway)
+        await model.loadRoots()
+        model.name = "site"
+        gateway.error = ACPServiceError.rpc(id: .number(2), error: .invalidParams("a folder with that name already exists"))
+        _ = await model.create()
+        XCTAssertEqual(model.createMessage, "a folder with that name already exists")
+        model.selectedRoot = "/srv/b"
+        XCTAssertNil(model.createMessage, "the refusal was about the other root")
+    }
+
+    func testARefusalThatArrivesAfterTheNameChangedIsNotShown() async {
+        let gateway = NewProjectFakeGateway()
+        gateway.results["_agmente/projects/roots"] = rootsValue(["/srv/root"])
+        let model = makeModel(gateway)
+        await model.loadRoots()
+        model.name = "site"
+        gateway.error = ACPServiceError.rpc(id: .number(2), error: .invalidParams("a folder with that name already exists"))
+        gateway.onCall = { method in
+            guard method == "_agmente/projects/create" else { return }
+            await MainActor.run { model.name = "site2" }
+        }
+        let accepted = await model.create()
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(model.name, "site2")
+        XCTAssertNil(model.createMessage, "the refusal was for the name that was sent, not the one now typed")
+    }
+
+    func testASecondCreateWhileOneIsInFlightSendsNothing() async {
+        let gateway = NewProjectFakeGateway()
+        gateway.results["_agmente/projects/roots"] = rootsValue(["/srv/root"])
+        gateway.results["_agmente/projects/create"] = .object(["project": projectValue("9f2c1a7b3e10", "site", "/srv/root/site")])
+        let model = makeModel(gateway)
+        await model.loadRoots()
+        model.name = "site"
+        var secondAccepted: Bool?
+        gateway.onCall = { method in
+            guard method == "_agmente/projects/create", secondAccepted == nil else { return }
+            secondAccepted = await Task { @MainActor in await model.create() }.value
+        }
+        let accepted = await model.create()
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(secondAccepted, false, "a second Create while one is in flight is refused")
+        XCTAssertEqual(gateway.calls.filter { $0.method == "_agmente/projects/create" }.count, 1)
     }
 
     func testADisconnectDuringCreateKeepsTheNameAndSaysSo() async {

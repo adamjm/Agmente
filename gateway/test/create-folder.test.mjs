@@ -2,7 +2,7 @@
 // `createFolder: true` makes <path>/<name> and registers it. The path-based call is unchanged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync } from 'node:fs';
 import { mkdir, symlink, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { auth, connect, rpc, startGateway } from './helpers.mjs';
@@ -253,15 +253,23 @@ test('the path-based call is unchanged: an existing folder, the project name rul
 });
 
 test('projects/roots lists the configured roots that exist, as realpaths, and only to an authenticated client', async () => {
+  let second = '';
   const gw = await startGateway({}, {
     configFn: (dirs, config) => {
-      config.projects.roots = [dirs.root, join(dirs.base, 'missing-root')];
+      second = join(dirs.base, 'second-root');
+      mkdirSync(second);
+      config.projects.roots = [dirs.root, join(dirs.base, 'missing-root'), second, dirs.root];
     },
   });
   try {
     const { ws } = await connect(gw.url, auth());
     const res = await rpc(ws, '_agmente/projects/roots', {});
-    assert.deepEqual(res.result, { roots: [gw.dirs.root] });
+    // The missing root and the repeated root are left out.
+    assert.deepEqual(res.result, { roots: [gw.dirs.root, second] });
+    // A root removed after start is no longer offered.
+    rmdirSync(second);
+    const after = await rpc(ws, '_agmente/projects/roots', {});
+    assert.deepEqual(after.result, { roots: [gw.dirs.root] });
     // Listing roots changes nothing.
     assert.deepEqual((await rpc(ws, '_agmente/projects/list', {})).result.projects, []);
     ws.close();

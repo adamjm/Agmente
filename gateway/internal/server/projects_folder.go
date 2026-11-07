@@ -15,12 +15,32 @@ import (
 
 const maxFolderName = 64
 
-// projectRoots answers `_agmente/projects/roots` (D-091): the configured roots that exist, as
-// realpaths. The phone takes its parent folder for a new project from this list. Roots are only
-// listed, never changed, and only an authenticated identity can ask.
+// folderHook is called at two points of a folder creation, for tests only: "before-mkdir" with the
+// parent folder, and "after-mkdir" with the new folder. It plays the part of a process that swaps a
+// path component inside the window (D-091). It is nil outside the tests.
+var folderHook func(stage, path string)
+
+// projectRoots answers `_agmente/projects/roots` (D-091): the configured roots that exist now, as
+// realpaths, each once. The phone takes its parent folder for a new project from this list. Roots
+// are only listed, never changed, and only an authenticated identity can ask.
 func (s *Server) projectRoots() map[string]any {
-	out := make([]string, 0, len(s.roots))
-	out = append(out, s.roots...)
+	out := []string{}
+	seen := map[string]bool{}
+	for _, root := range s.roots {
+		if seen[root] {
+			continue
+		}
+		// A root removed after start, or one now reached through a link, is not offered: a folder
+		// made in it would be refused (createFolderProject checks the same things).
+		if real, err := realpath(root); err != nil || real != root {
+			continue
+		}
+		if info, err := os.Stat(root); err != nil || !info.IsDir() {
+			continue
+		}
+		seen[root] = true
+		out = append(out, root)
+	}
 	return map[string]any{"roots": out}
 }
 
@@ -66,9 +86,11 @@ func folderNameByte(c byte) bool {
 
 // createFolderProject makes <path>/<name> and registers it (D-091). `path` is the parent folder.
 // Its realpath must be a root or inside one, and the path sent must already be that realpath, so
-// a symbolic link anywhere in it is refused. The folder is created with mode 0755. Registration
-// is the same as for an existing folder (registerProject). If registration fails, the folder this
-// call created is removed again.
+// a symbolic link anywhere in it is refused. The parent is then opened once and every step after
+// that works through the open folder (os.Root), so a component swapped later cannot redirect the
+// mkdir, the mode change or the rollback. The folder is created with mode 0755. Registration is the
+// same as for an existing folder (registerProject). If it fails, the folder this call created is
+// removed again, and only while it is still an empty folder.
 func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, name, mode string, deny, skip []string) (*store.Project, *rpcError) {
 	parent, ok := params.Get("path").StringValue()
 	if !ok || !filepath.IsAbs(parent) {
@@ -90,8 +112,18 @@ func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, n
 	if !isInsideRoots(real, s.roots) {
 		return nil, invalidParams("path is outside the allowed project roots")
 	}
+	dir, err := os.OpenRoot(real)
+	if err != nil {
+		return nil, invalidParams("path cannot be opened")
+	}
+	defer dir.Close()
+	// The open may have followed a link swapped in after the check above. The path must still be
+	// the same folder, or nothing is made.
+	if got, err := realpath(real); err != nil || got != real {
+		return nil, invalidParams("path must not contain a symbolic link")
+	}
 	target := filepath.Join(real, name)
-	if _, err := os.Lstat(target); err == nil {
+	if _, err := dir.Lstat(name); err == nil {
 		return nil, invalidParams("a folder with that name already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot check the folder"}
@@ -101,27 +133,46 @@ func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, n
 	} else if existing != nil {
 		return nil, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
 	}
-	if err := os.Mkdir(target, 0o755); err != nil {
+	if folderHook != nil {
+		folderHook("before-mkdir", real)
+	}
+	if err := dir.Mkdir(name, 0o755); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, invalidParams("a folder with that name already exists")
 		}
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create the folder"}
 	}
-	// The folder now exists and this call made it: every refusal below removes it again.
-	// Mkdir applies the umask, so the mode is set explicitly.
-	if err := os.Chmod(target, 0o755); err != nil {
-		_ = os.Remove(target)
+	// The folder now exists and this call made it. Anything that is not a folder at the name from
+	// here on was put there by someone else, so it is left alone and never removed.
+	if folderHook != nil {
+		folderHook("after-mkdir", target)
+	}
+	if info, err := dir.Lstat(name); err != nil || !info.IsDir() {
+		return nil, invalidParams("the new folder was replaced while it was made")
+	}
+	// Mkdir applies the umask, so the mode is set explicitly. Root.Chmod never follows a link out
+	// of the parent.
+	if err := dir.Chmod(name, 0o755); err != nil {
+		removeOwnFolder(dir, name)
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot set the folder mode"}
 	}
-	// Check the new folder as it now is: a race that put a link in its place is refused.
+	// Check the new folder as it now is: its path must still resolve to itself inside a root.
 	if got, err := realpath(target); err != nil || got != target || !isInsideRoots(got, s.roots) {
-		_ = os.Remove(target)
+		removeOwnFolder(dir, name)
 		return nil, invalidParams("path is outside the allowed project roots")
 	}
 	p, rerr := s.registerProject(ctx, name, target, mode, deny, skip)
 	if rerr != nil {
-		_ = os.Remove(target)
+		removeOwnFolder(dir, name)
 		return nil, rerr
 	}
 	return p, nil
+}
+
+// removeOwnFolder removes the folder this call made, and only when it is still a folder and empty
+// (Root.Remove removes an empty folder; a file or link at the name is never touched).
+func removeOwnFolder(dir *os.Root, name string) {
+	if info, err := dir.Lstat(name); err == nil && info.IsDir() {
+		_ = dir.Remove(name)
+	}
 }
