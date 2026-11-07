@@ -482,7 +482,7 @@ xcrun xcresulttool export attachments --path build/ipad-pro13.xcresult --output-
 
 Existing gate: `scripts/check.sh` and `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test` (CLAUDE.md). Required suites from `Agmente/AGENTS.md` stay green: `CodexServerViewModelTests`, `ViewModelSyncTests`, `ACPSessionViewModelTests`, plus `GatewayHomeTests`, `GatewayOpenTests`, `NewSessionProjectPickTests` here.
 
-Split View, Slide Over and Stage Manager cannot be driven by XCUITest (verify). Those are a manual checklist (Phase 8) with screenshots saved to `docs/design/shots/`.
+Split View, Slide Over and Stage Manager cannot be driven by XCUITest (verify). Those are a manual checklist, not a phase, with screenshots saved to `docs/design/shots/`.
 
 Fixture: screenshots need no live gateway. A DEBUG-only launch argument (`-AgmenteUIFixture gateway-busy`) seeds projects, sessions in every status, two approvals and a canned transcript. Same pattern as the existing DEBUG `ChatComponentGalleryView`. Release builds must contain no fixture code (check: search the Release binary's strings for the fixture name; verify the method).
 

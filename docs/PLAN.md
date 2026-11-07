@@ -247,14 +247,14 @@ Source: `docs/design/ipad-ux-plan.md`, section 6. Each sub-phase is a stop: plan
 ## Phase 8 — usage, running work, remote connector (2026-11-07)
 
 Branches merged into `feat/integration-2026-11-07` (the merge commit is given after "merge"). Each box stays open until the full checks pass on the integration branch (I2: wire suite on a quiet machine, `xcodebuild test`, `scripts/check.sh`).
-- [ ] A1 Usage per session on the sessions index, and project agent state (D-092). Branch `feat/a1-gateway-usage` at 162bc514; merge 780c625. Open: FR-24 (`lifecycle.test.mjs`) failed in full-suite runs, under reproduction.
-- [ ] F1 Add-project review: seven fixes to folder creation (D-091, D-099). Branch `feat/f1-add-project-review` at 8c8a13ed; merge 5090b76.
-- [ ] G1 Public exposure: connector Caddy site, launchd templates, config example (D-098). Branch `feat/g1-deploy` at 5973a573; merge 7b8f423. Integration fixes: seven paths, `:8443` to `8788`, the Caddy import. Live Caddy not run.
-- [ ] D1 Connector gateway core: listener, OAuth, pairing, grants, limits (D-095). Branch `feat/d1-connector-core` at a6f3b8d4; merge 57fa65a. Its own check passed (277 of 277 wire tests).
-- [ ] B1 App usage UI: header chip, usage sheet, home row bar (D-093). Branch `feat/b1-app-usage` at 0b55cc74; merge 4344274.
-- [ ] B2 App running-now strip, derived from the event log (D-094). Branch `feat/b2-app-running` at 9b9b9c2f; merge 78e147f. Its app tests have not run.
-- [ ] E1 Connector phone app: approve, deny and revoke (D-097). Branch `feat/e1-connector-app` at 210fdb40; merge fb357f6. Its app tests have not run.
-- [ ] D2 Connector tools and lean context summary. Not started. Its decision number is reserved and not yet written.
+- [x] A1 Usage per session on the sessions index, and project agent state (D-092). Branch `feat/a1-gateway-usage` at 162bc514; merge 780c625. FR-24 (`lifecycle.test.mjs`) passed in the final quiet-machine check (2026-11-07 I2).
+- [x] F1 Add-project review: seven fixes to folder creation (D-091, D-099). Branch `feat/f1-add-project-review` at 8c8a13ed; merge 5090b76.
+- [x] G1 Public exposure: connector Caddy site, launchd templates, config example (D-098). Branch `feat/g1-deploy` at 5973a573; merge 7b8f423. Integration fixes: seven paths, `:8443` to `8788`, the Caddy import. Live Caddy not run.
+- [x] D1 Connector gateway core: listener, OAuth, pairing, grants, limits (D-095). Branch `feat/d1-connector-core` at a6f3b8d4; merge 57fa65a. Its own check passed (277 of 277 wire tests).
+- [x] B1 App usage UI: header chip, usage sheet, home row bar (D-093). Branch `feat/b1-app-usage` at 0b55cc74; merge 4344274.
+- [x] B2 App running-now strip, derived from the event log (D-094). Branch `feat/b2-app-running` at 9b9b9c2f; merge 78e147f. Its app tests ran and passed in the final xcodebuild run.
+- [x] E1 Connector phone app: approve, deny and revoke (D-097). Branch `feat/e1-connector-app` at 210fdb40; merge fb357f6. Its app tests ran and passed in the final xcodebuild run.
+- [x] D2 Connector tools and lean context summary (D-096). Branch `feat/d2-connector-tools` at c2781f5; merge 15fc77e. Final checks: check.sh exit 0 (node wire 295 of 295), the four connector wire files 30 of 30 by name, xcodebuild test succeeded (330 XCTest tests, 0 failures).
 
 ## Backlog (set aside 2026-11-07)
 

@@ -26,7 +26,7 @@ Rule: new app code goes in new files under `Agmente/Fork/` and `Agmente/Security
 ### 2.1 Connect and admission (phase 1)
 
 ```
-Phone ──TLS + client cert──▶ Caddy :443 ──▶ Gateway 127.0.0.1:8787  (HTTP upgrade request)
+Phone ──TLS + client cert──▶ Caddy :8443 ─▶ Gateway 127.0.0.1:8788  (HTTP upgrade request)
                                │                 │
                      no/invalid cert         1. Origin header?        ── yes ─▶ 403, close
                      ─▶ TLS alert              2. address locked out?  ── yes ─▶ 429, close

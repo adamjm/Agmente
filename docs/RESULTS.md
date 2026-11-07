@@ -1602,3 +1602,49 @@ Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, r
 - **Post-merge:** `_agmente/projects/list` now subscribes its socket to project state (note A1 item above). The metadata matcher has the path-suffixed form. The phone block is `:8443` to `127.0.0.1:8788`. The main Caddy example imports `Caddyfile.connector`. The secret-scan fixture in `apns.test.mjs` uses a neutral PEM label, and the parse branch is covered by a Go unit test. D-092 to D-095 and D-097 to D-099 are in `docs/DECISIONS.md`. The D2 decision is not written yet, so its number is absent there.
 - **Not run in this step:** the node wire suite, `xcodebuild`, and the full `swift test`. Those run in the quiet-machine check (I2). Notes items 8, 9, 14, 16, 25 and 35 are still open until then, and so is the FR-24 question.
 - **Open for I2:** the path-suffixed metadata form returns 404 from the gateway (the challenge names the root form, which is served). The connector's `/mcp` route, the phone `:8443` route and the Caddy `import` have not been run against a live Caddy.
+
+### D2 connector tools and lean context summary (2026-11-07)
+
+Branch `feat/d2-connector-tools` (from integration 0e6ae2a), commit c2781f5. Decision text: `<scratchpad>/decisions/d2-connector-tools.md` (D-096).
+
+What is built
+- Five C7 tools answer (`gateway/internal/connector/tools.go`, the table in `toolset.go`): `list_projects`, `list_sessions`, `get_context`, `send_prompt`, `get_turn`. Each checks the grant's scope first.
+- Summary: at most 1000 characters; fields listed in D-096. Running tools from the event log (the five most recent); pending approvals from the live permission queue; `alwaysAllow` only when the gateway holds the session's MCP list.
+- Server bridge (`gateway/internal/server/connector_tools.go`): the reads, and `send_prompt` through the phone's `handleMessage` path on a client that is not a socket. A read-only `LatestEvent` query in the store (`events_latest.go`).
+- Limits enforced in the tool path: scope, `maxPromptBytes`, `promptsPerHour` per grant, one turn per session, `maxConcurrentTurns`, `sendPromptWaitSeconds`, `maxResultChars` (rune-safe cut).
+- Audit: `connector_prompt` with `source: "claude"` and `grant`; the same two fields on every line of the turn. Prompt text never audited.
+
+Files changed (beyond the owned list; each is one to a few lines, and D-096 lists them)
+- `gateway/internal/connector/tools.go` (new), `tools_test.go` (new), `toolset.go`, `connector.go`
+- `gateway/internal/server/connector_tools.go` (new), `connector_tools_test.go` (new), `server.go`, `projects.go`
+- `gateway/internal/audit/audit.go`
+- `gateway/internal/store/events_latest.go` (new), `events_latest_test.go` (new)
+- `gateway/test/connector-tools.test.mjs` (new, 7 tests), `gateway/test/connector-tools-limits.test.mjs` (new, 2 tests)
+- `gateway/test/connector.test.mjs` (one assertion), `gateway/test/connector-limits.test.mjs` (four assertions): "not implemented" expectations changed to the implemented tools
+
+Results (run)
+- `gofmt -l .` clean; `go vet ./...` clean.
+- `go test -count=1 ./...` in gateway: every package ok. Connector package 17 tests (5 from D1, 12 new in `tools_test.go`). Server package: 5 new bridge tests in `connector_tools_test.go`. Store package: 1 new test.
+- `go test -race` on connector and store: ok.
+- `node --check` on all new and changed `.mjs` files: ok.
+
+Mutation check (run)
+- Removed the scope check in `sendPrompt` (`pid, err := "", error(nil)`). `TestToolsRefuseSessionsOutsideTheScope` failed at `tools_test.go:183` ("send_prompt to an unlisted session must be refused"). Restored from a saved copy (`<scratchpad>/d2-mutation/tools.go.good`, identical after restore); the test passes again.
+
+Not run (written only)
+- The Node wire tests were written and are NOT run, per the brief (R1 is timing on this machine). Files: `gateway/test/connector-tools.test.mjs` and `gateway/test/connector-tools-limits.test.mjs`, and the edited `gateway/test/connector.test.mjs` and `gateway/test/connector-limits.test.mjs`. The final check must run these four files.
+- Not verified: the reply and `runningTools` on a live Bob; Bob's real `usage_update` shape (D-070); a real Claude client calling the tools (owner probe, plan step 7.0).
+- The wire tests depend on the fake agent's title rule (first 50 characters of the prompt), which the send-prompt test works around.
+
+Notes for the coordinator
+- The final check should run `node --test gateway/test/connector-tools.test.mjs gateway/test/connector-tools-limits.test.mjs gateway/test/connector.test.mjs gateway/test/connector-limits.test.mjs` on a quiet machine, then `scripts/check.sh`.
+
+### I2 final checks on feat/integration-2026-11-07 (after D2, quiet machine)
+
+- **Merge:** `feat/d2-connector-tools` (c2781f5) merged with `--no-ff` into the integration branch as 15fc77e. No conflicts. Out-of-list edits reviewed (connector.go, server.go, projects.go, audit.go, events_latest.go, two wire tests): each is minimal, adds nothing to phone lines (audit `source` and `grant` are written only when set), and the prompt text is not audited.
+- **Fixes:** the secret scan in `scripts/check.sh` now puts the excludes before the pattern (`-e`), and grep errors fail the step (exit 2) instead of being hidden. The scan passes on the tree. The apns test marker is `BEGIN TEST BLOB`, which the scan does not match, so no neutral form was needed (note 32). `docs/ARCHITECTURE.md` phone path is Caddy :8443 to 127.0.0.1:8788. `docs/design/ipad-ux-plan.md` manual checklist no longer says "Phase 8". D-096 is appended after D-099 (as the plan says), so the decision file is not in number order.
+- **scripts/check.sh:** exit 0, "All checks passed". Go: connector, server, store, config, jsonv, mcpconf, push all ok. Node wire suite: 295 tests, 295 pass, 0 fail (includes FR-24 `lifecycle.test.mjs`, passed). Swift packages: AgmenteTransport, ACPClient (ACPServiceTests passed), AppServerClient, all pass.
+- **Named connector wire tests (`node --test`, four files):** 30 tests, 30 pass, 0 fail.
+- **`node scripts/check-docs.mjs`:** ok, 48 tests, 45 FRs, 15 NFRs, 86 decisions. **`git diff --check`:** clean.
+- **`xcodebuild ... test` (iPhone 17 simulator, one run):** TEST SUCCEEDED. XCTest: 330 tests, 0 failures, 40 suites passed. Swift Testing (in the same run): 111 passes, 0 failures. The new suites (RunningWork*, Usage*, ConnectorConnectionsModelTests) compiled and ran. No stall. The log is at `<scratchpad>/results/i2-xcodebuild.log`.
+- **Not done:** the Caddy route checks and the live phone and Claude probes (owner steps); the live `allowedOrigins` decision.

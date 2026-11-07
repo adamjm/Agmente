@@ -52,8 +52,17 @@ gateway/bin/agmente-gateway --config gateway/config.example.json --dry-run > /de
 echo "ok"
 
 step "No secrets in the overlay"
-if grep -rInE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' --exclude-dir=node_modules --exclude-dir=.git gateway docs deploy scripts .claude CLAUDE.md FORK.md 2>/dev/null; then
+# grep exits 0 on a match (fail), 1 on no match (pass), 2 on an error (fail, and the error is shown).
+set +e
+grep -rInE --exclude-dir=node_modules --exclude-dir=.git -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' gateway docs deploy scripts .claude CLAUDE.md FORK.md
+scan=$?
+set -e
+if [ "$scan" -eq 0 ]; then
   echo "Private key material found" >&2
+  exit 1
+fi
+if [ "$scan" -ne 1 ]; then
+  echo "Secret scan did not run (grep exit $scan)" >&2
   exit 1
 fi
 if grep -nE '"(token|secret|password)"[[:space:]]*:' gateway/config.example.json; then
