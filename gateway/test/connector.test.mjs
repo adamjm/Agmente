@@ -85,7 +85,7 @@ test('POST /mcp without a bearer is refused with a resource_metadata challenge',
     const res = await mcp(gw, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
     assert.equal(res.status, 401);
     const challenge = res.headers.get('www-authenticate');
-    assert.match(challenge, /^Bearer resource_metadata="https:\/\/connector\.test\.example\/\.well-known\/oauth-protected-resource"$/);
+    assert.match(challenge, /^Bearer resource_metadata="https:\/\/connector\.test\.example\/\.well-known\/oauth-protected-resource\/mcp"$/);
 
     const wrong = await mcp(gw, { jsonrpc: '2.0', id: 2, method: 'initialize', params: {} }, { token: 'not-a-grant-token-at-all' });
     assert.equal(wrong.status, 401);
