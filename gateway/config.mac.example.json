@@ -31,5 +31,19 @@
     "lockoutSeconds": 600,
     "approvalTimeoutSeconds": 43200,
     "idleSeconds": 1800
+  },
+  "connector": {
+    "enabled": false,
+    "port": 8789,
+    "publicOrigin": "https://your-public-name.example",
+    "allowedOrigins": [],
+    "pairingTimeoutSeconds": 300,
+    "limits": {
+      "maxConcurrentTurns": 1,
+      "promptsPerHour": 20,
+      "maxPromptBytes": 8192,
+      "maxResultChars": 20000,
+      "sendPromptWaitSeconds": 200
+    }
   }
 }

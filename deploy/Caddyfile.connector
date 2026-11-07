@@ -1,0 +1,29 @@
+# Public edge for the remote connector (D-095, D-098; contract C4).
+# Status: example. Mark each directive verified in docs/RESULTS.md when the connector probe passes.
+#
+# This is a second site, separate from the phone listener in deploy/Caddyfile. It is not a second
+# Caddy process: only one process can bind :443, so add it to the main Caddy config with a top-level
+# import (docs/MAC-SETUP.md, section 13).
+#
+# Why this site has no client certificate: the Claude client cannot present one. Access is
+# controlled by the grant bearer token that the phone approves at pairing, by the strict path list
+# below (anything else is 404), and by the gateway's per-grant limits. Do not add a client_auth block
+# here, and do not add the phone's paths or the phone's port to this site.
+#
+# The public host name comes from CONNECTOR_HOST, set in the Caddy service environment (the launchd
+# template sets it). Its DNS record must point at this Mac. Caddy obtains a public certificate for it
+# automatically. Do not use `tls internal` here: a private certificate is refused by the Claude client.
+#
+# The gateway listens on 127.0.0.1:8789 (connector.port in the config). It is the only upstream.
+
+{$CONNECTOR_HOST} {
+	@connector path /.well-known/oauth-protected-resource /.well-known/oauth-authorization-server /register /authorize /token /mcp
+
+	handle @connector {
+		reverse_proxy 127.0.0.1:8789
+	}
+
+	handle {
+		respond 404
+	}
+}

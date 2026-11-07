@@ -256,3 +256,68 @@ Do not use `container inspect` or `container list --format json`. Both print env
 
 - The deployment: Caddy, the launchd or systemd service, and the public address. See `deploy/` (`deploy/Caddyfile`, `deploy/agmente-gateway.service`).
 - Push delivery and APNs. See `docs/PUSH-TESTING.md`.
+
+## 13. Public connector (Claude remote access)
+
+The connector lets a Claude client reach the gateway from the internet (D-095, D-098). It is a second listener, separate from the phone's mutual-TLS listener. It is off by default (`connector.enabled` is `false` in `gateway/config.mac.example.json`). The gateway serves it on `127.0.0.1:8789` (`connector.port`). Caddy is the only public path to it, and Caddy forwards six paths only: the two `/.well-known/oauth-...` metadata paths, `/register`, `/authorize`, `/token` and `/mcp`. Everything else is 404.
+
+The connector site asks for no client certificate, because the Claude client cannot present one. Access depends on the grant that the phone approves at pairing, and on the gateway's limits. A grant can reach sessions that have `alwaysAllow` set, so a connector prompt can run tools there without a phone prompt. The owner accepted this trade-off. Each such turn is audited with `source: "claude"`, and the audit line never holds the prompt text.
+
+### What the owner must do
+
+1. **DNS.** Choose a public host name for the connector, for example `connector.your-domain.example`. It must not be the phone's name. Add an A record (and an AAAA record, if you use IPv6) that points to the Mac's public address.
+2. **Router.** Forward TCP 443 to the Mac's LAN address, and nothing else. Never forward the gateway ports (8787, 8788, 8789). Forwarding TCP 80 is optional: Caddy can issue the certificate on 443 alone. This was not tested on this Mac (**verify** on the first certificate issue).
+3. **Caddy.** Copy the connector site into the Caddy folder, and add one top-level import line to the main Caddy config:
+
+   ```bash
+   cp deploy/Caddyfile.connector ~/agmente/caddy/Caddyfile.connector
+   ```
+
+   ```
+   import /Users/you/agmente/caddy/Caddyfile.connector
+   ```
+
+   The import must sit outside any site block. Only one Caddy process can bind 443, so this is not a second Caddy.
+4. **Caddy environment.** Set `CONNECTOR_HOST` to the host name from step 1. The Caddy launchd template (`deploy/launchd/dev.agmente.caddy.plist`) sets it. Without it, Caddy will not load the config.
+5. **Gateway config.** In your copy of the config, set `connector.enabled` to `true` and `connector.publicOrigin` to `https://<the host name>`. Keep `allowedOrigins` empty until the connector probe shows which origin the Claude client sends.
+6. **Start.** Run the dry run first (step 7), then reload Caddy and restart the gateway. Restarting the gateway stops running project agents, so do it when no session is running.
+7. **Probe.** Add the connector in the Claude app and record the results in `docs/RESULTS.md`. Mark the directives in `deploy/Caddyfile.connector` as verified there.
+
+Validate the Caddy config before you reload it, with the same `CONNECTOR_HOST` value:
+
+```bash
+CONNECTOR_HOST=connector.your-domain.example caddy validate --config ~/agmente/caddy/Caddyfile --adapter caddyfile
+```
+
+Expected: exit 0 and `Valid configuration`.
+
+### How to verify
+
+Run these from a network outside your home LAN (for example a phone on cellular). A request from inside the LAN may fail because of the router's NAT, which is a test artefact, not a fault.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://connector.your-domain.example/.well-known/oauth-protected-resource
+```
+
+Expected with the connector enabled: `200`. The request sends no client certificate, so this also checks that the connector needs none.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://connector.your-domain.example/admin
+```
+
+Expected: `404`. Any path outside the six listed above must give 404.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://connector.your-domain.example/mcp -d '{}'
+```
+
+Expected: `401`, from the gateway, because no grant token is sent. A `404` here means the Caddy site is not loaded.
+
+The gateway's startup output names the connector listener on `127.0.0.1:8789`. Check the config with `gateway/bin/agmente-gateway --config ~/agmente/config.json --dry-run` before each start.
+
+### How to turn it off
+
+1. **Revoke the grants** from the phone's connector screen.
+2. **Disable the listener.** Set `connector.enabled` to `false` in the config, then restart the gateway (when no session is running). No connector listener starts.
+3. **Remove the public route.** Delete the `import` line from the Caddy config and reload Caddy (`caddy validate`, then `caddy reload`). The host name then has no site on 443.
+4. **Optional.** Remove the DNS record, or the router's 443 forward, if the name or the address should stop answering at all.
