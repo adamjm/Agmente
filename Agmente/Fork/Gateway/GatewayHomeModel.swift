@@ -15,15 +15,27 @@ final class GatewayHomeModel: ObservableObject {
     @Published private(set) var hasLoaded = false
     /// The project the home has selected, such as one just created (D-091). The New Session sheet starts on it.
     @Published private(set) var selectedProjectId: String?
+    /// The agent state of each listed project of the server below (D-102, `_agmente/project/state`). A project
+    /// with no entry is unknown and shows nothing. The gateway sends only changes, so a project stays unknown
+    /// until its first change after the home starts listing it.
+    @Published private(set) var projectStates: [String: GatewayAgentState] = [:]
 
     /// Resolved at each refresh, so a reconnect (a new connection) is picked up.
     private var clientProvider: (() -> GatewayClient?)?
     private var generation = 0
+    /// The server the states above belong to. A state of another server clears them (D-102).
+    private var stateServerId: UUID?
+    /// States that arrived before the first list of this server loaded. They are kept until the list says
+    /// whether the project is listed; a state for a project that is not listed is then dropped.
+    private var pendingStates: [String: GatewayAgentState] = [:]
 
     /// Points the model at a server's gateway, or at none. Anything shown from another server is dropped.
-    func configure(clientProvider: (() -> GatewayClient?)?) {
+    /// `serverId` is the server the gateway belongs to. When it differs from the server of the states held,
+    /// those states are cleared (D-102). A reconnect to the same server keeps them.
+    func configure(serverId: UUID? = nil, clientProvider: (() -> GatewayClient?)?) {
         generation += 1
         self.clientProvider = clientProvider
+        if let serverId { adoptServer(serverId) }
         projects = []
         sessions = []
         usage = [:]
@@ -31,6 +43,43 @@ final class GatewayHomeModel: ObservableObject {
         hasLoaded = false
         isLoading = false
         selectedProjectId = nil
+    }
+
+    /// The agent state of a listed project, or nil when it is unknown or the project is not listed.
+    func agentState(for projectId: String) -> GatewayAgentState? {
+        guard projects.contains(where: { $0.id == projectId }) else { return nil }
+        return projectStates[projectId]
+    }
+
+    /// Records `_agmente/project/state` for the server it came from. A state for a project that is not on the
+    /// list is ignored. `.unknown` clears the project's state, so an unreadable value never shows a stale one.
+    func applyProjectState(_ state: GatewayProjectState, serverId: UUID) {
+        adoptServer(serverId)
+        if hasLoaded {
+            guard projects.contains(where: { $0.id == state.projectId }) else { return }
+            projectStates[state.projectId] = Self.stored(state.agent)
+        } else {
+            pendingStates[state.projectId] = Self.stored(state.agent)
+        }
+    }
+
+    private static func stored(_ agent: GatewayAgentState) -> GatewayAgentState? { agent == .unknown ? nil : agent }
+
+    /// After a list loads: the states of listed projects are kept (the pending ones too), and the rest are dropped.
+    private func keepStatesOfListedProjects() {
+        let listed = Set(projects.map(\.id))
+        var kept = projectStates.filter { listed.contains($0.key) }
+        for (projectId, agent) in pendingStates where listed.contains(projectId) { kept[projectId] = agent }
+        projectStates = kept
+        pendingStates = [:]
+    }
+
+    /// Starts holding the states of `serverId`. Another server's states are dropped.
+    private func adoptServer(_ serverId: UUID) {
+        guard stateServerId != serverId else { return }
+        stateServerId = serverId
+        projectStates = [:]
+        pendingStates = [:]
     }
 
     /// Selects a project by id. A project the gateway no longer lists is handled by the sheet, which falls
@@ -62,6 +111,7 @@ final class GatewayHomeModel: ObservableObject {
             projects = loadedProjects
             sessions = loaded.sessions
             usage = loaded.usage
+            keepStatesOfListedProjects()
             errorMessage = nil
             hasLoaded = true
         } catch {

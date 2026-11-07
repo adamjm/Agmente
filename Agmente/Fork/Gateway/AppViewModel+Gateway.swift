@@ -7,6 +7,16 @@ import ACPClient
 /// copy). Each event goes through the same path a plain message would: `session/update` through
 /// `handleChatUpdate`, a permission request through `handlePermissionRequest`.
 extension AppViewModel {
+    /// `_agmente/project/state` (contract C2, D-102). The gateway sends it on the one live connection, which
+    /// belongs to the selected server, so the state is recorded for that server. A state of another server
+    /// (a late one from a connection being replaced) clears the held states the next time the home is configured.
+    func handleGatewayProjectState(_ params: ACP.Value?) {
+        guard let state = GatewayProjectState.parse(params),
+              let serverId = selectedServerId,
+              selectedServerViewModel?.isGatewayServer == true else { return }
+        gatewayHome.applyProjectState(state, serverId: serverId)
+    }
+
     func handleGatewayEvent(_ params: ACP.Value?) {
         guard let event = GatewayEvent.parse(params),
               let serverId = selectedServerId,
