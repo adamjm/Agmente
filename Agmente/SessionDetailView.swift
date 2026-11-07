@@ -98,6 +98,7 @@ struct SessionDetailView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
+                ContextUsageChip(usage: sessionViewModel.forkMeta.usage)
                 if let planEntries = sessionViewModel.forkMeta.plan {
                     SessionPlanView(entries: planEntries)
                 }

@@ -85,7 +85,7 @@ struct GatewayHomeSections: View {
                         Text("No sessions yet").font(.footnote).foregroundStyle(.tertiary)
                     }
                     ForEach(section.sessions) { session in
-                        Button { open(session.sessionId) } label: { GatewaySessionRow(session: session) }
+                        Button { open(session.sessionId) } label: { GatewaySessionRow(session: session).overlay(alignment: .bottom) { GatewayContextBar(usage: home.usage[session.sessionId]) } }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("gatewaySession.\(session.sessionId)")
                     }

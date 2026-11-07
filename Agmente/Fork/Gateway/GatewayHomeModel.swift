@@ -8,6 +8,8 @@ import ACPClient
 final class GatewayHomeModel: ObservableObject {
     @Published private(set) var projects: [GatewayProject] = []
     @Published private(set) var sessions: [GatewaySession] = []
+    /// The context usage Bob reported per session, from the same index answer (D-093). A session absent here has none.
+    @Published private(set) var usage: [String: GatewayUsage] = [:]
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasLoaded = false
@@ -24,6 +26,7 @@ final class GatewayHomeModel: ObservableObject {
         self.clientProvider = clientProvider
         projects = []
         sessions = []
+        usage = [:]
         errorMessage = nil
         hasLoaded = false
         isLoading = false
@@ -53,11 +56,12 @@ final class GatewayHomeModel: ObservableObject {
         defer { if mine == generation { isLoading = false } }
         do {
             async let projectList = client.projects()
-            async let sessionList = client.sessions()
-            let (loadedProjects, loadedSessions) = try await (projectList, sessionList)
+            async let sessionList = client.sessionsWithUsage()
+            let (loadedProjects, loaded) = try await (projectList, sessionList)
             guard mine == generation else { return }
             projects = loadedProjects
-            sessions = loadedSessions
+            sessions = loaded.sessions
+            usage = loaded.usage
             errorMessage = nil
             hasLoaded = true
         } catch {
