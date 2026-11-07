@@ -35,7 +35,7 @@
   "connector": {
     "enabled": false,
     "port": 8789,
-    "publicOrigin": "https://your-public-name.example",
+    "publicOrigin": "https://your-public-name.example:8443",
     "allowedOrigins": [],
     "pairingTimeoutSeconds": 300,
     "limits": {

@@ -1,24 +1,37 @@
-# Public edge for the remote connector (D-095, D-098; contract C4).
+# Public edge for the remote connector (D-095, D-098, D-100; contract C4).
 # Status: example. Mark each directive verified in docs/RESULTS.md when the connector probe passes.
 #
 # This is a second site, separate from the phone listener in deploy/Caddyfile. It is not a second
-# Caddy process: only one process can bind :443, so add it to the main Caddy config with a top-level
-# import (docs/MAC-SETUP.md, section 13).
+# Caddy process: add it to the main Caddy config with a top-level import (docs/MAC-SETUP.md, section 13).
+#
+# Port 8443 (D-100). The router forwards public TCP 8443 to this Mac's 8443. The phone's mutual-TLS
+# site uses the same port. Caddy tells the two apart by host name (SNI), so each client must connect
+# by its own host name. Caddy runs as the owner's user, which cannot bind 443 without root.
 #
 # Why this site has no client certificate: the Claude client cannot present one. Access is
 # controlled by the grant bearer token that the phone approves at pairing, by the strict path list
 # below (anything else is 404), and by the gateway's per-grant limits. Do not add a client_auth block
-# here, and do not add the phone's paths or the phone's port to this site.
+# here, and do not add the phone's paths or the phone's host name to this site.
 #
-# The public host name comes from CONNECTOR_HOST, set in the Caddy service environment (the launchd
-# template sets it). Its DNS record must point at this Mac. Caddy obtains a public certificate for it
-# automatically. Do not use `tls internal` here: a private certificate is refused by the Claude client.
+# The public host name comes from CONNECTOR_HOST, set in the Caddy LaunchAgent environment. Its DNS
+# record must point at this Mac's public address. Do not use `tls internal` here: a private
+# certificate is refused by the Claude client.
+#
+# Certificate (D-100): Let's Encrypt's HTTP-01 and TLS-ALPN-01 challenges need public port 80 or 443,
+# which this setup does not forward. The DNS-01 challenge needs no inbound port, so this site uses
+# it. Caddy must be built with the DNS provider module (xcaddy build --with <module>). PROVIDER below
+# is a placeholder for that module's name. The API token is read from CADDY_DNS_API_TOKEN, which the
+# LaunchAgent loads from the owner's secrets file. The token is never written in this repo.
 #
 # The gateway listens on 127.0.0.1:8789 (connector.port in the config). It is the only upstream.
 
-{$CONNECTOR_HOST} {
-	# The /mcp suffixed metadata path is forwarded for clients that look it up first. The gateway serves
-	# only the root form, which the WWW-Authenticate challenge names (D-095, notes item 2).
+{$CONNECTOR_HOST}:8443 {
+	tls {
+		dns PROVIDER {env.CADDY_DNS_API_TOKEN}
+	}
+
+	# Exactly seven paths (C4, D-095, owner decision 44). The path-suffixed metadata form is listed
+	# because clients look it up first. Matchers are exact: /mcp/ or /mcp?x is not forwarded.
 	@connector path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server /register /authorize /token /mcp
 
 	handle @connector {
