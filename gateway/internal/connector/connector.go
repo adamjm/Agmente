@@ -44,6 +44,8 @@ type Options struct {
 	Projects func(ctx context.Context) ([]string, error)
 	// SessionProject returns the project id of a session, or "" when the gateway does not know it.
 	SessionProject func(ctx context.Context, sessionID string) (string, error)
+	// Gateway is what the connector tools read and do on the gateway (D-096). The server implements it.
+	Gateway Gateway
 }
 
 // Connector is one remote connector. A zero-config connector (Enabled false) starts no listener.
@@ -53,6 +55,7 @@ type Connector struct {
 	audit  *audit.Logger
 	grants *grantStore
 	limits *limits
+	turns  *turnRegistry // the turns send_prompt started, for get_turn (D-096)
 	now    func() time.Time
 
 	mu      sync.Mutex
@@ -71,6 +74,7 @@ func New(opts Options) *Connector {
 		audit:   opts.Audit,
 		grants:  newGrantStore(filepath.Join(opts.StateDir, "connector-grants.json")),
 		limits:  newLimits(opts.Config.Limits),
+		turns:   newTurnRegistry(),
 		now:     time.Now,
 		pending: map[string]*pairing{},
 		codes:   map[string]*authCode{},

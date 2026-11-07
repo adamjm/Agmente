@@ -108,6 +108,7 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 			return ids, err
 		},
 		SessionProject: db.SessionProject,
+		Gateway:        &connectorBridge{s: s}, // the connector tools' reads and prompts (D-096)
 	})
 	s.pushCtx, s.pushCancel = context.WithCancel(context.Background())
 	if data, err := os.ReadFile(s.capsPath()); err == nil {
