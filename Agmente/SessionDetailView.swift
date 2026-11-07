@@ -103,6 +103,7 @@ struct SessionDetailView: View {
                 }
                 transcriptContent
                     .frame(maxHeight: .infinity)
+                    .safeAreaInset(edge: .bottom) { RunningNowStrip(messages: sessionViewModel.chatMessages) }
 
                 composer
                     .padding(.horizontal, 12)
