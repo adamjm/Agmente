@@ -37,6 +37,56 @@ struct GatewayStatusBadge: View {
     }
 }
 
+/// The words, accessibility text and colour of a project's agent state (D-102). Unknown has no words and
+/// shows nothing.
+enum GatewayAgentStatePresentation {
+    static func label(_ agent: GatewayAgentState) -> String? {
+        switch agent {
+        case .stopped: return "Idle"
+        case .starting: return "Starting"
+        case .running: return "Running"
+        case .stopping: return "Stopping"
+        case .unknown: return nil
+        }
+    }
+
+    static func accessibilityLabel(_ agent: GatewayAgentState) -> String? {
+        switch agent {
+        case .stopped: return "Agent idle"
+        case .starting: return "Agent starting"
+        case .running: return "Agent running"
+        case .stopping: return "Agent stopping"
+        case .unknown: return nil
+        }
+    }
+
+    /// Only a running agent shows a progress indicator.
+    static func showsProgress(_ agent: GatewayAgentState) -> Bool { agent == .running }
+}
+
+/// A project's agent state on its header in the gateway home.
+struct GatewayAgentStateLabel: View {
+    let projectId: String
+    let agent: GatewayAgentState
+
+    var body: some View {
+        if let text = GatewayAgentStatePresentation.label(agent) {
+            HStack(spacing: 5) {
+                if GatewayAgentStatePresentation.showsProgress(agent) {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+                Text(text)
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(agent == .running ? Color.blue : Color.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(GatewayAgentStatePresentation.accessibilityLabel(agent) ?? text)
+            .accessibilityIdentifier("gatewayProjectState.\(projectId)")
+        }
+    }
+}
+
 /// Sessions grouped by project, newest first, with a status badge and an unread count (FR-26).
 struct GatewayHomeSections: View {
     @ObservedObject var home: GatewayHomeModel
@@ -72,6 +122,9 @@ struct GatewayHomeSections: View {
                                 .padding(.horizontal, 7).padding(.vertical, 2)
                                 .background(Capsule().fill(Color.accentColor))
                                 .foregroundStyle(.white)
+                        }
+                        if let agent = home.agentState(for: section.id) {
+                            GatewayAgentStateLabel(projectId: section.id, agent: agent)
                         }
                         Spacer()
                         if let git, section.project != nil, git.supportsGit {

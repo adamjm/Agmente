@@ -213,6 +213,14 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     let gatewayApprovals = ApprovalsInboxModel()
     /// Elicitation forms the gateway asked the selected gateway's session for (FR-44, PLAN 6C.3).
     let gatewayElicitations = ElicitationInboxModel()
+    /// The gateway home's model. It lives here so `_agmente/project/state` can reach it (D-102). Its changes are
+    /// forwarded, so the page that reads it redraws as it did when the page owned it.
+    lazy var gatewayHome: GatewayHomeModel = {
+        let home = GatewayHomeModel()
+        gatewayHomeChanges = home.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return home
+    }()
+    private var gatewayHomeChanges: AnyCancellable?
     /// Read-only git state of the selected gateway's projects (FR-31).
     lazy var gitStore = GitStore(serverId: { [weak self] in self?.selectedServerId },
                                  client: { [weak self] in self?.selectedGatewayClient() },
@@ -2413,6 +2421,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             }
             if notification.method == GatewayGitChanged.method {
                 gitStore.handleChanged(notification.params)
+                return
+            }
+            if notification.method == GatewayProjectState.method {
+                handleGatewayProjectState(notification.params) // D-102: the project's agent state, not a log line
                 return
             }
             append(render("Notification", method: notification.method, payload: notification.params))

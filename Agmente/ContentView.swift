@@ -509,7 +509,8 @@ private struct SessionListPage: View {
     @State private var sessionSearchText: String = ""
     @State private var showingNewSessionSheet: Bool = false
     @State private var customWorkingDirectory: String = ""
-    @StateObject private var gatewayHome = GatewayHomeModel()
+    /// Owned by the app model, so `_agmente/project/state` reaches it (D-102).
+    private var gatewayHome: GatewayHomeModel { model.gatewayHome }
     @State private var showingApprovals: Bool = false
     @State private var showingNewProjectSheet: Bool = false // D-091: New project on a gateway server
     @AppStorage("summaryCardCollapsed") private var summaryCardCollapsed: Bool = false
@@ -910,12 +911,12 @@ private struct SessionListPage: View {
             // The gateway answers the projects, sessions and approvals from its own database. While the home
             // is on screen they refresh every 15 s; a leave or a server change ends the loop.
             guard model.selectedServerIsGatewayHome else {
-                gatewayHome.configure(clientProvider: nil)
+                gatewayHome.configure(serverId: model.selectedServerId, clientProvider: nil)
                 model.gatewayApprovals.configure(clientProvider: nil)
                 return
             }
             let provider: () -> GatewayClient? = { [weak model] in model?.selectedGatewayClient() }
-            gatewayHome.configure(clientProvider: provider)
+            gatewayHome.configure(serverId: model.selectedServerId, clientProvider: provider)
             model.gatewayApprovals.configure(clientProvider: provider)
             while !Task.isCancelled {
                 async let home: Void = gatewayHome.refresh()
