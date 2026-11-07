@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -99,6 +99,19 @@ var schemaV5 = []string{
 	`ALTER TABLE projects ADD COLUMN watch_skip TEXT`,
 }
 
+// schemaV6 adds the last usage_update of each session (C1, D-092): one row per session that has
+// reported usage. Nothing is estimated; a session without a row has no usage.
+var schemaV6 = []string{
+	`CREATE TABLE session_usage (
+		session_id TEXT PRIMARY KEY,
+		used INTEGER NOT NULL,
+		size INTEGER NOT NULL,
+		cost_amount REAL,
+		cost_currency TEXT,
+		updated TEXT NOT NULL
+	) WITHOUT ROWID`,
+}
+
 // Store is one open database. It is safe for concurrent use.
 type Store struct {
 	db *sql.DB
@@ -159,7 +172,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -431,6 +444,7 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 		`DELETE FROM events WHERE session_id = ?`,
 		`DELETE FROM reads WHERE session_id = ?`,
 		`DELETE FROM snapshots WHERE session_id = ?`,
+		`DELETE FROM session_usage WHERE session_id = ?`,
 		`DELETE FROM sessions WHERE session_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, sessionID); err != nil {
@@ -449,6 +463,36 @@ type SessionRow struct {
 	LastActivity string
 	HeadSeq      int64
 	Unread       int64
+	Usage        *Usage // nil when the agent has reported none (C1)
+}
+
+// Usage is the last usage_update the agent sent for a session (C1, D-092). Cost is nil when the
+// agent's last update carried none. Updated is when the gateway stored it (RFC 3339, UTC).
+type Usage struct {
+	Used, Size   int64
+	CostAmount   *float64
+	CostCurrency *string
+	Updated      string
+}
+
+// SetUsage replaces a session's usage with u and stamps the time. It writes only for a recorded
+// session: a usage update for a session the gateway does not know is dropped.
+func (s *Store) SetUsage(ctx context.Context, sessionID string, u Usage) error {
+	var amount, currency any
+	if u.CostAmount != nil {
+		amount = *u.CostAmount
+	}
+	if u.CostCurrency != nil {
+		currency = *u.CostCurrency
+	}
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO session_usage (session_id, used, size, cost_amount, cost_currency, updated)
+		SELECT ?1, ?2, ?3, ?4, ?5, ?6 FROM sessions WHERE session_id = ?1
+		ON CONFLICT (session_id) DO UPDATE SET used = excluded.used, size = excluded.size,
+			cost_amount = excluded.cost_amount, cost_currency = excluded.cost_currency, updated = excluded.updated`,
+		sessionID, u.Used, u.Size, amount, currency, now)
+	return err
 }
 
 // SessionIndex lists the recorded sessions, newest activity first, for one project or (projectID
@@ -460,8 +504,10 @@ func (s *Store) SessionIndex(ctx context.Context, identity, projectID string) ([
 		       MAX(s.last_activity, COALESCE((SELECT ts FROM events e WHERE e.session_id = s.session_id ORDER BY seq DESC LIMIT 1), '')) AS activity,
 		       COALESCE((SELECT MAX(seq) FROM events e WHERE e.session_id = s.session_id), 0),
 		       (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id AND e.kind = 'turn_ended'
-		          AND e.seq > COALESCE((SELECT last_seen_seq FROM reads r WHERE r.identity = ?1 AND r.session_id = s.session_id), 0))
+		          AND e.seq > COALESCE((SELECT last_seen_seq FROM reads r WHERE r.identity = ?1 AND r.session_id = s.session_id), 0)),
+		       u.used, u.size, u.cost_amount, u.cost_currency, u.updated
 		FROM sessions s
+		LEFT JOIN session_usage u ON u.session_id = s.session_id
 		WHERE ?2 = '' OR s.project_id = ?2
 		ORDER BY activity DESC, s.session_id`, identity, projectID)
 	if err != nil {
@@ -471,13 +517,28 @@ func (s *Store) SessionIndex(ctx context.Context, identity, projectID string) ([
 	out := []SessionRow{}
 	for rows.Next() {
 		var r SessionRow
-		var title sql.NullString
-		if err := rows.Scan(&r.SessionID, &r.ProjectID, &title, &r.Status, &r.LastActivity, &r.HeadSeq, &r.Unread); err != nil {
+		var title, currency, updated sql.NullString
+		var used, size sql.NullInt64
+		var amount sql.NullFloat64
+		if err := rows.Scan(&r.SessionID, &r.ProjectID, &title, &r.Status, &r.LastActivity, &r.HeadSeq, &r.Unread,
+			&used, &size, &amount, &currency, &updated); err != nil {
 			return nil, err
 		}
 		if title.Valid {
 			t := title.String
 			r.Title = &t
+		}
+		if used.Valid && size.Valid && updated.Valid {
+			u := &Usage{Used: used.Int64, Size: size.Int64, Updated: updated.String}
+			if amount.Valid {
+				a := amount.Float64
+				u.CostAmount = &a
+			}
+			if currency.Valid {
+				c := currency.String
+				u.CostCurrency = &c
+			}
+			r.Usage = u
 		}
 		out = append(out, r)
 	}

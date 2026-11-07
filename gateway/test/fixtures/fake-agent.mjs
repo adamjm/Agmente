@@ -15,6 +15,9 @@
 //     [image]         send a 160x100 PNG as an image content block
 //     [link]          send a resource_link block
 //   The reply text is "echo: <prompt text>". session/cancel ends a running turn with "cancelled".
+// - AGMENTE_TEST_USAGE (opt-in, usage tests only): a JSON array of usage_update payloads, such as
+//   [{"used":1200,"size":200000,"cost":{"amount":0.42,"currency":"USD"}}]. Every turn sends them in
+//   order, after the reply text and before the turn ends. Unset: no usage_update is sent.
 // - session/load and session/resume (F-12): while a turn runs in this process, they are refused with
 //   -32600 "Invalid request: Session is already running a prompt" and the turn goes on. When the
 //   session is idle, the session is thrown away and rebuilt from the store; the response comes
@@ -40,6 +43,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { createInterface } from 'node:readline';
 
 const fixture = JSON.parse(readFileSync(new URL('./bob-initialize-2.0.9.json', import.meta.url), 'utf8'));
+const usageUpdates = process.env.AGMENTE_TEST_USAGE ? JSON.parse(process.env.AGMENTE_TEST_USAGE) : [];
 
 // --- arguments ----------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -259,6 +263,7 @@ async function runTurn(msg, entry) {
       }
       if (turn.cancelled) stopReason = 'cancelled';
     }
+    for (const usage of usageUpdates) update(record.sessionId, { sessionUpdate: 'usage_update', ...usage });
     if (said) record.messages.push({ role: 'agent', text: said });
     if (firstTurn) {
       record.title = text.slice(0, 50);
