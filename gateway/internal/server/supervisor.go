@@ -87,6 +87,14 @@ type projectAgent struct {
 	mcp           map[string]*jsonv.Value // the mcpServers list the phone last sent, per session (D-088, F2)
 
 	writeMu sync.Mutex
+
+	stateMu     sync.Mutex           // guards the state notification fields (projectstate.go, C2)
+	stateSubs   map[*client]struct{} // sockets that listed this project
+	stateWant   string               // the newest agent state
+	stateSince  time.Time            // when stateWant began
+	stateSent   string               // the state last sent; "" until the first transition
+	stateSentAt time.Time            // when stateSent was sent
+	stateTimer  *time.Timer          // a flush due when the gap ends, or nil
 }
 
 func newProjectAgent(s *Server, id string) *projectAgent {
@@ -94,15 +102,18 @@ func newProjectAgent(s *Server, id string) *projectAgent {
 		s: s, id: id, changed: make(chan struct{}),
 		pending: map[int64]*pendingRequest{}, sessions: map[string]map[*client]struct{}{}, users: map[*client]struct{}{},
 		live: map[string]*liveSession{}, reloads: map[string]*reload{}, sessionActive: map[string]time.Time{},
-		mcp: map[string]*jsonv.Value{},
+		mcp:       map[string]*jsonv.Value{},
+		stateSubs: map[*client]struct{}{},
 	}
 }
 
-// setState must be called with a.mu held.
+// setState must be called with a.mu held. Every agent transition goes through here, so the phone's
+// project state (C2) follows the same changes the audit records.
 func (a *projectAgent) setState(st agentState) {
 	a.state = st
 	close(a.changed)
 	a.changed = make(chan struct{})
+	a.noteState(st)
 }
 
 // project is the project as git needs it: its id and folder.
@@ -347,6 +358,10 @@ func (a *projectAgent) notify(msg *jsonv.Value) {
 				}
 				a.mu.Lock()
 			}
+		case "usage_update":
+			a.mu.Unlock()
+			a.recordUsage(sid, u) // C1: the last usage, kept for the sessions index (D-092)
+			a.mu.Lock()
 		}
 		if r := a.reloads[sid]; r != nil {
 			// The agent's replay after a load: the requesting socket shows it, the log already has

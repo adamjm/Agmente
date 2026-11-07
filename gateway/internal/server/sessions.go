@@ -7,16 +7,35 @@ import (
 
 	"agmente/gateway/internal/audit"
 	"agmente/gateway/internal/jsonv"
+	"agmente/gateway/internal/store"
 )
 
 type sessionJSON struct {
-	SessionID    string  `json:"sessionId"`
-	ProjectID    string  `json:"projectId"`
-	Title        *string `json:"title"`
-	Status       string  `json:"status"`
-	LastActivity string  `json:"lastActivity"`
-	HeadSeq      int64   `json:"headSeq"`
-	Unread       int64   `json:"unread"`
+	SessionID    string     `json:"sessionId"`
+	ProjectID    string     `json:"projectId"`
+	Title        *string    `json:"title"`
+	Status       string     `json:"status"`
+	LastActivity string     `json:"lastActivity"`
+	HeadSeq      int64      `json:"headSeq"`
+	Unread       int64      `json:"unread"`
+	Usage        *usageJSON `json:"usage,omitempty"` // C1: left out until the agent reports usage
+}
+
+// usageJSON is a session's last reported usage (C1, D-092). Remaining context is size - used; the
+// percent is used / size. The cost fields are left out when the agent sent none.
+type usageJSON struct {
+	Used         int64    `json:"used"`
+	Size         int64    `json:"size"`
+	CostAmount   *float64 `json:"costAmount,omitempty"`
+	CostCurrency *string  `json:"costCurrency,omitempty"`
+	UpdatedAt    string   `json:"updatedAt"`
+}
+
+func toUsageJSON(u *store.Usage) *usageJSON {
+	if u == nil {
+		return nil
+	}
+	return &usageJSON{Used: u.Used, Size: u.Size, CostAmount: u.CostAmount, CostCurrency: u.CostCurrency, UpdatedAt: u.Updated}
 }
 
 // liveStatus returns the sessions with a turn running and the sessions with an open permission
@@ -69,6 +88,7 @@ func (s *Server) sessionIndex(ctx context.Context, who audit.Who, params *jsonv.
 	if err != nil {
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot read sessions"}
 	}
+	s.watchProjectStates(ctx, who.Conn, projectID) // C2: this socket is told the agent state of the projects it lists
 	running, awaiting := s.liveStatus()
 	out := make([]sessionJSON, 0, len(rows))
 	for _, r := range rows {
@@ -81,7 +101,7 @@ func (s *Server) sessionIndex(ctx context.Context, who audit.Who, params *jsonv.
 		}
 		out = append(out, sessionJSON{
 			SessionID: r.SessionID, ProjectID: r.ProjectID, Title: r.Title, Status: status,
-			LastActivity: r.LastActivity, HeadSeq: r.HeadSeq, Unread: r.Unread,
+			LastActivity: r.LastActivity, HeadSeq: r.HeadSeq, Unread: r.Unread, Usage: toUsageJSON(r.Usage),
 		})
 	}
 	return map[string]any{"sessions": out}, nil
