@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"agmente/gateway/internal/jsonv"
@@ -548,8 +549,8 @@ func validateConnector(v *jsonv.Value) (Connector, []string) {
 	}
 	if o := v.Get("publicOrigin"); !o.IsNull() {
 		s, ok := o.StringValue()
-		if !ok || !validHTTPSBase(s) {
-			errs = append(errs, "connector.publicOrigin must be an https origin with a host and no path, for example https://name.example")
+		if !ok || !validHTTPSOrigin(s) {
+			errs = append(errs, "connector.publicOrigin must be an https origin: https, a host, an optional port, and no path, query or fragment (for example https://name.example or https://name.example:8443)")
 		} else {
 			c.PublicOrigin = s
 		}
@@ -563,7 +564,7 @@ func validateConnector(v *jsonv.Value) (Connector, []string) {
 		} else {
 			for i, item := range ao.Arr {
 				s, ok := item.StringValue()
-				if !ok || !validHTTPSBase(s) {
+				if !ok || !validHTTPSOrigin(s) {
 					errs = append(errs, fmt.Sprintf("connector.allowedOrigins[%d] must be an https origin with a host and no path", i))
 					continue
 				}
@@ -627,6 +628,27 @@ func validHTTPSBase(s string) bool {
 		return false
 	}
 	return u.Path == "" || u.Path == "/"
+}
+
+// validHTTPSOrigin accepts an https origin: a scheme, a host, an optional port from 1 to 65535, and
+// nothing else. A path is refused, a trailing slash included, because the resource identifier is the
+// origin plus /mcp and "https://name.example/" would make "https://name.example//mcp" (D-101).
+func validHTTPSOrigin(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "https" || u.Opaque != "" || u.User != nil || u.Path != "" ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Hostname() == "" {
+		return false
+	}
+	if strings.HasSuffix(u.Host, ":") { // an empty port
+		return false
+	}
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 || strings.Trim(p, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // Load reads, parses and validates a config file.

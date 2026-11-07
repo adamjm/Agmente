@@ -91,6 +91,9 @@ type turnRegistry struct {
 	mu    sync.Mutex
 	now   func() time.Time
 	turns map[string]*turnRecord // by turn id; guarded by mu
+	// inserted is a test seam: when set, add calls it after the record is in the registry and the
+	// lock is released, so a test can read the record in the window before add returns.
+	inserted func(rec *turnRecord)
 }
 
 type turnRecord struct {
@@ -105,10 +108,10 @@ func newTurnRegistry() *turnRegistry {
 }
 
 // add records a turn under a new random id and drops the finished turns that are past their keep.
-func (r *turnRegistry) add(grantID, sessionID string, turn PromptTurn) *turnRecord {
-	rec := &turnRecord{id: randomString(12), grantID: grantID, sessionID: sessionID, turn: turn}
+// The release is part of the record before the record is inserted, so no reader can see it unset.
+func (r *turnRegistry) add(grantID, sessionID string, turn PromptTurn, release func()) *turnRecord {
+	rec := &turnRecord{id: randomString(12), grantID: grantID, sessionID: sessionID, turn: turn, release: release}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	now := r.now()
 	for id, old := range r.turns {
 		if !old.finished.IsZero() && now.Sub(old.finished) > turnKeepFor {
@@ -116,6 +119,10 @@ func (r *turnRegistry) add(grantID, sessionID string, turn PromptTurn) *turnReco
 		}
 	}
 	r.turns[rec.id] = rec
+	r.mu.Unlock()
+	if r.inserted != nil {
+		r.inserted(rec)
+	}
 	return rec
 }
 
@@ -366,8 +373,7 @@ func (c *Connector) sendPrompt(g *Grant, args map[string]json.RawMessage) (any, 
 	}
 	// The audit names the source and the grant, never the text (C7).
 	c.audit.Log("connector_prompt", audit.Fields{Source: "claude", Grant: g.ID, Project: pid})
-	rec := c.turns.add(g.ID, sid, turn)
-	rec.release = release
+	rec := c.turns.add(g.ID, sid, turn, release)
 	go func() {
 		<-turn.Done()
 		release()

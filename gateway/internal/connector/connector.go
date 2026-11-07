@@ -6,7 +6,8 @@
 // after the owner approves a pairing on the phone (D-095 pairing), and each grant is scoped to
 // projects and sessions. The phone's listener and its mutual TLS are never touched by this package.
 //
-//	GET  /.well-known/oauth-protected-resource   RFC 9728 metadata
+//	GET  /.well-known/oauth-protected-resource       RFC 9728 metadata (root form)
+//	GET  /.well-known/oauth-protected-resource/mcp   the same metadata, path-suffixed for /mcp (D-101)
 //	GET  /.well-known/oauth-authorization-server RFC 8414 metadata
 //	GET  /authorize                              pairing page; holds until the phone answers
 //	POST /token                                  authorization code to grant token (PKCE)
@@ -128,11 +129,12 @@ func (c *Connector) Close() {
 
 // The routes and the methods each one accepts (C4).
 const (
-	pathProtectedResource   = "/.well-known/oauth-protected-resource"
-	pathAuthorizationServer = "/.well-known/oauth-authorization-server"
-	pathAuthorize           = "/authorize"
-	pathToken               = "/token"
-	pathMCP                 = "/mcp"
+	pathProtectedResource    = "/.well-known/oauth-protected-resource"
+	pathProtectedResourceMCP = "/.well-known/oauth-protected-resource/mcp" // the form the spec derives for /mcp
+	pathAuthorizationServer  = "/.well-known/oauth-authorization-server"
+	pathAuthorize            = "/authorize"
+	pathToken                = "/token"
+	pathMCP                  = "/mcp"
 )
 
 // ServeHTTP routes a request. Unknown paths are 404; a known path with another method is 405.
@@ -140,7 +142,7 @@ func (c *Connector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var method string
 	var handle func(http.ResponseWriter, *http.Request)
 	switch r.URL.Path {
-	case pathProtectedResource:
+	case pathProtectedResource, pathProtectedResourceMCP:
 		method, handle = http.MethodGet, c.serveProtectedResource
 	case pathAuthorizationServer:
 		method, handle = http.MethodGet, c.serveAuthorizationServer
@@ -216,7 +218,8 @@ func (c *Connector) serveAuthorizationServer(w http.ResponseWriter, r *http.Requ
 // authenticate checks the bearer grant token on /mcp. It writes the 401 and returns nil when the
 // token is missing, malformed, unknown or revoked.
 func (c *Connector) authenticate(w http.ResponseWriter, r *http.Request) *Grant {
-	challenge := `Bearer resource_metadata="` + c.cfg.PublicOrigin + pathProtectedResource + `"`
+	// The challenge names the path-suffixed form: the spec derives that URL for a resource at /mcp (D-101).
+	challenge := `Bearer resource_metadata="` + c.cfg.PublicOrigin + pathProtectedResourceMCP + `"`
 	token, ok := bearerToken(r.Header.Get("Authorization"))
 	if !ok {
 		w.Header().Set("WWW-Authenticate", challenge)
