@@ -91,8 +91,9 @@ final class ProjectStateHomeTests: XCTestCase {
         await loadedHome(home, serverId: serverA, projects: [("p-site", "Site")])
         home.applyProjectState(GatewayProjectState(projectId: "p-site", agent: .running), serverId: serverA)
         home.configure(serverId: serverB, clientProvider: nil)
-        XCTAssertNil(home.agentState(for: "p-site"), "cleared at once, before the new server answers")
-        XCTAssertTrue(home.projectStates.isEmpty)
+        XCTAssertTrue(home.projectStates.isEmpty, "cleared at once, before the new server answers")
+        await loadedHome(home, serverId: serverB, projects: [("p-site", "Site")])
+        XCTAssertNil(home.agentState(for: "p-site"), "server B's list shows p-site, but not server A's state of it")
     }
 
     func testAReconnectToTheSameServerKeepsTheStates() async {
@@ -108,7 +109,7 @@ final class ProjectStateHomeTests: XCTestCase {
         home.configure(serverId: serverA) { nil }
         home.applyProjectState(GatewayProjectState(projectId: "p-site", agent: .running), serverId: serverA)
         home.applyProjectState(GatewayProjectState(projectId: "p-ghost", agent: .running), serverId: serverA)
-        XCTAssertNil(home.agentState(for: "p-site"), "no list yet, so nothing shows")
+        XCTAssertTrue(home.projectStates.isEmpty, "no list yet, so nothing is kept as shown")
         let fake = ProjectStateFakeGateway()
         fake.results["_agmente/projects/list"] = projectsList([("p-site", "Site")])
         fake.results["_agmente/sessions/index"] = .object(["sessions": .array([])])
@@ -232,13 +233,14 @@ final class ProjectStateRouterTests: XCTestCase {
         let h = try await harness()
         defer { h.responder.cancel() }
         await loadedHome(h.model.gatewayHome, serverId: h.server.id, projects: [("p-site", "Site"), ("p-api", "API")])
+        h.connection.enqueue(projectState("p-ghost", "running")) // not listed: must not be kept
         h.connection.enqueue(projectState("p-site", "running"))
-        h.connection.enqueue(projectState("p-api", "stopped")) // the one after it: when this lands, the first has too
+        h.connection.enqueue(projectState("p-api", "stopped")) // the last one: when this lands, the others have too
         await settle { h.model.gatewayHome.agentState(for: "p-api") == .stopped }
         XCTAssertEqual(h.model.gatewayHome.agentState(for: "p-site"), .running, "the router forwards the notification to the home")
-        XCTAssertNil(h.model.gatewayHome.agentState(for: "p-ghost"))
-        // logWire writes every incoming message to the wire log, so the "← _agmente/project/state" line is there as it is for git/changed.
-        // The router's contract is that the state is not rendered as a Notification line.
+        XCTAssertEqual(Set(h.model.gatewayHome.projectStates.keys), ["p-site", "p-api"], "a state for a project not on the list is not kept")
+        // The wire log records the state as an incoming message, as it does for git/changed: "← <method>: <payload>".
+        XCTAssertTrue(h.model.updates.contains { $0.message.hasPrefix("← _agmente/project/state") }, "the state is logged as an incoming message")
         XCTAssertFalse(h.model.updates.contains { $0.message.hasPrefix("Notification _agmente/project/state") }, "a state is not a Notification log line")
     }
 
@@ -247,10 +249,12 @@ final class ProjectStateRouterTests: XCTestCase {
         defer { h.responder.cancel() }
         await loadedHome(h.model.gatewayHome, serverId: h.server.id, projects: [("p-site", "Site"), ("p-api", "API")])
         h.connection.enqueue(projectState("p-site", "running"))
-        h.connection.enqueue(projectState("p-site", "paused"))
-        h.connection.enqueue(projectState("p-api", "stopped"))
+        await settle { h.model.gatewayHome.agentState(for: "p-site") == .running }
+        XCTAssertEqual(h.model.gatewayHome.agentState(for: "p-site"), .running, "the running state is shown before the unknown one arrives")
+        h.connection.enqueue(projectState("p-site", "paused")) // a value this app does not know
+        h.connection.enqueue(projectState("p-api", "stopped")) // the last one: when this lands, the unknown one has too
         await settle { h.model.gatewayHome.agentState(for: "p-api") == .stopped }
-        XCTAssertNil(h.model.gatewayHome.agentState(for: "p-site"))
+        XCTAssertNil(h.model.gatewayHome.agentState(for: "p-site"), "an unknown state clears the shown one")
     }
 
     func testAStateForAProjectNotOnTheListIsIgnoredOverTheWire() async throws {
@@ -291,7 +295,8 @@ final class ProjectStateRouterTests: XCTestCase {
         let h = try await harness()
         defer { h.responder.cancel() }
         h.connection.enqueue(notification("_agmente/notice", ["approvalId": "agmente-perm-9", "message": "answered elsewhere"]))
-        await settle { h.model.updates.contains { $0.message.contains("_agmente/notice") } }
-        XCTAssertTrue(h.model.updates.contains { $0.message.contains("_agmente/notice") }, "_agmente/notice still takes the default path")
+        // The wire log line also contains the method ("← _agmente/notice: ..."), so only the Notification line shows the default path ran.
+        await settle { h.model.updates.contains { $0.message.hasPrefix("Notification _agmente/notice") } }
+        XCTAssertTrue(h.model.updates.contains { $0.message.hasPrefix("Notification _agmente/notice") }, "_agmente/notice still takes the default path")
     }
 }
