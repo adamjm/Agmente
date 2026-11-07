@@ -2,7 +2,10 @@
 # Status: example. Mark each directive verified in docs/RESULTS.md after PLAN task 1.11.
 #
 # - The phone listener is on :8443 and forwards to the gateway on 127.0.0.1:8788. Port 8787 is not
-#   used: it is held by Hammerspoon on the test Mac. The public connector is on :443 (Caddyfile.connector).
+#   used: it is held by Hammerspoon on the test Mac. The public connector shares :8443 and is
+#   separated from the phone by host name (Caddyfile.connector, D-100).
+# - Caddy runs as the owner's user (LaunchAgent), so it cannot bind port 80. The global block below
+#   turns off the HTTP-to-HTTPS redirect listener, which needs port 80. No client here uses it.
 # - Mutual TLS: a client without a certificate from your client CA fails the handshake.
 # - VERIFY: `trust_pool file` is the Caddy 2.8+ form. Older Caddy uses `trusted_ca_cert_file`.
 # - Clients must connect by host name. A connection by IP sends no SNI: tested with Caddy 2.11.9
@@ -14,8 +17,13 @@
 # - VERIFY: reverse_proxy sets X-Forwarded-For by default.
 #   The gateway trusts X-Forwarded-For only with "trustProxy": true and a loopback peer.
 
-# The public connector site (D-098). One top-level import, outside any site block: only one Caddy
-# process can bind 443. The import path is relative to this file. It needs CONNECTOR_HOST set.
+{
+	# No port 80 listener (D-100). Caddy runs as the owner's user and cannot bind port 80.
+	auto_https disable_redirects
+}
+
+# The public connector site (D-098, D-100). One top-level import, outside any site block. The import
+# path is relative to this file. It needs CONNECTOR_HOST set, and CADDY_DNS_API_TOKEN for its certificate.
 import Caddyfile.connector
 
 agent.example.com:8443 {

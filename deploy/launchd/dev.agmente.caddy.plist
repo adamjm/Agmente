@@ -1,29 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  LaunchDaemon template for Caddy, the public edge for the phone listener and the connector (D-098).
-  Status: template, not installed. Replace every /Users/you path and the host name.
+  LaunchAgent template for Caddy, the public edge for the phone listener and the connector (D-098,
+  D-100). Status: template, not installed. Replace every /Users/you path and the host name.
 
-  It is a LaunchDaemon, not a user agent, because Caddy binds TCP 443, which needs root on macOS.
-  Caddy then runs as root. Its certificate and state data go to XDG_DATA_HOME and XDG_CONFIG_HOME,
-  so they stay under your own folder, not /var/root.
+  It is a LaunchAgent, not a LaunchDaemon. Caddy runs as your own user, so it has no root. Both sites
+  listen on TCP 8443 (the phone's mutual-TLS site and the connector). Caddy tells them apart by host
+  name. Certificate state goes to XDG_DATA_HOME and XDG_CONFIG_HOME under your folder.
+
+  The connector's certificate uses the DNS-01 challenge (D-100). The DNS provider's API token is in
+  the secrets file, not in this plist. The command loads that file, as the gateway's plist does.
+  The file holds NAME=value lines, has mode 600, and lives outside the repo: /Users/you/agmente/secrets.env.
+  It must contain CADDY_DNS_API_TOKEN=... (docs/MAC-SETUP.md, section 13).
 
   Install:
-    sudo mkdir -p /Users/you/agmente/caddy/data /Users/you/agmente/caddy/config
-    sudo cp deploy/launchd/dev.agmente.caddy.plist /Library/LaunchDaemons/
-    sudo chown root:wheel /Library/LaunchDaemons/dev.agmente.caddy.plist
-    sudo chmod 644 /Library/LaunchDaemons/dev.agmente.caddy.plist
-    sudo launchctl bootstrap system /Library/LaunchDaemons/dev.agmente.caddy.plist
+    mkdir -p /Users/you/agmente/caddy/data /Users/you/agmente/caddy/config /Users/you/agmente/state/logs
+    cp deploy/launchd/dev.agmente.caddy.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.agmente.caddy.plist
 
   Stop and remove:
-    sudo launchctl bootout system/dev.agmente.caddy
+    launchctl bootout gui/$(id -u)/dev.agmente.caddy
 
-  Stop the manually started Caddy first, or 443 is already taken and this daemon fails to start.
+  Stop any manually started Caddy first, or port 8443 is already taken and this agent fails to start.
   Changing the Caddyfile later: `caddy validate` it, then `caddy reload` (the admin API on localhost),
   which does not drop open connections.
 
   CONNECTOR_HOST is the public host name of the connector (docs/MAC-SETUP.md, section 13). The
-  Caddyfile reads it as {$CONNECTOR_HOST}.
+  Caddyfile reads it as {$CONNECTOR_HOST}. Caddy must be built with the DNS provider module, with
+  xcaddy. The stock Homebrew build does not include it, so point ProgramArguments at that build.
 -->
 <plist version="1.0">
 <dict>
@@ -32,12 +36,9 @@
 
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/caddy</string>
-		<string>run</string>
-		<string>--config</string>
-		<string>/Users/you/agmente/caddy/Caddyfile</string>
-		<string>--adapter</string>
-		<string>caddyfile</string>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>set -a; . /Users/you/agmente/secrets.env; set +a; exec /Users/you/agmente/caddy/bin/caddy run --config /Users/you/agmente/caddy/Caddyfile --adapter caddyfile</string>
 	</array>
 
 	<key>EnvironmentVariables</key>
