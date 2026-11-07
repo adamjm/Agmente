@@ -6,7 +6,9 @@ package server
 // It is change-only: a transition to the state already sent is not sent again. At most one is sent
 // per project every projectStateGap (so at most two a second). When transitions come faster, the
 // newest state is sent when the gap ends, so the phone always ends on the true state. Only sockets
-// that listed the project (_agmente/sessions/index, or _agmente/projects/list) get it.
+// that listed the project (_agmente/sessions/index, or _agmente/projects/list) get it. A listing also
+// sends its socket one snapshot of each listed project's current state (sendSnapshot, G2, D-104). The
+// snapshot is not rate limited, not audited and does not change the change-only state above.
 
 import (
 	"context"
@@ -44,7 +46,9 @@ func (s *Server) watchProjectStates(ctx context.Context, conn int, projectID str
 		return
 	}
 	if projectID != "" {
-		s.agent(projectID).watchState(c)
+		a := s.agent(projectID)
+		a.watchState(c)
+		a.sendSnapshot(c)
 		return
 	}
 	projects, err := s.store.Projects(ctx)
@@ -52,7 +56,9 @@ func (s *Server) watchProjectStates(ctx context.Context, conn int, projectID str
 		return
 	}
 	for _, p := range projects {
-		s.agent(p.ID).watchState(c)
+		a := s.agent(p.ID)
+		a.watchState(c)
+		a.sendSnapshot(c)
 	}
 }
 
@@ -125,15 +131,7 @@ func (a *projectAgent) flushStateLocked() {
 	// project. No state is assumed as the baseline.
 	a.stateSent = a.stateWant
 	a.stateSentAt = time.Now()
-	params := jsonv.Obj()
-	params.Set("projectId", jsonv.Str(a.id))
-	params.Set("agent", jsonv.Str(a.stateSent))
-	params.Set("since", jsonv.Str(a.stateSince.UTC().Format(projectStateTime)))
-	msg := jsonv.Obj()
-	msg.Set("jsonrpc", jsonv.Str("2.0"))
-	msg.Set("method", jsonv.Str("_agmente/project/state"))
-	msg.Set("params", params)
-	out := msg.Marshal()
+	out := a.stateMessage(a.stateSent, a.stateSince)
 	for c := range a.stateSubs {
 		if closedClient(c) {
 			delete(a.stateSubs, c)
@@ -142,4 +140,40 @@ func (a *projectAgent) flushStateLocked() {
 		c.send(out)
 	}
 	a.s.audit.Log("project_state", a.fields(audit.Fields{Reason: a.stateSent}))
+}
+
+// sendSnapshot sends one socket the project's current agent state (G2, D-104): the state every listing
+// call starts from, so a project already running when the phone reconnects is not shown as stopped. A
+// project no agent has run for is "stopped". The snapshot is read under stateMu, the lock the change-only
+// flush takes, so it is never older than a broadcast sent before it. It does not touch stateSent or
+// stateSentAt (the change-only rule and the 2-a-second limit are unchanged), and it is not audited.
+func (a *projectAgent) sendSnapshot(c *client) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	if closedClient(c) {
+		return
+	}
+	agent := a.stateWant
+	if agent == "" {
+		agent = stateName(agentStopped) // no transition yet: no agent has run for this project
+	}
+	since := a.stateSince
+	if since.IsZero() {
+		since = time.Now()
+	}
+	c.send(a.stateMessage(agent, since))
+}
+
+// stateMessage is the `_agmente/project/state` notification (C2) for one agent state. It must be called
+// with stateMu held.
+func (a *projectAgent) stateMessage(agent string, since time.Time) []byte {
+	params := jsonv.Obj()
+	params.Set("projectId", jsonv.Str(a.id))
+	params.Set("agent", jsonv.Str(agent))
+	params.Set("since", jsonv.Str(since.UTC().Format(projectStateTime)))
+	msg := jsonv.Obj()
+	msg.Set("jsonrpc", jsonv.Str("2.0"))
+	msg.Set("method", jsonv.Str("_agmente/project/state"))
+	msg.Set("params", params)
+	return msg.Marshal()
 }
