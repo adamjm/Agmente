@@ -132,6 +132,7 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 
 func with(who audit.Who, f audit.Fields) audit.Fields {
 	f.Identity, f.Device, f.Client, f.Conn = who.Identity, who.Device, who.Client, who.Conn
+	f.Source, f.Grant = who.Source, who.Grant // a connector prompt's lines name the source and grant (D-096)
 	return f
 }
 

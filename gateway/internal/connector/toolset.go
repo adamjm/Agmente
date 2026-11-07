@@ -7,10 +7,6 @@ import (
 	"fmt"
 )
 
-// errNotImplemented is what a connector tool answers until its handler is written (task D2). The
-// scope and limit gates in front of it already run, so they are tested now.
-var errNotImplemented = errors.New("this connector tool is not implemented yet")
-
 // toolSpec is one connector tool (C7): its MCP definition and its handler. The handler gets the
 // grant, which carries the scope, and the decoded arguments. It returns the tool's result, or an
 // error whose text is the plain reason shown to the model.
@@ -21,14 +17,14 @@ type toolSpec struct {
 	call        func(c *Connector, g *Grant, args map[string]json.RawMessage) (any, error)
 }
 
-// toolSpecs is the tool table. Task D2 replaces the bodies that return errNotImplemented.
+// toolSpecs is the tool table. The handlers are in tools.go (D-096).
 var toolSpecs = []toolSpec{
 	{
 		name:        "list_projects",
 		description: "List the projects this connector grant can reach.",
 		schema:      objectSchema(nil),
 		call: func(c *Connector, g *Grant, args map[string]json.RawMessage) (any, error) {
-			return nil, errNotImplemented
+			return c.listProjects(g)
 		},
 	},
 	{
@@ -36,14 +32,7 @@ var toolSpecs = []toolSpec{
 		description: "List the sessions this grant can reach, optionally in one project.",
 		schema:      objectSchema(map[string]any{"projectId": stringProp("Project id to list sessions for.")}),
 		call: func(c *Connector, g *Grant, args map[string]json.RawMessage) (any, error) {
-			pid, err := stringArg(args, "projectId", false)
-			if err != nil {
-				return nil, err
-			}
-			if pid != "" && !g.Scope.Allows(pid, "") {
-				return nil, errOutsideScope("projectId")
-			}
-			return nil, errNotImplemented
+			return c.listSessions(g, args)
 		},
 	},
 	{
@@ -51,14 +40,7 @@ var toolSpecs = []toolSpec{
 		description: "A short summary of one session: status, usage, running tools, pending approvals, last stop reason.",
 		schema:      objectSchema(map[string]any{"sessionId": stringProp("Session id.")}, "sessionId"),
 		call: func(c *Connector, g *Grant, args map[string]json.RawMessage) (any, error) {
-			sid, err := stringArg(args, "sessionId", true)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := c.sessionInScope(g, sid); err != nil {
-				return nil, err
-			}
-			return nil, errNotImplemented
+			return c.getContext(g, args)
 		},
 	},
 	{
@@ -69,21 +51,7 @@ var toolSpecs = []toolSpec{
 			"text":      stringProp("The prompt text."),
 		}, "sessionId", "text"),
 		call: func(c *Connector, g *Grant, args map[string]json.RawMessage) (any, error) {
-			sid, err := stringArg(args, "sessionId", true)
-			if err != nil {
-				return nil, err
-			}
-			text, err := stringArg(args, "text", true)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := c.sessionInScope(g, sid); err != nil {
-				return nil, err
-			}
-			if err := c.limits.admitPrompt(g.ID, len(text)); err != nil {
-				return nil, err
-			}
-			return nil, errNotImplemented
+			return c.sendPrompt(g, args)
 		},
 	},
 	{
@@ -91,10 +59,7 @@ var toolSpecs = []toolSpec{
 		description: "The state of a turn that was still running when send_prompt returned.",
 		schema:      objectSchema(map[string]any{"turnId": stringProp("Turn id from send_prompt.")}, "turnId"),
 		call: func(c *Connector, g *Grant, args map[string]json.RawMessage) (any, error) {
-			if _, err := stringArg(args, "turnId", true); err != nil {
-				return nil, err
-			}
-			return nil, errNotImplemented
+			return c.getTurn(g, args)
 		},
 	},
 }

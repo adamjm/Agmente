@@ -27,16 +27,18 @@ type Fields struct {
 	Project                  string
 	Path                     string // a project-relative file path (file events, D-063); never a token
 	FolderCreated            bool   // project_created: the gateway made the project folder (D-091)
+	Source, Grant            string // a connector prompt: source "claude" and the grant id (D-096)
 }
 
 // Who identifies one connection in every line it writes.
 type Who struct {
 	Identity, Device, Client string
 	Conn                     int
+	Source, Grant            string // set for a connector prompt: source "claude" and the grant id (D-096)
 }
 
 func (w Who) Fields() Fields {
-	return Fields{Identity: w.Identity, Device: w.Device, Client: w.Client, Conn: w.Conn}
+	return Fields{Identity: w.Identity, Device: w.Device, Client: w.Client, Conn: w.Conn, Source: w.Source, Grant: w.Grant}
 }
 
 // Logger writes audit lines to a sink. It is safe for concurrent use.
@@ -75,6 +77,8 @@ func (l *Logger) Log(event string, f Fields) {
 	str("device", f.Device)
 	str("client", f.Client)
 	num("conn", f.Conn, f.Conn != 0)
+	str("source", f.Source)
+	str("grant", f.Grant)
 	num("status", f.Status, f.Status != 0)
 	str("reason", f.Reason)
 	str("method", f.Method)

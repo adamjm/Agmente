@@ -346,8 +346,9 @@ test('a grant outside its scope is refused by the tools, and a grant with no sco
     assert.match(outsideList.content[0].text, /not in this grant's scope/);
 
     const insideList = await callTool(gw, token, 'list_sessions', { projectId: inside.project.id });
-    assert.equal(insideList.isError, true);
-    assert.match(insideList.content[0].text, /not implemented/, 'an in-scope call passes the gate');
+    assert.equal(insideList.isError, false, 'an in-scope call passes the gate');
+    const listed = JSON.parse(insideList.content[0].text).sessions;
+    assert.ok(listed.length >= 1 && listed.every((x) => x.projectId === inside.project.id), 'the answer is the in-scope list');
 
     const foreignSession = await callTool(gw, token, 'get_context', { sessionId: outside.sessionId });
     assert.equal(foreignSession.isError, true);

@@ -1,6 +1,5 @@
 // Connector limits on the wire (C6, D-095): promptsPerHour, maxPromptBytes, and the audit never
-// holding prompt text. The tools themselves are not implemented in this task (D2), so an allowed
-// prompt answers "not implemented" after the gates have run.
+// holding prompt text. An allowed prompt runs through the fake agent (D-096, connector-tools tests).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { useProject } from './helpers.mjs';
@@ -14,10 +13,10 @@ test('send_prompt is limited to promptsPerHour per grant, and refused after the 
     const { token } = await grantToken(gw, ws, { projects: [project.id], sessions: [sessionId] });
 
     const first = await callTool(gw, token, 'send_prompt', { sessionId, text: 'one' });
-    assert.equal(first.isError, true);
-    assert.match(first.content[0].text, /not implemented/);
+    assert.equal(first.isError, false);
+    assert.equal(JSON.parse(first.content[0].text).status, 'done');
     const second = await callTool(gw, token, 'send_prompt', { sessionId, text: 'two' });
-    assert.match(second.content[0].text, /not implemented/);
+    assert.equal(second.isError, false);
     const third = await callTool(gw, token, 'send_prompt', { sessionId, text: 'three' });
     assert.equal(third.isError, true);
     assert.match(third.content[0].text, /prompt limit reached: 2 prompts per hour/);
@@ -40,7 +39,7 @@ test('send_prompt refuses a prompt over maxPromptBytes before it counts against 
 
     // The refused prompt did not use up the one allowed prompt.
     const small = await callTool(gw, token, 'send_prompt', { sessionId, text: 'x'.repeat(10) });
-    assert.match(small.content[0].text, /not implemented/);
+    assert.equal(small.isError, false);
   } finally {
     ws.close();
     await gw.stop();
@@ -58,7 +57,7 @@ test('a prompt outside the grant scope is refused before the limits run', async 
     assert.match(res.content[0].text, /not in this grant's scope/);
     // The refused prompt did not use the hour's one prompt.
     const ok = await callTool(gw, grant.token, 'send_prompt', { sessionId, text: 'hello' });
-    assert.match(ok.content[0].text, /not implemented/);
+    assert.equal(ok.isError, false);
   } finally {
     ws.close();
     await gw.stop();
