@@ -1,7 +1,8 @@
 # Edge proxy for the Agmente gateway (ARCHITECTURE 2.1).
 # Status: example. Mark each directive verified in docs/RESULTS.md after PLAN task 1.11.
 #
-# - Only port 443 is public. The gateway listens on 127.0.0.1:8787.
+# - The phone listener is on :8443 and forwards to the gateway on 127.0.0.1:8788. Port 8787 is not
+#   used: it is held by Hammerspoon on the test Mac. The public connector is on :443 (Caddyfile.connector).
 # - Mutual TLS: a client without a certificate from your client CA fails the handshake.
 # - VERIFY: `trust_pool file` is the Caddy 2.8+ form. Older Caddy uses `trusted_ca_cert_file`.
 # - Clients must connect by host name. A connection by IP sends no SNI: tested with Caddy 2.11.9
@@ -13,7 +14,11 @@
 # - VERIFY: reverse_proxy sets X-Forwarded-For by default.
 #   The gateway trusts X-Forwarded-For only with "trustProxy": true and a loopback peer.
 
-agent.example.com {
+# The public connector site (D-098). One top-level import, outside any site block: only one Caddy
+# process can bind 443. The import path is relative to this file. It needs CONNECTOR_HOST set.
+import Caddyfile.connector
+
+agent.example.com:8443 {
 	tls {
 		client_auth {
 			mode require_and_verify
@@ -21,5 +26,5 @@ agent.example.com {
 		}
 	}
 
-	reverse_proxy 127.0.0.1:8787
+	reverse_proxy 127.0.0.1:8788
 }

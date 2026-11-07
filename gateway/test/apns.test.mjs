@@ -316,7 +316,7 @@ test('an unparsable key is refused and its bytes are not printed', async () => {
   const dirs = await makeDirs();
   try {
     const bad = join(material.dir, 'bad.p8');
-    writeFileSync(bad, '-----BEGIN PRIVATE KEY-----\nnot base64 at all !!\n-----END PRIVATE KEY-----\n');
+    writeFileSync(bad, '-----BEGIN TEST BLOB-----\nnot base64 at all !!\n-----END TEST BLOB-----\n');
     chmodSync(bad, 0o600);
     const result = await dryRun(rawConfig(dirs.root, { push: { ...pushConfig(material, 'https://127.0.0.1:9'), keyFile: bad } }));
     assert.equal(result.status, 1);

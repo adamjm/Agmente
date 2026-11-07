@@ -1401,3 +1401,204 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 ## 2026-11-07 Phone: project list over mutual TLS (user test)
 - **Result:** after the token was entered, the phone connected, but the project list was empty because the local gateway had no project registered. Registered "Phone test" (scratch folder) with `_agmente/projects/create`; the user confirmed the project now appears on the phone.
 - **Session from the phone (user test):** a prompt sent from the phone to the "Phone test" project got a reply. End-to-end path confirmed: phone → Caddy (mutual TLS) → gateway → Bob on the Mac.
+
+## 2026-11-07 Wave 1 task notes and integration (feat/integration-2026-11-07)
+
+### A1 gateway usage and project state (D-092)
+
+- **Branch:** `feat/a1-gateway-usage` from `db08383`. Worktree: `scratchpad/wt/a1-gateway-usage`.
+- **Built:** C1 usage per session (schema 6, table `session_usage`; `usage` on `_agmente/sessions/index`, left out when none is stored). C2 `_agmente/project/state` (change-only, at most one per project every 500 ms, audit event `project_state`, never in the event log, sent to sockets that listed the project).
+- **Hooks:** every agent transition goes through `setState` in `supervisor.go`, so `idle.go` needed no edit (its stop goes through `setState`).
+- **Not done (coordinator decision):** `_agmente/projects/list` does not subscribe its socket to C2 yet. The hook is one line in `projects.go` (owned by F1): `s.watchProjectStates(ctx, who.Conn, "")` in the `_agmente/projects/list` case. `watchProjectStates` exists in `projectstate.go`.
+- **Go:** `go vet ./...` and `go test ./...` pass. New: `server/usage_test.go` (parser), `store/store_usage_test.go` (replace, index, delete, migration from schema 5). Older migration tests drop `session_usage` when they simulate an older schema.
+- **Node, new:** `usage.test.mjs` (5 tests) and `usage-project-state.test.mjs` (3 tests), all passing. Covers: index shows the last usage; survives restart and starts no agent; no field when none seen; partial update not stored; cost omitted when absent; state change-only through start, run, idle stop; only listing sockets get state; a burst is rate limited to two a second and ends on the true state.
+- **Mutation check:** store write removed (`SetUsage` call in `server/usage.go`). `usage.test.mjs`: 3 of 5 failed (the three that need a stored value). The two negative tests passed. Source restored and verified.
+- **`scripts/check.sh` (this worktree): FAILED** at the Gateway wire tests step, so the later steps did not run in that script. Wire result: 264 tests, 263 pass, 1 fail: `FR-24: an idle session is closed while another session keeps the project busy` (`lifecycle.test.mjs`), `closed with 1006`. The same failure appeared in a standalone full `npm test` run (263 of 264). Remaining steps run by hand: dry run of `config.example.json` OK, `check-docs.mjs` OK (48 tests, 45 FRs, 15 NFRs, 78 decisions), secrets grep clean.
+- **FR-24 investigation:** passed 7 of 7 in isolation on this branch (durations 4.4 to 6.6 s; the test has a 6 s wait). Whole `lifecycle.test.mjs` file passed 4 of 4 more with an audit dump on failure. The full suite on the baseline commit `db08383` (built from `git archive`, same machine, run concurrently with other agents' suites) gave 256 tests: 254 pass, 2 fail (both push tests: `no push is made when the push block is absent`, `a finished turn sends one alert`), and `FR-24` passed at 5997 ms. So the baseline is not clean here either, and I have not shown that FR-24 is caused by this branch. No code path in the new work closes a client socket; the only gateway-side 1006 path is `Shutdown`. Not resolved.
+- **Not verified:** Bob's real `usage_update` shape (no recorded payload; D-070 marks it "verify"). The Swift app side (not part of this task). Live gateway behaviour with the phone.
+
+# RESULTS: B1 app usage UI (branch feat/b1-app-usage, decision D-093)
+
+Date: 2026-11-07. Worktree: scratchpad/wt/b1-app-usage. Contract: C1 (usage on the sessions index).
+
+### Built
+
+- ACPClient: `GatewayUsage` (decode of the C1 `usage` object, derived `left` and `percent`, live conversion from `ACPSessionUsage`) and `GatewayClient.sessionsWithUsage(projectId:)`, one `_agmente/sessions/index` call returning sessions and usage.
+- App, `Agmente/Fork/Usage/`: `UsageUpdateThrottle` (pure, one shown update per second, last value wins), `ContextUsageFormat` (chip text, bar fraction, compact counts), `ContextUsageChip` with `ContextUsageFeed` (throttled live values), `GatewayUsageSheet` with `UsageSheetContent` (sheet rows as data), `GatewayContextBar`.
+- Hooks: `SessionDetailView.swift` one line (chip above the plan and transcript); `GatewayHomeView.swift` one line (the existing row call now overlays the bar).
+
+### Deviation for the coordinator to accept or reverse
+
+`Agmente/Fork/Gateway/GatewayHomeModel.swift` is edited (about six lines): it publishes `usage` and calls `sessionsWithUsage()` in `refresh()` instead of `sessions()`. Reason: the row bar needs the usage, and the model is the only place that holds the gateway client's answer. The model is not in B1's owned list and no other task in the table owns it. Integration should expect it to be untouched by the other branches. If the coordinator prefers another route, the bar and chip do not depend on it.
+
+### Tests
+
+- `swift test --package-path ACPClient` (full suite, second run): XCTest 232 tests, 0 failures. Swift Testing 9 tests in 2 suites, all passed. `GatewayUsageDecodingTests` (11 tests) cover: rows with and without usage; cost present and absent; currency without amount; malformed usage ignored while the session still decodes (eight malformed shapes); a malformed cost dropped with the rest kept; timestamps with and without milliseconds; left and percent rules; live usage needs both used and size.
+- A first full run stalled inside the Swift Testing `ACPServiceTests` path and was killed. It did not reproduce: `--skip ACPServiceTests` passed, `--filter ACPServiceTests` passed (4 tests), and the second full run passed. Not investigated further; it looks environmental (other swift-test processes were running on this Mac).
+- App tests: `AgmenteTests/UsageChipTests.swift`, `UsageSheetTests.swift`, `UsageThrottleTests.swift` (throttle suite plus `ContextUsageFeedTests`). Compiled by `build-for-testing`. Not executed in this task (rule: no `xcodebuild test`).
+- Mutation check: the throttle suite (6 tests) was copied into a scratch package outside the repo (`scratchpad/b1-mutation`), because the app test target cannot run here. Real throttle: 6 of 6 pass. Mutant (`flush` drops the waiting value): `theLastValueInTheWindowIsTheOneShownWhenItEnds` and `atMostOneShownValuePerSecondOverABurst` fail (3 issues). Restored throttle: 6 of 6 pass.
+
+### Build
+
+- `xcodebuild build-for-testing -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath scratchpad/dd/b1-app-usage`: TEST BUILD SUCCEEDED. Log: `scratchpad/b1-build.log`. No warnings in the new or touched files.
+
+### scripts/check.sh (not a clean pass)
+
+- Passed: Node version, JSON parse, dependency guard (after `npm ci --prefix gateway` in the worktree), syntax check, Go vet, Go unit tests, Go build.
+- Gateway wire tests, three runs:
+  1. Stopped at `apns.test.mjs` (a test hung; 33 tests cancelled).
+  2. Run alone: 256 of 256 pass.
+  3. Inside check.sh: 255 of 256 pass; `apple-runner.test.mjs` "git gets a one-off container with no network when no agent container is up" fails with `TypeError: Cannot read properties of undefined (reading 'branch')`. That test drives the Apple `container` CLI (present at `/opt/homebrew/bin/container`).
+  - `gateway/` is identical to base commit db08383 (zero diff lines). The failures are flaky environment-dependent tests in code this task did not touch.
+- Steps after the wire tests, run by hand because check.sh stopped: dry run of `gateway/config.example.json` passed; private-key and raw-secret scans clean; `node scripts/check-docs.mjs` OK (48 tests, 45 FRs, 15 NFRs, 78 decisions); ACPClient Swift tests passed (above). `AgmenteTransport` and `AppServerClient` package tests were not run (not touched by this task).
+
+### Not verified
+
+- App tests were not executed. The throttle suite was run only in the scratch copy.
+- The chip and row bar layout were not seen on a simulator or device.
+- Live chip values depend on Bob's `usage_update` events being replayed into the session on reopen. Not verified against a live Bob.
+- Visual check of the sheet's Dynamic Type and the bar's position on rows.
+- A live cost without used and size tokens is not shown (the sheet needs a GatewayUsage). Noted, not handled.
+
+# B2 app running-now strip: results
+
+Branch: feat/b2-app-running (worktree scratchpad/wt/b2-app-running). Decision: D-094 (scratchpad/decisions/b2-app-running.md).
+
+### Tests
+
+- Pure logic, scratch SwiftPM harness with Swift Testing (copy of Agmente/Fork/Running/RunningWork.swift and AgmenteTests/RunningWorkTests.swift, not in the repo): 15 tests passed.
+- Mutation check (completed no longer terminal, in the harness copy): 5 issues in 4 tests failed (completedUpdateEndsTheToolCall, updateWithoutIdClosesTheLatestOpenCallWithoutId, terminalUpdateWithAnotherIdDoesNotEndThisToolCall, noRunningWorkGivesAnEmptyStrip). Restored code: 15 passed.
+- AgmenteTests/RunningWorkEventsTests.swift (transcript adapter, 9 tests): compiled, NOT executed (xcodebuild test is not run in this task).
+- xcodebuild build-for-testing (iPhone 17 simulator, -derivedDataPath scratchpad/dd/b2-app-running): TEST BUILD SUCCEEDED.
+- scripts/check.sh: FAILS at the gateway wire-test step. Earlier steps pass (Node, JSON, Go vet/test/build, syntax). Gateway wire tests are timing-flaky here: run 1 had one failure (T-22, closed 1006) and 31 cancelled tests; run 2 had 256 tests, 254 pass, 2 fail (FR-24 idle session timing). No gateway file is changed on this branch (diff touches only Agmente/ files).
+- Steps after the wire tests, run by hand: gateway dry run OK; scripts/check-docs.mjs OK (48 tests, 45 FRs, 78 decisions); swift test AgmenteTransport (12, 1 skipped, 0 failures), ACPClient (221, 0 failures), AppServerClient (9, 0 failures). Secrets grep not run separately.
+- Needed `npm ci --prefix gateway` in the worktree (node_modules was missing; gitignored).
+
+### Not verified
+
+- Visual layout of the strip and the safeAreaInset placement on device or simulator. An empty strip should add no space; not checked.
+- Subagent note is fixed text; the C3 subagent gap is per H1.
+- Turn status uses the view model's streaming flag, not the gateway index status (index status is not reachable from the session view).
+- Approvals without a tool call (pendingPermissionRequests with no segment) are not counted.
+
+### D1 connector gateway core (2026-11-07)
+
+Branch `feat/d1-connector-core` (from db08383). Decision text: `<scratchpad>/decisions/d1-connector-core.md` (D-095).
+
+What is built
+- `gateway/internal/connector/` (new): the public listener on 127.0.0.1:connector.port, the five C4 routes (metadata, authorize, token, mcp), Origin check, PKCE pairing with phone approve/deny/grants/revoke (C5), grants file with token hashes (0600, atomic), scope gate, limits (promptsPerHour, maxPromptBytes, turn slots), and the five C7 tools declared and gated but returning "not implemented" until D2.
+- `gateway/internal/config/config.go`: connector block only (defaults, ranges, unknown-key errors, publicOrigin required when enabled).
+- `gateway/internal/server/server.go`: five small hooks (struct field and construction, Listen, Serve, Shutdown, and one dispatch block for `_agmente/connector/*`).
+
+Spec choices (details in D-095): RFC 9728 and RFC 8414 served; PKCE S256 required; resource indicators bound; no dynamic registration and no client ID metadata documents (the spec makes both optional). The client registration choice is the owner probe's question.
+
+Tests
+- `gateway/test/connector.test.mjs`: 17 wire tests (routes, 404/405, Origin, bearer, default off, approve, deny, timeout, PKCE, resource, redirect, revoke, restart with 0600, scope, phone scope validation, --dry-run limits).
+- `gateway/test/connector-limits.test.mjs`: 4 wire tests (promptsPerHour, maxPromptBytes, scope before limits, audit never holds prompt text).
+- `gateway/test/connector-helpers.mjs`: shared helpers (not a test file).
+- `gateway/internal/connector/connector_test.go`: scope JSON and Allows, hourly window, turn slots, grants file mode and atomicity.
+- Mutation check: byToken with the hash comparison removed. The first run passed (the suite had no case of a wrong token while a grant existed), so I added that assertion; the mutated run then failed on it ("a wrong token is refused while a grant exists"), and the restored file passes 17 of 17.
+
+Results
+- `go vet ./...` clean; `go test ./...` all packages ok.
+- Connector wire tests: 17/17 and 4/4 pass.
+- scripts/check.sh (final run on commit a6f3b8d): exit 0, "All checks passed.", Node wire suite 277 pass, 0 fail. Log: results/d1-check-final.log.
+- Connector timeouts added after the earlier run: ReadTimeout 30 s, IdleTimeout 60 s on the public listener.
+- Load-sensitive tests: an earlier full run under a load average near 20 failed three tests (eventlog, gitchanged, lifecycle FR-24). The baseline build also fails gitchanged under the same load, and eventlog passes in isolation on both builds. The final run on a6f3b8d passed all 277. Not caused by D1.
+
+Not verified
+- The real Claude client: whether it can connect with no registration (owner probe, plan step 7.0).
+- Caddy forwarding and the public listener (G1).
+- The phone app side (E1), and the tool handlers (D2).
+- `connector` is not advertised in the initialize `extensions` list (not added; coordinator decides).
+
+Notes for the coordinator
+- C5 addition: each pending row also carries `redirectHost` so E1 can show where a code goes.
+- `gateway/node_modules` in the worktree is a symlink to the main checkout's (not committed, gitignored).
+- `main.go` is untouched: a bad connector value fails at config load, so `--dry-run` reports it.
+
+### 2026-11-07 E1 connector phone app (branch feat/e1-connector-app, D-097)
+- **Built against:** contract C5 with a fake transport. The gateway side (D1) was not used; no live gateway run.
+- **ACPClient package, connector tests (`swift test --filter GatewayConnector`):** 15 tests, 0 failures. Covers the five calls, scope encoding for "all" and one session, grant decoding (both scope shapes, last use), error mapping (code and text kept, disconnect, wrong answer shape).
+- **ACPClient package, full (`scripts/check.sh` run 2):** `ACPClientTests.xctest` 236 tests, 0 failures.
+- **Mutation check:** `GatewayConnectorScope.oneSession` changed to return `.allProjects` (one-session sends "all"). `swift test --filter GatewayConnector`: 5 failures, including `testApproveSendsOneProjectAndOneSessionAndReturnsTheGrantId` and `testOneSessionScopeIsOneProjectAndOneSession`. Restored; the file matches the committed version.
+  - The mutation is at the shared scope helper, not in the app model. The app test `ConnectorConnectionsTests.testOneSessionIsTheDefaultAndApproveSendsExactlyOneProjectAndOneSession` runs through the same helper, so it would also fail, but it was not run (see below).
+- **App build:** `xcodebuild build-for-testing` with `-derivedDataPath <scratchpad>/dd/e1-connector-app`, iPhone 17 simulator: TEST BUILD SUCCEEDED. No warnings from the new files.
+- **App tests:** `AgmenteTests/ConnectorConnectionsTests.swift`, 12 tests (pending code shown, time left, one-session default and send, picked session, all projects, no session to pick sends nothing, approved grant appears, deny, revoke, failed approve keeps row and says why, row answered here does not return, no gateway). Compiled, **not run**: the brief forbids `xcodebuild test` in this task. They run in the integration task.
+- **scripts/check.sh:**
+  - Run 1: EXIT 1. Two gateway wire tests failed under load from other tasks' suites running at the same time: `eventlog.test.mjs` "a permission request is logged as phones see it" (a two-second poll for the request) and `lifecycle.test.mjs` "FR-24" (closed with 1006). Both files were re-run alone: 11 of 11 pass (EXIT 0). The branch changes no gateway code.
+  - Run 2 (full, clean): **EXIT 0, "All checks passed."** Wire tests 256 pass, 0 fail. Dry run, secrets check, docs cross-check, and Swift packages (AgmenteTransport, ACPClient, AppServerClient) all pass.
+- **Not verified:** the screens on a simulator (layout, sheet presentation from the toolbar, the 5-second refresh). The toolbar button is in a sheet inside a toolbar item; not seen on screen.
+
+# F1 add-project review (D-091) RESULTS
+
+Branch `feat/f1-add-project-review`, from db08383. Decision D-099 is in `<scratchpad>/decisions/f1-add-project-review.md`.
+
+### Defects found and fixed (each with a failing test first)
+
+1. Gateway: the post-create check accepted a regular file at the new name, and registered it as a project. Test `TestFolderModeRefusesAFileThatReplacedTheNewFolder` (failed: no refusal).
+2. Gateway: `os.Chmod` followed a link placed at the new name, so a folder outside the roots went from 700 to 755. Test `TestFolderModeNeverChangesAFolderOutsideTheRoots` (failed: mode 755).
+3. Gateway: a parent swapped for a link after the check let the mkdir create a folder outside the roots (removed again a moment later). Test `TestAParentSwappedForALinkMakesNothingOutsideTheRoots` (failed: folder made outside the roots).
+4. Gateway: the rollback used `os.Remove`, which unlinks a file, so a file at the name was deleted when registration was refused. Test `TestRegistrationRefusalKeepsAFileAtTheName` (failed: file removed).
+5. Gateway: `_agmente/projects/roots` listed a root removed after start, and listed a root twice when configured twice. Tests `TestProjectRootsListsOnlyRootsThatStillExist` (Go) and the roots case in `gateway/test/create-folder.test.mjs` (failed: removed root listed).
+6. App: a refusal stayed on screen after the root was changed. Test `testChangingTheRootClearsAGatewayRefusal` (failed).
+7. App: a refusal for the name that was sent was shown after the name had been retyped while Create was in flight. Test `testARefusalThatArrivesAfterTheNameChangedIsNotShown` (failed).
+
+Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, removeOwnFolder, projectRoots); `Agmente/Fork/Gateway/GatewayNewProjectModel.swift` (selectedRoot didSet, sentName check).
+
+### Checked, no defect (one line each)
+
+- Guards that passed on the original code: rollback removes its own empty folder when registration is refused (`TestRegistrationRefusalRemovesTheFolderItMadeAndNothingElse`); a second Create during a Create is refused (`testASecondCreateWhileOneIsInFlightSendsNothing`).
+- Name rules: the app and the gateway run the same checks in the same order (empty, 64 bytes, leading dot, leading or trailing space, ASCII set); bytes are counted on both sides; dot, dot-dot, slash, backslash, NUL, Unicode and space edges agree.
+- Trailing dot (`site.`) is allowed on both sides; D-091 does not forbid it.
+- The umask cannot widen the mode: mkdir only removes bits and the chmod sets 0755 exactly (not tested under a changed umask).
+- Duplicates: a registered path is refused before the mkdir, so a folder deleted from disk is not made again; a case variant of a present folder is refused by the lstat on macOS.
+- Roots method is answered only to an authenticated client (existing test).
+- Sheet: Create is off while a create or a root load is in flight, so no double submit (the model guards it, and the sheet disables the button).
+
+### Not fixed
+
+- The racing duplicate (store UNIQUE after the pre-check) returns `-32602` without `data.projectId`; only the pre-check path carries it. The app does not read it. Left as is.
+- A swipe-down during a create is not blocked. The create completes and the home still refreshes. Left as is.
+- Filesystem and store failures return `-32603`, not `-32602` as D-091's "all" suggests. Kept, see D-099; coordinator to confirm.
+- Residual: a process that can write the parent can still move the open folder within milliseconds after the open (D-063 class). Not closed.
+
+### Verification
+
+- `go vet ./...` clean; `go test ./...` all packages ok (server package includes the 6 new Go tests).
+- `node --test test/create-folder.test.mjs`: 9 of 9 pass (was 9 before; the roots case now also checks a removed root).
+- App model tests: `AgmenteTests/GatewayNewProjectTests.swift` (now 14 model tests) cannot be run through `xcodebuild test` in this task, so they were run in a scratch SwiftPM package at `<scratchpad>/verify-f1` that links the real `GatewayNewProjectModel.swift` and a copy of the test file without the home-selection class: 2 failed before the fix, 14 of 14 pass after.
+- `xcodebuild build-for-testing` (scheme Agmente, iPhone 17 simulator, derived data under `<scratchpad>/dd/f1-add-project-review`): TEST BUILD SUCCEEDED.
+- `scripts/check.sh` in one run did not finish clean. Its wire-test step failed in two runs on different tests (`eventlog` permission request; `gitchanged` ignored file; then `lifecycle` FR-24 idle session). Each of those files passes alone (10/10, 6/6). A later full wire run (`npm test`, 256 tests) passed 256/256. The failing set moves from run to run, which points to timing under load. These files do not reach the folder or roots code. I did not prove they fail on db08383 too.
+- The rest of check.sh, run directly: gateway dry run ok; `scripts/check-docs.mjs` ok (48 tests, 45 FRs, 15 NFRs, 78 decisions); Swift packages AgmenteTransport (12, 1 skipped), ACPClient (221), AppServerClient (9) all pass; `go vet` clean.
+- Secret-scan step: the worktree has no `deploy/` folder, so grep exits 2 and check.sh's branch is skipped. `gateway/test/apns.test.mjs:319` holds a fake PEM marker from base db08383 that the scan would match. Not changed here.
+
+### G1 public exposure and deployment (2026-11-07, branch `feat/g1-deploy`)
+
+- **Done:** `deploy/Caddyfile.connector` (public connector site, six paths, 404 for the rest, no client certificate, `{$CONNECTOR_HOST}`, automatic public certificate); `deploy/launchd/dev.agmente.gateway.plist` (LaunchAgent template) and `deploy/launchd/dev.agmente.caddy.plist` (LaunchDaemon template, root for 443); `gateway/config.mac.example.json` (`connector` block, `enabled: false`); `docs/MAC-SETUP.md` section 13 (connector: DNS, 443 forward, owner steps, verify, turn off). Decision text in `scratchpad/decisions/g1-deploy.md` (D-098).
+- **Unchanged:** `deploy/Caddyfile` (phone block), `deploy/agmente-gateway.service`, `deploy/bob-project.Containerfile`, all other parts of `docs/MAC-SETUP.md`, `gateway/internal/**`, Swift files. Live Caddy and gateway were not touched.
+- **Verified on this Mac:**
+  - `caddy validate` (Caddy 2.11.9) on `deploy/Caddyfile.connector` with `CONNECTOR_HOST` set: `Valid configuration`.
+  - Route test with a test-only copy on ports 9080 and 8789 (scratchpad, not in repo): the six paths reach the upstream (200), and `/`, `/admin`, `/mcp/extra`, `/.well-known/oauth-protected-resource/mcp` and `/phone` return 404. The request carried no client certificate.
+  - Combined config (phone block plus top-level `import` of the connector file, with a dummy CA path): `Valid configuration`.
+  - `plutil -lint` on both plists: OK.
+  - `gateway/config.mac.example.json` parses with `JSON.parse`; `connector.enabled` is `false`.
+- **Not verified:**
+  - `caddy validate` of the unmodified `deploy/Caddyfile` fails here only because `/etc/caddy/agmente-client-ca.pem` does not exist on this Mac (it is an existing condition, not caused by this change).
+  - Public certificate issuance, DNS, and the 443 forward: not testable without the owner's domain. Port 80 optional (verify on first issue).
+  - Launchd install: templates only, not loaded.
+  - `scripts/check.sh`: not run (no Go or Swift change; the worktree has no `gateway/node_modules`).
+  - The gateway binary was not run against the example (as instructed).
+- **Gateway parser:** `gateway/internal/config` does not reject unknown top-level keys. The `connector` block is ignored on this branch, so the example loads; it does not enable anything until D-095 (D1) reads the block.
+- **Coordinator decisions:**
+  1. The repo `deploy/Caddyfile` (port 443, `127.0.0.1:8787`) does not match the plan's phone listener (`:8443` to `8788`). I left it unchanged as instructed. The integration should decide whether to update the example.
+  2. The suffixed metadata path `/.well-known/oauth-protected-resource/mcp` is not in the matcher list (404 at Caddy). D1 must make the gateway's `WWW-Authenticate` point at the root path, or the list must change.
+  3. `docs/MAC-SETUP.md` section 12 still says the deployment is not covered. Left as is (outside the new section).
+- **Commit:** `5973a57` on `feat/g1-deploy` (5 files, 233 insertions, no deletions).
+
+### I1 integration (feat/integration-2026-11-07): merge and post-merge fixes
+
+- **Merged:** A1, F1, G1, D1, B1, B2, E1 in that order, no-ff. Conflicts: none, so no resolution was needed. The contract spots (`GatewayHomeView.swift`, `ContentView.swift`, `server.go`, `gateway/internal/store`) merged cleanly; the E1 toolbar hook and the F1 New Project button both sit in `ContentView.swift`.
+- **Post-merge:** `_agmente/projects/list` now subscribes its socket to project state (note A1 item above). The metadata matcher has the path-suffixed form. The phone block is `:8443` to `127.0.0.1:8788`. The main Caddy example imports `Caddyfile.connector`. The secret-scan fixture in `apns.test.mjs` uses a neutral PEM label, and the parse branch is covered by a Go unit test. D-092 to D-095 and D-097 to D-099 are in `docs/DECISIONS.md`. The D2 decision is not written yet, so its number is absent there.
+- **Not run in this step:** the node wire suite, `xcodebuild`, and the full `swift test`. Those run in the quiet-machine check (I2). Notes items 8, 9, 14, 16, 25 and 35 are still open until then, and so is the FR-24 question.
+- **Open for I2:** the path-suffixed metadata form returns 404 from the gateway (the challenge names the root form, which is served). The connector's `/mcp` route, the phone `:8443` route and the Caddy `import` have not been run against a live Caddy.

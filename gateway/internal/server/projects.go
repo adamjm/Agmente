@@ -82,6 +82,7 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		if err != nil {
 			return nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
 		}
+		s.watchProjectStates(ctx, who.Conn, "") // C2: this socket is told the agent state of the projects it lists
 		out := make([]projectJSON, 0, len(projects))
 		for _, p := range projects {
 			out = append(out, toProjectJSON(p))

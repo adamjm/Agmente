@@ -254,12 +254,13 @@ Do not use `container inspect` or `container list --format json`. Both print env
 
 ## 12. Not covered
 
-- The deployment: Caddy, the launchd or systemd service, and the public address. See `deploy/` (`deploy/Caddyfile`, `deploy/agmente-gateway.service`).
+- The public connector's deployment (Caddy on 443, the launchd services, the public address). It is covered in section 13.
+- The phone listener's Caddy site (`deploy/Caddyfile`, :8443 to 127.0.0.1:8788) and the systemd unit (`deploy/agmente-gateway.service`). This guide does not cover them.
 - Push delivery and APNs. See `docs/PUSH-TESTING.md`.
 
 ## 13. Public connector (Claude remote access)
 
-The connector lets a Claude client reach the gateway from the internet (D-095, D-098). It is a second listener, separate from the phone's mutual-TLS listener. It is off by default (`connector.enabled` is `false` in `gateway/config.mac.example.json`). The gateway serves it on `127.0.0.1:8789` (`connector.port`). Caddy is the only public path to it, and Caddy forwards six paths only: the two `/.well-known/oauth-...` metadata paths, `/register`, `/authorize`, `/token` and `/mcp`. Everything else is 404.
+The connector lets a Claude client reach the gateway from the internet (D-095, D-098). It is a second listener, separate from the phone's mutual-TLS listener. It is off by default (`connector.enabled` is `false` in `gateway/config.mac.example.json`). The gateway serves it on `127.0.0.1:8789` (`connector.port`). Caddy is the only public path to it, and Caddy forwards seven paths only: the two `/.well-known/oauth-protected-resource` metadata paths (with and without the `/mcp` suffix), `/.well-known/oauth-authorization-server`, `/register`, `/authorize`, `/token` and `/mcp`. Everything else is 404.
 
 The connector site asks for no client certificate, because the Claude client cannot present one. Access depends on the grant that the phone approves at pairing, and on the gateway's limits. A grant can reach sessions that have `alwaysAllow` set, so a connector prompt can run tools there without a phone prompt. The owner accepted this trade-off. Each such turn is audited with `source: "claude"`, and the audit line never holds the prompt text.
 
@@ -305,7 +306,7 @@ Expected with the connector enabled: `200`. The request sends no client certific
 curl -sS -o /dev/null -w '%{http_code}\n' https://connector.your-domain.example/admin
 ```
 
-Expected: `404`. Any path outside the six listed above must give 404.
+Expected: `404`. Any path outside the seven listed above must give 404.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://connector.your-domain.example/mcp -d '{}'

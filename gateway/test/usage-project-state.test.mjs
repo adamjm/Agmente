@@ -104,3 +104,20 @@ test('a burst of agent restarts is rate limited to two notifications a second an
     await gw.stop();
   }
 });
+
+test('a socket that called _agmente/projects/list gets the state of the projects it listed', async () => {
+  const gw = await startGateway({ limits: { idleSeconds: 60 } });
+  try {
+    const ws = (await connect(gw.url, auth())).ws;
+    const feed = stateFeed(ws);
+    const { project } = (await rpc(ws, '_agmente/projects/create', { name: 'test', path: gw.dirs.project })).result;
+    await rpc(ws, '_agmente/projects/list', {}); // this socket now lists the projects, so it is told their state
+    await newSession(ws, gw);
+    await until(() => agents(feed).includes('running'), 'running');
+    assert.deepEqual(agents(feed), ['starting', 'running']);
+    assert.deepEqual(feed.map((n) => n.projectId), [project.id, project.id]);
+    ws.close();
+  } finally {
+    await gw.stop();
+  }
+});

@@ -17,7 +17,9 @@
 # The gateway listens on 127.0.0.1:8789 (connector.port in the config). It is the only upstream.
 
 {$CONNECTOR_HOST} {
-	@connector path /.well-known/oauth-protected-resource /.well-known/oauth-authorization-server /register /authorize /token /mcp
+	# The /mcp suffixed metadata path is forwarded for clients that look it up first. The gateway serves
+	# only the root form, which the WWW-Authenticate challenge names (D-095, notes item 2).
+	@connector path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server /register /authorize /token /mcp
 
 	handle @connector {
 		reverse_proxy 127.0.0.1:8789

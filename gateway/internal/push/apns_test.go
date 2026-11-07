@@ -144,6 +144,15 @@ func TestLoadKeyRefusesUnparsableAndWrongCurve(t *testing.T) {
 	if _, err := LoadKey(path); err == nil || strings.Contains(err.Error(), "not a key") {
 		t.Errorf("unparsable key: want a refusal without the file's bytes, got %v", err)
 	}
+	// A PKCS#8 PEM block whose body is not DER reaches the parse branch. (The wire test uses a
+	// neutral PEM label, so this is the only test of "cannot be parsed".)
+	bogus := filepath.Join(t.TempDir(), "bogus.p8")
+	if err := os.WriteFile(bogus, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("not der")}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadKey(bogus); err == nil || !strings.Contains(err.Error(), "cannot be parsed") || strings.Contains(err.Error(), "not der") {
+		t.Errorf("PKCS#8 label with a non-DER body: want a parse refusal without the bytes, got %v", err)
+	}
 	if _, err := LoadKey(filepath.Join(t.TempDir(), "missing.p8")); err == nil {
 		t.Error("a missing key must be refused")
 	}
