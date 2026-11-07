@@ -80,7 +80,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     @Published private(set) var agentInfo: AgentProfile?
     @Published private(set) var availableModes: [AgentModeOption] = []
     @Published private(set) var initializationSummary: String = "Not initialized"
-    
+    /// Why the last session create failed. The placeholder is gone by then, so the home shows this as an alert.
+    @Published private(set) var sessionCreateError: String?
+
     /// The default mode ID from the initialize response, applied to new sessions.
     private(set) var defaultModeId: String?
 
@@ -113,7 +115,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     // MARK: - Agmente gateway (D-026, D-028, D-029)
 
     /// Set from `initialize` when the server is the gateway.
-    private(set) var gatewayInfo: GatewayInfo?
+    @Published private(set) var gatewayInfo: GatewayInfo?
     /// Per session, the last gateway event applied (in memory only: a cold start replays from 0).
     private var gatewaySequences: [String: GatewaySequence] = [:]
     /// Per session, the text of the prompt this device just sent, until the gateway's event for it arrives.
@@ -133,8 +135,16 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         return true
     }
 
+    /// True once the initialize result has been applied (by `updateGatewayInfo`). Until then
+    /// `isGatewayServer` is only a guess, so no session/list is sent.
+    private(set) var hasAppliedInitializeResult = false
+
+    /// The gateway flag, or nil while it is not known yet.
+    private var gatewayFlagIfApplied: Bool? { hasAppliedInitializeResult ? isGatewayServer : nil }
+
     func updateGatewayInfo(_ info: GatewayInfo?) {
         gatewayInfo = info
+        hasAppliedInitializeResult = true
     }
 
     /// True when the server is the gateway and offers `_agmente/sessions/subscribe`. A gateway never
@@ -194,7 +204,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     weak var eventDelegate: ACPSessionEventDelegate?
     weak var storage: SessionStorage?
     private let getServiceClosure: () -> ACPService?
-    private let appendClosure: (String) -> Void
+    let appendClosure: (String) -> Void
     private let logWireClosure: (String, ACPWireMessage) -> Void
 
     /// Session-related caches
@@ -948,6 +958,11 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
     /// Create a new session.
     func sendNewSession(workingDirectory: String? = nil) {
+        // FR-26: a gateway session starts in a registered project. A blank path is never sent as "/".
+        if gatewayNewSessionBlocked(isGateway: isGatewayServer, selectedProjectPath: workingDirectory) {
+            appendClosure("Pick a project on the gateway to start a session.")
+            return
+        }
         let sanitizedCwd = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? sanitizeWorkingDirectory(workingDirectory!)
             : nil
@@ -983,7 +998,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                 self.pendingLocalSessionNewCwds[pendingId] = (self.pendingLocalSessionNewCwds[pendingId] == true) || newCwdAdded
                 let payload = ACPSessionCreatePayload(
                     workingDirectory: creationCwd,
-                    mcpServers: [],
+                    mcpServers: self.mcpServersForSession(),
                     meta: await gatewayStartMeta(forCwd: creationCwd)
                 )
 
@@ -1091,6 +1106,11 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         // ACP protocol has no archive operation; use deleteSession for local removal.
     }
 
+    /// The person has read the session-create failure.
+    func dismissSessionCreateError() {
+        sessionCreateError = nil
+    }
+
     /// Abort a pending session creation and clean up placeholder UI state.
     private func failPendingSessionCreation(placeholderId: String, errorMessage: String) {
         guard pendingLocalSessions.contains(placeholderId) else { return }
@@ -1101,6 +1121,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         }
 
         appendClosure("Failed to create session: \(errorMessage)")
+        // The placeholder is removed below, so its transcript cannot show this. The home shows it instead.
+        sessionCreateError = errorMessage
 
         // Reset in-flight creation bookkeeping so retries start clean.
         creatingSessionTasks[placeholderId]?.cancel()
@@ -1135,7 +1157,13 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     private func sendSessionList(service: ACPService) {
         Task { @MainActor in
             do {
-                let payload = ACPSessionListPayload(workingDirectory: effectiveWorkingDirectory(resolvedWorkingDirectory))
+                guard let payload = ACPSessionListPayload.forServerIfKnown(
+                    workingDirectory: effectiveWorkingDirectory(resolvedWorkingDirectory),
+                    isGateway: self.gatewayFlagIfApplied
+                ) else {
+                    self.startupLog("ServerViewModel.sendSessionList skipped: initialize result not applied serverId=\(self.id.uuidString)")
+                    return
+                }
                 self.startupLog(
                     "ServerViewModel.sendSessionList serverId=\(self.id.uuidString) cwd=\(payload.workingDirectory ?? "nil")"
                 )
@@ -1148,6 +1176,13 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
     /// Send session/list for all working directories.
     private func sendSessionListForAllWorkingDirectories(service: ACPService) {
+        // The cwd depends on the gateway flag, so no list goes out before the initialize result is applied.
+        // The response handler for initialize calls fetchSessionList again once it is.
+        guard hasAppliedInitializeResult else {
+            startupLog("ServerViewModel.sendSessionListForAllWorkingDirectories skipped: initialize result not applied serverId=\(id.uuidString)")
+            return
+        }
+
         // Guard against duplicate fetches
         guard pendingMultiCwdFetch == nil else {
             startupLog("ServerViewModel.sendSessionListForAllWorkingDirectories already pending serverId=\(id.uuidString)")
@@ -1179,7 +1214,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         for cwd in effectiveCwds {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let payload = ACPSessionListPayload(workingDirectory: cwd)
+                let payload = ACPSessionListPayload.forServer(workingDirectory: cwd, isGateway: self.isGatewayServer)
                 do {
                     _ = try await service.listSessions(payload)
                 } catch {
@@ -1350,7 +1385,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
                     let payload = ACPSessionCreatePayload(
                         workingDirectory: creationCwd,
-                        mcpServers: [],
+                        mcpServers: self.mcpServersForSession(),
                         meta: await gatewayStartMeta(forCwd: creationCwd)
                     )
 
@@ -1448,7 +1483,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                     let payload = ACPSessionResumePayload(
                         sessionId: sessionToResume,
                         workingDirectory: resumeCwd,
-                        mcpServers: []
+                        mcpServers: self.mcpServersForSession()
                     )
                     _ = try await service.resumeSession(payload)
                     connectionManager.markSessionMaterialized(sessionToResume)

@@ -160,6 +160,7 @@ final class SessionStorage {
             }
             try? keychain.deleteAll(serverId: id)
             try? identities.delete(serverId: id)
+            try? MCPServersModel.deleteStoredData(serverId: id)
         } catch {
         }
     }

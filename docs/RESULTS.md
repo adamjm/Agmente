@@ -1054,3 +1054,350 @@ Outcome: the image is dropped before ACP. FR-37 (phase 5 images from tool result
   - Behaviour on a device (the simulator does not enforce every WebKit policy in the same way).
   - Whether `ignore-previous-rules` behaves the same on every iOS version the app supports (checked on iOS 27.2 simulator only).
   - Whether a hostile page can make visible content look like a link that navigates (blocked links appear as text only, by design; not tested on screen).
+
+## 2026-11-07 Apple `container` spike, step 1 of the Podman to Apple migration (no gateway code changed)
+- **Setup:** `container` CLI 1.7.0 (`/opt/homebrew/bin/container`), macOS 27.0.1 arm64. `container system start`; default kernel `kata-static-4.3.1-arm64` installed with `container system kernel set --recommended` (downloaded from the kata-containers GitHub release, approved by the owner). Image: `podman save --format oci-archive` of `localhost/agmente-bob:2.0.9` (Bob 2.0.9), loaded with `container image load`. Scratch files were removed.
+- **Results (each run once, on this Mac):**
+  - Ownership: uid 10001 writes into a host `0700` home and a same-path project folder with `-u 10001:10001 -v P:P` and no `keep-id`. PASS. The host sees the files as the owner's user. The gate for stopping was not hit.
+  - Stdio: `run -i` passes a JSON line and a 2 MB stdin through, and exit codes propagate (`exit 7` gives 7). PASS.
+  - Name lock: a second `run --name` with a live name fails with `container with id ... already exists`, exit 1. PASS. The gateway must match this text, since there is no separate error code.
+  - Env passthrough: `-e NAME` inherits the value inside the container. A live `ps` scan found no process carrying the value. PASS.
+  - Start: warm `run --rm` about 1.1 to 1.3 s (5 runs). Stop with `-t 1` 1.4 s (default 5.4 s).
+  - Git: `container exec` into a running project container, `git status`: 0.21 s average over 10 calls. `run --rm` per call: 1.12 s average over 10 calls. This supports running git through `container exec`.
+  - Memory (host RSS of the VM processes, `ps`): Apple baseline 734 MiB (apiserver and helpers), +35 MiB per idle agent container, 909 MiB with 5. Podman libkrun VM 2833 MiB, unchanged with 5 containers. These are idle `sleep` containers only; real Bob sessions are not measured.
+- **Findings:**
+  - `container inspect` prints the value of an `-e NAME` passthrough variable. The gateway must never call `inspect`. Podman's behaviour is not checked yet.
+  - Progress lines go to the output stream. Use `--progress none` on every `run`/`exec`.
+  - The first start of a fresh image takes about 15 s (init image download). Warm starts are fast.
+- **Not verified:** real Bob over stdio in the container; the `containerNeverStarted` flake (exit 126) does not apply, so whether Apple has an equivalent is unknown; memory under real Bob load; Apple's behaviour after `container system` restarts; concurrent starts with the same name.
+- **Check:** `scripts/check.sh` → All checks passed (no repo code changed).
+
+## 2026-11-07 Apple runner in the gateway, step 2 of the migration (D-079)
+- **Done:** `gateway/internal/server/runner_apple.go` (agent start with a listing wait, git through `container exec` into the running agent, one-off `run --rm --network none` git when no agent is up, liveness by `container list --quiet`), `runner.go` (`newRunner` picks `apple`), `config.go` (`runner.kind: "apple"`, `runner.container` absolute path, error text lists all three kinds), new tests `runner_apple_test.go` and `test/runner-apple.test.mjs`.
+- **Checks:**
+  - `go test ./internal/server/ -run 'Apple|NewRunnerPicksAppleByKind' -v` → 5 PASS (the secret stays off the command line; no `keep-id`; default and overridden `-u`; exec targets the agent container with the git environment only; the fallback has `--network none`).
+  - `node --test test/runner-apple.test.mjs test/runner-user.test.mjs` → 6 PASS.
+  - `scripts/check.sh` → All checks passed (exit 0).
+- **Not verified yet:** the running paths. `start`, `exec` and the fallback were not run against a container; no fake `container` binary exists yet (migration step 3). Live Bob through the Apple runner: not run (step 4). The timeout gap in D-079 is untested.
+- **Changed files:** `gateway/internal/server/runner_apple.go`, `gateway/internal/server/runner_apple_test.go`, `gateway/internal/server/runner.go`, `gateway/internal/config/config.go`, `gateway/test/runner-apple.test.mjs`, `docs/DECISIONS.md` (D-079), `docs/RESULTS.md`.
+
+## 2026-11-07 Apple runner, step 3: fake CLI, lifecycle on both runners, timeout cleanup, real Bob benchmark (D-080)
+- **Fake CLI:** `gateway/test/fixtures/fake-container.mjs` implements `run`, `exec`, `list --quiet` and `delete --force` the way the apple runner calls them. It refuses a second container with a name in use, logs `start`/`exit`/`refused`/`exec`/`killed` with the arguments, and models two things Apple's CLI does not do for us: an exec'd child survives the CLI being killed (detached), and `/proc` is answered by the fake because this Mac has none.
+- **Tests (all in `npm test`, which the gate runs):**
+  - `lifecycle-apple.test.mjs` runs the six T-46 and FR-24 cases of `lifecycle.test.mjs` on the apple runner: 6 PASS. The podman file is unchanged in behaviour.
+  - `apple-runner.test.mjs`: git goes through `exec` when a session holds the agent up (`exec` with `argv0` git, no one-off container); with no agent, one-off containers with `--network none` and `--entrypoint git` (3 starts, one per git command of status); a hung git call returns `git timeout`, and the cleanup kills the same process the exec started, which is gone within 2 s. 3 PASS.
+  - Mutation check: the cleanup hook disabled → "killed inside the container" fails (the output pipe then stays open for 30 s, as expected). Restored, and the file was checked after restore.
+  - Found and fixed while testing: a fake that fell through to its "unsupported command" exit; the git shim not receiving `FAKE_CONTAINER_GIT`; the cleanup running after the pipe closed (fixed in `runCapped`, D-080).
+- **Gate:** `scripts/check.sh` → All checks passed; wire suite 199 pass, 0 fail.
+- **Benchmark (real Bob 2.0.9, same image, `gateway/scripts/bench-start.mjs`, 5 runs each, machine 2 CPUs, ms from the start command, median / max):**
+
+  | Step | Apple container (`--dns 1.1.1.1`) | Podman |
+  | --- | --- | --- |
+  | initialize | 1949 / 2881 | 1138 / 1534 |
+  | session/load + replay | 2469 / 3358 | 1735 / 2005 |
+  | session/new | 3254 / 4156 | 2725 / 2936 |
+  | stop | 214 / 306 | 274 / 291 |
+
+  Replay: 3 updates per load on both. The same-name lock refuses a second container on both.
+- **Memory on the host (RSS, one idle Bob container with its session loaded):** Apple adds 829 MiB (a Virtualization VM process of 794 MiB and a helper of 35 MiB). Podman's machine VM (krunkit, 2835 MiB before any container) adds 31 MiB for the `podman run` process. An unrelated 11.9 GB Virtualization process was already running on this Mac during the Apple run and is not counted.
+- **Git calls (step 2 numbers, unchanged):** `exec` 0.21 s against `run --rm` 1.12 s.
+- **Verdict for the premise:** Apple is not lighter for Bob here: slower to start, and about 26 times the marginal memory per container. Its advantage is a smaller fixed baseline (about 0.7 GB runtime, against 2.8 GB for the Podman VM), so it is lighter for one or two projects only. Crossover is near three Bob containers, from these two numbers, not measured beyond one.
+- **Not verified:** more than one Bob container at once; memory after a long turn; whether Apple's per-container memory falls with a lower VM memory limit or a smaller image (both untested); the NFR-15 target (3 s p95 cold load): Apple's worst load in this run was 3.36 s, Podman's 2.0 s, which is too few runs to call a p95.
+- **Changed files:** `gateway/internal/server/runner_apple.go`, `gateway/internal/server/runner_apple_test.go`, `gateway/internal/server/gitexec.go` (runCapped kill hooks), `gateway/internal/config/config.go` (`runner.dns`), `gateway/test/fixtures/fake-container.mjs`, `gateway/test/lifecycle.test.mjs`, `gateway/test/lifecycle-apple.test.mjs`, `gateway/test/apple-runner.test.mjs`, `gateway/test/runner-apple.test.mjs`, `gateway/scripts/bench-start.mjs`, `docs/DECISIONS.md` (D-080), `docs/RESULTS.md`.
+
+## 2026-11-07 Concurrent Bob sessions, and the Apple runner live (D-080 follow-up; the Mac runner decision)
+- **Concurrency benchmark:** `gateway/scripts/bench-concurrent.mjs` starts N containers at once, each with its own home and project folder, loads its session, and sends one prompt. Real Bob 2.0.9, same image, Apple with `--dns 1.1.1.1`, Podman with the gateway's flags. Memory is host RSS added while the containers run.
+  Apple (summary):
+```
+N=1: 1/1 loaded; load median 2392 ms max 2392; turn median 1226 ms max 1226; host runtime +821 MiB (new processes 821 MiB in 2); runtime total 13317 MiB
+N=2: 2/2 loaded; load median 3272 ms max 3347; turn median 1075 ms max 1076; host runtime +1641 MiB (new processes 1641 MiB in 4); runtime total 14136 MiB
+N=4: 4/4 loaded; load median 5001 ms max 5155; turn median 1020 ms max 1062; host runtime +3300 MiB (new processes 3300 MiB in 8); runtime total 15796 MiB
+N=8: 8/8 loaded; load median 9171 ms max 9418; turn median 1147 ms max 2002; host runtime +6205 MiB (new processes 6590 MiB in 16); runtime total 18701 MiB
+```
+  Podman (summary; N=1 and N=2 from the first run, N=4 and N=8 from separate runs):
+```
+N=1: 1/1 loaded; load median 1664 ms max 1664; turn median 1049 ms max 1049; host runtime +31 MiB (new processes 31 MiB in 1); runtime total 2869 MiB
+N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; host runtime +168 MiB (new processes 61 MiB in 2); runtime total 3007 MiB
+/private/tmp/claude-501/-Users-adammakarucha-Documents-Projects-remote-bob-app/2ec9b346-d503-4f54-bac3-57aae2af3df9/scratchpad/conc-podman-8.log:N=8: 8/8 loaded; load median 5094 ms max 5269; turn median 1243 ms max 2413; host runtime +252 MiB (new processes 243 MiB in 8); runtime total 4277 MiB
+/private/tmp/claude-501/-Users-adammakarucha-Documents-Projects-remote-bob-app/2ec9b346-d503-4f54-bac3-57aae2af3df9/scratchpad/conc-podman-4.log:N=4: 4/4 loaded; load median 3140 ms max 3169; turn median 1014 ms max 2090; host runtime +452 MiB (new processes 122 MiB in 4); runtime total 3759 MiB
+```
+- **Reading:**
+  - Apple: memory grows about 800 MiB per container, linearly. Load time grows with N: median 2.4 s at N=1, 9.2 s at N=8, so the containers' starts are serialised or contend for the host.
+  - Podman: the VM is fixed at 3.8 GiB, and its RSS was 2.8 GB before any container. The VM ran eight Bob sessions with no failures, with its runtime total at 4.3 GB. Measured growth was much smaller than Apple's, about 30 to 250 MB for the containers, so the two runtimes do not grow at the same rate in these measurements. The Podman measurement is host RSS of the VM process; guest memory not reflected there is not measured.
+  - The first Podman series stopped printing after N=2 and was stuck with idle containers. A later N=4 run completed, and a background N=8 run completed. The cause of the stuck run is not confirmed.
+- **Live Bob through the gateway on Apple:** `node gateway/scripts/live-bob.mjs --runner apple --dns 1.1.1.1` → SUMMARY apple: 24/24 passed (the same 24 checks as the host and Podman runs: turns, reopen, T-18 resubscribe, approvals, git status and turn diff, idle stop and reload).
+- **Decision:** the owner chose the Apple container model for the Mac (2026-11-07), because Podman needs a VM sized in advance and it is at its limit. The Apple runner is the Mac option; Podman remains for Linux.
+- **Changed files:** `gateway/scripts/bench-concurrent.mjs` (new), `gateway/scripts/live-bob.mjs` (`--runner apple`, `--dns`), `docs/RESULTS.md`.
+
+## 2026-11-07 Apple runner live with the Mac's resolver (D-081)
+- **Change:** `gateway/scripts/live-bob.mjs --runner apple` now takes its `runner.dns` from the Mac's first IPv4 nameserver in `scutil --dns` when `--dns` is not given. Apple's default resolver (192.168.64.1) did not answer from inside a container. Public `1.1.1.1` works but sends lookups to a third party, so it is no longer the default.
+- **Command:** `node gateway/scripts/live-bob.mjs --runner apple` (resolver 192.168.86.1 on this Mac).
+- **Result:** `SUMMARY apple: 24/24 passed`, exit 0. Same 24 checks as the earlier Apple run with `--dns 1.1.1.1` (turns, reopen, resubscribe, approvals, git status and turn diff, idle stop and reload).
+- **Not verified:** other networks (the resolver address is network-specific; a deployment sets `runner.dns`); more than one Bob container under the live harness (see the concurrency entry above).
+- **Changed files:** `gateway/scripts/live-bob.mjs`, `docs/DECISIONS.md` (D-081), `docs/RESULTS.md`.
+
+## 2026-11-07 Migration step 5: Mac config, setup guide, spec notes
+- **Done:** `gateway/config.mac.example.json` (kind `apple`, full image name, `container` path, placeholder `dns`); `docs/MAC-SETUP.md` (setup on a Mac, with a **verify** mark on each step not confirmed in the records); `docs/SPEC.md` 6.3, 9 and NFR-15; `docs/ARCHITECTURE.md` section 1 (agent control and project runtime rows); D-082.
+- **Dry run:** the Mac example, with paths moved to a temporary folder and `dns` set to the Mac's resolver, runs `agmente-gateway --config <file> --dry-run` → `Config OK (dry run)`, exit 0.
+- **Check:** `scripts/check.sh` → All checks passed (log: scratchpad `check-step5.log`).
+- **Not verified:** the setup guide's **verify** steps (podman build of the image, `container system status`, `container image list`, cleanup of the archive). The guide was not run end to end on a fresh Mac.
+- **Changed files:** `gateway/config.mac.example.json`, `docs/MAC-SETUP.md`, `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` (D-081 wording, D-082), `docs/RESULTS.md`.
+
+## 2026-11-07 Q-2 follow-up: MCP content types over ACP (T-39)
+- **Question:** does Bob 2.0.9 forward image, resource or resource_link content from MCP tool results over ACP?
+- **Command:** probe harness copy (in the session scratchpad, not in the repo) with `--only q2r --raw`, a stdio MCP server (`mcp-content-server.mjs`, four tools, one call each). Raw output: scratchpad `probe-resource-run2.log`. BOB_API_KEY was present in `.env` (checked by name only).
+- **Result:** Bob 2.0.9 forwards text only.
+  - image only: one text block, "returned 1 image." No image block.
+  - embedded resource (blob): text with URI, MIME type and length; the blob is not sent.
+  - resource_link: text with URI and MIME type; no resource_link block.
+  - two images: text only; both images dropped without a note.
+  - Bob stderr was empty.
+- **Earlier result (same day, runs 2 and 3):** `[text, image/png]` gives text only (F-22).
+- **Verdict:** T-39 recorded. No image, resource or resource_link block reaches ACP from stdio MCP tools. FR-37 rendering still applies to agent-native image blocks.
+- **Not tested:** HTTP MCP servers; replay after `session/load`; the gateway path (Bob was run directly over stdio).
+- **Changed files:** `docs/SPEC.md` (F-22), `docs/PLAN.md` (5.5 ticked), `docs/RESULTS.md`.
+
+## 2026-11-07 Mac setup guide verified; test temp folders cleaned
+- **Guide checks on this Mac:** `container --version` → 1.7.0; `container system status` → running; `container image list` → `localhost/agmente-bob 2.0.9` present; `podman build -t agmente-bob:2.0.9 -f deploy/bob-project.Containerfile deploy` → exit 0 (the podman machine was running); the archive save and removal → confirmed on a scratch copy. The verify markers for these steps are removed in `docs/MAC-SETUP.md`.
+- **Not confirmed:** the 401 for a short image name (needs a pull from docker.io, not run). Its marker is kept.
+- **Not run:** `container system kernel set` (changes the kernel; not requested).
+- **Note:** the Apple store holds the image from an earlier load (digest ba754796892d). The new podman build was not loaded into it.
+- **Temp folders:** 912 `agmente-*` test folders in `/var/folders/s9/p3mf8wns41b9c7t5grkl4d5w0000gn/T/` (owner uid 501, modified 2026-11-06 to 2026-11-07) were deleted; 0 failed. Six were kept because each has a `.git` at depth 3 and looks like a gateway test fixture: `agmente-gw-GDddZH`, `-GJrQhr`, `-UxXXjF`, `-e85JJo`, `-n3qHRt`, `-vkd64O`. The owner decides whether they go.
+- **Changed files:** `docs/MAC-SETUP.md` (six verify markers removed), `docs/RESULTS.md`.
+
+## 2026-11-07 Probe P2: does Bob persist an MCP HTTP header value?
+- **Question:** if a client sends an HTTP MCP server with an auth header in `session/new` `mcpServers`, does Bob write the header value to disk in its home, or to its process output?
+- **Method:** a local HTTP MCP server on 127.0.0.1 that accepts only `Authorization: Bearer <marker>`; one new session that calls the tool, then a resumed session in a new Bob process with the same HOME; a control HOME where the server needs no auth. Search of every file under HOME (`grep -rIl`, `grep -ral`, `strings`) and of Bob's stdout and stderr. Driver and logs in the session scratchpad under `p2/`. `BOB_LOG_LEVEL=debug`.
+- **Result:** the marker was found in no file under HOME, in either run, and in no Bob output. The tool call succeeded in both runs (the server logged the header on each `tools/call`). Positive control: the marker was found in the server's own log and in a sqlite blob, so the search works. bob.db records the tool name and result, not the header.
+- **Verdict:** Bob 2.0.9 does not persist the header value at debug log level. Decision 2 (headers may leave the device, held in gateway memory) holds for this check.
+- **Not run:** the default log level; a wrong-header (401) path; a container runner; persistence outside HOME.
+
+## 2026-11-07 Probe P4: can the gateway write Bob's skill and MCP files from the host while a container runs?
+- **Method:** a long-running container per runner (`--entrypoint sleep`, user 10001:10001, the project folder and HOME mounted at their host paths). The host writes a skill file and an `mcp.json`, in place and by atomic rename, and the container polls until the new content shows. Also checked the reverse (a container-created file on the host) and the read and write permissions in both directions. Logs in the session scratchpad under `p4/`.
+- **Apple container 1.7.0:** host writes visible in the container in about 0.2 s (in place or new) and about 1.0 to 1.2 s (atomic rename). Container writes visible on the host at once. The container user can read and write both folders. Files show as owned by the container user inside.
+- **Podman 5.6.2 (keep-id 10001):** host writes visible in about 0.4 s; atomic rename in about 4.6 to 5.5 s. Container writes visible on the host at once. Container-created files are 0600 on the host and 0644 inside, with group 65534 inside.
+- **Verdict:** yes. The gateway can write these files from the host while a container runs, with no exec. Atomic replace is slow on Podman, so a new config can show stale content for several seconds there.
+- **Not run:** Bob's own pickup of a changed file (only the file contents were checked); the real `bob acp` process instead of `sleep`; a container path where the mount root is owned by root (seen once in a repeat, not tested for writes).
+
+## 2026-11-07 Probes P1 and P3: `disabled` and `alwaysAllow` in MCP config (Bob 2.0.9)
+- **Method:** a local HTTP MCP server with one tool, `marker_tool`, returning MARKER-OK. Fresh HOME and a project marked as trusted for each case. Prompt: "Call the tool marker_tool and tell me its exact output." P1 approved the tool once; P3 rejected every permission request. Raw logs in the session scratchpad under `p13/`.
+- **P1a, home `disabled: true`, new session:** no server request; Bob says no such tool exists. The disabled server is absent. (T-40, new-session part.)
+- **P1b, home `disabled: false`, new session:** the server is connected at session/new and the tool runs (MARKER-OK).
+- **P1c, turn 1 ok, then `disabled: true` on disk, same-process resume with an empty list:** the server is not contacted and the tool fails with "Tool does not exist." Disabling on disk takes effect on resume.
+- **P1d, same as P1c in a new Bob process:** same result.
+- **P1e, `disabled: true` on disk, resume with the server in the session list:** the server is connected and the tool runs. A session-list entry overrides `disabled: true` on disk in the same process.
+- **P3a, `alwaysAllow: ["marker_tool"]` in the repo `.bob/mcp.json`:** no permission request; the tool runs. Control P1b (no `alwaysAllow`) does get a request.
+- **P3b, same in the home file:** same result.
+- **P3c, the repo file and the session list both name server `marker`, with different URLs:** the repo file's URL is contacted; the session entry's URL is not. Bob keys servers by name.
+- **P3d, different names in the repo file and the session list:** both servers connect and both tools are offered.
+- **Verdicts:** `disabled` works on new sessions and on resumes. `alwaysAllow` in any `mcp.json` (repo or home) skips the approval prompt for those tools, which is the case decision 4 concerns. Every run set the trust entry, so the repo-file case is not shown without trust.
+- **Not run:** an untrusted project folder (every case set the trust entry); P1e in a new Bob process; re-enabling a disabled server on resume.
+
+## 2026-11-07 Probes P5 and P6: elicitation shape (inconclusive) and skill limits (Bob 2.0.9)
+- **P5, elicitation: not reached on the wire.** `bob acp` without `--accept-license`, with `elicitation.form` in the client capabilities, did not send the licence form in any run (decline, cancel and accept answers, with and without the key, and with the form and url capabilities). With no key, session/new failed with `-32000 "Authentication required"`. With the key, the session ran and a tool prompt arrived as `session/request_permission`; no tool-input elicitation was seen.
+  - Why: the source (`bob.js`, `runPrompt`, `askLicenseConsent`) skips the form when `licenseConsent` is set or the profile has `is_internal === true`. The profile call returned 200 with the key. The account is probably internal, but this is not confirmed (verify).
+  - Shape, from the ACP SDK copy in the npx cache (not the repo's pinned spec, verify): method `elicitation/create`; params `{sessionId, toolCallId?, mode: "form", message, requestedSchema: {type: "object", properties, required}}`; response `{action: accept|decline|cancel, content?}`. Bob's bundle matches it.
+  - **Not run:** the 60 s no-answer timeout; any real licence accept (blocked by the skip above).
+- **P6, skill limits:**
+  - Name rule (source): the directory name must be lowercase kebab-case, at most 64 characters (`/^[a-z0-9]+(-[a-z0-9]+)*$/`, length ≤ 64). Invalid directories are skipped silently. The frontmatter `name` is ignored; the directory name wins.
+  - No size cap in the loader (source).
+  - Live: a valid 64-character name appears; a 65-character name and `Bad_Name` do not; a 71,680-byte body (70 KiB) appears; a control skill appears. No warning on stderr.
+  - The 64 KiB cap is therefore the gateway's own rule (decision 8), not Bob's.
+- **Changed files:** `docs/RESULTS.md` only.
+
+## 2026-11-07 Phase 6A build: MCP guard, MCP config, skills (wire and Go)
+- **Built:** `gateway/internal/server/mcp_guard.go` (phone MCP list validation; alwaysAllow refused, D-086; stdio and HTTP entries; kept per live session, D-088); `gateway/internal/server/mcp.go` and `gateway/internal/mcpconf/` (list and disable in the project and home `mcp.json`, D-084, D-085); `gateway/internal/server/skills.go` (project skills list, put and delete, D-087). Routes wired in `handleExtension` (`projects.go`).
+- **Go:** `go build`, `go vet ./...` and `go test ./...` pass (all packages).
+- **Wire:** `npm test --prefix gateway` → 230 tests, 230 pass, 0 fail (including `mcp-guard`, `mcp-config` and `skills` suites).
+- **Mutations (earlier, by the guard agent):** alwaysAllow refusal removed → its wire test fails; own reload sending `[]` → three reload tests fail. Both restored.
+- **Deviations from the plan (to reconcile in D-088):** the kept MCP list is not dropped when the agent process exits (restart and idle reloads need it); it is dropped when the phone closes or deletes the session, and when the gateway stops. A phone `session/resume` updates the kept list, but Bob sees it only on the next reload or `session/new` (F3). `mcp/set` requires `projectId`. Transport labels are inferred from the entry keys, not checked against Bob (verify).
+- **Not done:** the live check against Bob (6A.4), and `scripts/check.sh` (app and gateway gate).
+
+## 2026-11-07 Phase 6A live check: T-40 (new-session part) through the gateway, real Bob 2.0.9
+- **Method:** host runner; project created through `_agmente/projects/create`; the home `mcp.json` written at the project's home path with one HTTP marker server (`marker_tool` → MARKER-OK) enabled; `_agmente/mcp/set` used to toggle it; new `session/new` per case; prompt "Call the tool marker_tool and tell me its exact output." Scratch under `live6a/`.
+- **Case A (`disabled: true`):** no request reached the marker server (0 lines); Bob said no such tool exists; no tool call or permission request. Prompt ended `end_turn`.
+- **Case B (`disabled: false`):** the server was connected (14 requests) and the tool ran; Bob answered MARKER-OK. The test client allowed that one request.
+- **Verdict:** T-40 new-session part passes in both directions. Bob reads the home file per session: case B reused the running Bob process and still loaded the server.
+- **Not run:** the container path (P4 covers the file visibility); resume or load of a session after a changed list (the Q-3 gap); the apple and podman runners.
+- **Note:** the audit logged `snapshot_failed` twice, because the scratch project is not a git repository. Not investigated; it did not affect the result.
+
+## 2026-11-07 Phase 6A gate after D-089 and the T-37 fix
+- **Gate:** `scripts/check.sh` → All checks passed (exit 0). Wire suite 232 of 232 pass (log: scratchpad `gate/check-d089.log`).
+- **D-089:** the phone may send `alwaysAllow` (session list and `_agmente/mcp/set`); shape limits: array of at most 64 non-empty names, each at most 128 characters; explicit null refused. Wire test (b) now expects acceptance; the unit and wire tests that expected a refusal were updated, each for D-089 (listed in the agent's report, scratch `backup-d089/` holds the originals).
+- **T-37 test race (files.test.mjs):** the earlier gate failure was a timing race in the test: audit lines arrive on stderr, and the test read them right after the RPC response. Fixed by waiting for the same predicate (`waitForAudit`) before each positive assertion; expected values unchanged. 5 of 5 runs of the file pass. Remaining risk: negative checks (asserting absence) cannot wait; they are listed in the agent's report.
+- **6A live check (T-40, new-session part):** passed (entry above). Still open for 6A.4: the container path (P4 shows file visibility) and the resume and load of a session after a changed list (the Q-3 gap).
+- **Changed files:** `gateway/internal/server/mcp_guard.go`, `mcp.go`, `mcp_guard_test.go`, `mcp_test.go`, `gateway/internal/mcpconf/mcpconf.go` and its test, `gateway/test/mcp-guard.test.mjs`, `gateway/test/mcp-config.test.mjs`, `gateway/test/files.test.mjs`; `docs/DECISIONS.md` (D-089), `CLAUDE.md` (approval rule exception), `docs/RESULTS.md`.
+
+## 2026-11-07 Phase 6A: Q-3 resume case observed; Apple container check not run
+- **Q-3 (resume after a changed list), host runner, real Bob 2.0.9:** an enabled marker entry (home file and session list); turn 1 ran the tool; then `_agmente/mcp/set disabled: true`. Bob reconnected the marker once within 4 s of the file change (the live session kept it). Then:
+  - (i) `session/resume` with `mcpServers: []`: 0 marker requests; the gateway answered it from its cache (D-029, audit `reopen_answered`); the next prompt still ran the tool (MARKER-OK).
+  - (ii) `session/resume` with the entry as before: 0 marker requests; cache answer; the tool still ran.
+  - **Verdict:** on a live session with earlier turns, a changed list and `disabled` do not reach Bob until a new session or an idle reload (F3). The reload path is not covered by this run.
+- **Apple container check: not run.** A new session through the Apple runner failed with `initialize_timeout` when the gateway's home sat under the scratch folder in `/private/tmp` (uid 10001, 501:20 and 0:0 all failed; the image, DNS and stdin were fine). An earlier Apple run that passed used a home under the user's home folder. Cause not confirmed; to retry with a home outside `/private/tmp`.
+- **6A.4:** not recorded as passed. The host new-session part (T-40) passed earlier; the resume case is observed; the container path is open.
+
+## 2026-11-07 Phase 6A: Apple container path (T-40, container part) passes
+- **Setup:** Apple runner through the gateway; home and project folders under the user's home folder; DNS = the Mac's resolver (192.168.86.1); the marker server on the Mac's LAN address, not loopback.
+- **Case A (marker disabled):** session/new ok; the turn ended; 0 marker requests; Bob said `marker_tool` is not available.
+- **Case B (marker enabled):** session/new ok; 3 `tools/list` and 1 `tools/call`; one permission (allowed once); the tool returned MARKER-OK; Bob reported it.
+- **Findings:**
+  1. A container cannot reach the Mac's loopback. An HTTP MCP server for a container-run agent must listen on an address the container can reach (the LAN address here). This matters for Phase 6 setup and the docs.
+  2. The earlier `initialize_timeout` was not reproduced. The earlier helper passed `bob` as the first argument of the agent command, while the image entrypoint is already `bob`, so the command ran as `bob bob acp`. That is the likely cause. The `/private/tmp` location was not shown to matter (not tested as a control).
+- **6A status:** the gateway build, Go and wire suites, the gate, the T-40 new-session part on the host runner and on the Apple runner, and the Q-3 resume case are all recorded. 6A can be recorded as passed, with the reload path (idle stop) not covered by a live run.
+
+## 2026-11-07 Phase 6B app side: built and tested (not yet wired)
+- **Built:** `Agmente/Security/MCPHeaderStore.swift` (header and env values in the Keychain, keyed by entry id; mode kSecAttrAccessibleWhenUnlockedThisDeviceOnly); `Agmente/Fork/MCP/` (`MCPServerEntry`, `MCPServersModel` with a JSON file holding names only, `MCPServersView`, payload builder `mcpServersPayload(for:)`); `Agmente/Fork/Skills/` (`SkillsModel` with the name and 64 KiB checks before any request, `SkillsEditorView`, `SkillBiometricGate` with `.deviceOwnerAuthenticationWithBiometrics`); `Info.plist` gained `NSFaceIDUsageDescription`.
+- **Tests:** `xcodebuild … test` (iPhone 17 simulator) → TEST SUCCEEDED; XCTest 257 with 0 failures; Swift Testing 61 in 8 suites passed; UI tests passed on re-run (one launch problem in the first run). The app tests added: header store 6, MCP 19, skills 10. A first-run failure in a test I wrote was corrected: an unconfirmed stdio entry is refused on save (the design); the test now checks that. Log: `scratchpad/app6b/xcodebuild-test-2.log`. `scripts/check.sh` → passed.
+- **Not done:** the `ServerViewModel` wiring at the three `mcpServers: []` call sites; the `SessionStorage.deleteServer` header hook; Face ID on a device (the simulator cannot match it; BLOCKED for device run); editing an existing skill needs its content, which the gateway's list does not return (overwrite only, for now).
+- **Decisions taken on the recommendations (non-destructive):** headers and env values in the Keychain; stdio args in the JSON file (must not hold secrets; the warning says so); biometrics only for the skill save gate; `alwaysAllow` settable from the phone (D-089) with a warning in the editor.
+
+## 2026-11-07 Phase 6B wired; full gate passes
+- **App wiring:** the three `mcpServers` call sites in `ServerViewModel.swift` use `mcpServersForSession()` (gateway servers only; plain ACP servers still send `[]`); HTTP entries only when the agent advertises `mcpCapabilities.http`. The capability is now parsed (both initialize parsers). `SessionStorage.deleteServer` removes the server's MCP entries and header values.
+- **App tests:** `xcodebuild … test` (iPhone 17) → TEST SUCCEEDED; unit tests 262, 0 failures; UI 2 passed, 1 skipped (pre-existing). New wiring tests: plain server sends `[]`; gateway server sends the enabled HTTP entry; no HTTP without the capability; disabled entries not sent; delete removes entries and header values.
+- **Gateway:** `_agmente/skills/read` added (content read for the editor); its tests are in the gate.
+- **Gate:** `scripts/check.sh` → All checks passed; wire suite 235 of 235 (log: scratchpad `gate/check-6b.log`).
+- **Note:** the gateway accepts `https` to any host for MCP URLs and `http` only to loopback; the app's HTTP entries follow the same rule, so an `https` server on the LAN is allowed.
+- **Still open for 6B:** Face ID on a device (BLOCKED: needs a device run); the three call sites have no direct test (the function they call is tested); the `mcpCapabilities.http` parse has no unit test; no live end-to-end check of the app's MCP list against the gateway.
+
+## 2026-11-07 T-35 (Bob without BOB_API_KEY): gateway and app mapping (partial)
+- **Live (real Bob 2.0.9, host runner, key absent from the environment):** session/new → the phone receives `{"code":-32000,"message":"Authentication required"}`, no data. Two runs: 3374 ms and 3142 ms, including the agent's cold start.
+- **Gateway:** passes the agent's error object unchanged (supervisor.go `agentResponse`; only the id is replaced).
+- **App:** already maps it to the auth text (`ACPClient/.../ACP/AgentErrorText.swift`, decided in D-072), used at `Agmente/ServerViewModel.swift` (create, prompt, load, resume, delete paths).
+- **Not done:** a wire test (the fake agent has no failing session/new option; a test with an inline agent is possible); an on-screen check on the simulator with the no-key gateway.
+- **T-35 status:** Partial until the on-screen check is recorded.
+
+## 2026-11-07 Phase 6C: gateway relay (6C.2) and app form (6C.3) built; live T-45 open
+- **6C.2 gateway:** elicitation relay and answer (D-090). Node `elicitation.test.mjs` 6 of 6 pass (written before the code: all failed). Mutation (timeout sends accept) makes the timeout test fail; restored. Go build, vet and tests pass. The initialize now advertises `clientCapabilities.elicitation.form` to the agent only.
+- **6C.3 app:** `Agmente/Fork/Elicitation/` (request parser, form model, inbox, view, routing) and `ACPClient/.../GatewayElicitation.swift`; hooks at `AppViewModel.swift:215`, `Fork/Gateway/AppViewModel+Gateway.swift:51` and `ContentView.swift:78`. `xcodebuild test` → 281 tests, 0 failures; 19 new elicitation tests.
+- **Deviations from PLAN 6C.3 (to confirm):** optional unsupported fields are left out of the content (PLAN said cancel); only required unsupported fields block Accept. Fields are shown in name order (the wire object has no order). The form cannot be dismissed without an answer.
+- **Not done:** live T-45 (needs a Bob account that shows the licence form; the current account is internal, not confirmed); on-screen check of the form; the Swift 6 actor warning on `ElicitationFormModel` Identifiable (harmless, not fixed).
+- **Phase 6C status:** built and tested at unit and wire level; the live check and the on-screen check are open.
+
+## 2026-11-07 T-35 wire test (gateway side): passes
+- **Test:** `gateway/test/auth-missing.test.mjs`, an inline agent that answers session/new with -32000 "Authentication required". The phone's reply carries the same code and message, no result, no session id; the agent receives one session/new; the session index stays empty.
+- **Result:** 1 of 1 pass. Mutation (one character changed in the expected message) fails; restored and re-run passes.
+- **T-35 status:** gateway pass-through and the live check pass; the app's mapping exists (D-072). The on-screen check (the message in the transcript on the simulator) is still open.
+
+## 2026-11-07 Full gate after the elicitation relay and the T-35 wire test
+- **Gate:** `scripts/check.sh` → All checks passed (exit 0). Wire suite 241 of 241 (log: scratchpad `gate/check-6c2b.log`). The first run stalled in the ACPClient Swift tests for about 19 minutes with no output; it was stopped by its own process IDs and re-run from a clean start, which passed.
+- **Included:** the T-35 wire test (`gateway/test/auth-missing.test.mjs`, 1 of 1) and the elicitation wire tests (`elicitation.test.mjs`, 6 of 6).
+
+## 2026-11-07 On-screen checks (simulator, Debug app)
+- **T-35 on screen: FAIL.** With the no-key gateway, the app's session create returned to the home list with no message. The gateway returned the correct -32000 "Authentication required" (audit confirms). The app's mapped text ("Bob needs authentication. Set BOB_API_KEY on the gateway host.") was not shown: the session placeholder is removed on failure and nothing replaces it. Gap: the app must show the error on the session create path (ServerViewModel create failure, D-072 mapping not reached on screen). Fix needed; then re-check.
+- **Elicitation form on screen: PASS.** The sheet "Agent question" appeared with the licence toggle, Name, Seats and an unsupported array field. Accept sent `{"action":"accept","content":{"seats":3,"accept_license":true,"name":"Ada"}}` and the agent received it. Audit shows the action only.
+- **Gap found on the form:** the note "This form is not supported in this app; you can decline or cancel." showed even though only an optional array field was unsupported. It should show only when a required field is unsupported.
+
+## 2026-11-07 App fixes for the on-screen gaps (unit level)
+- **Session create failure:** `ServerViewModel.sessionCreateError` is set when session/new fails; `ContentView` shows a "Session not created" alert with the mapped text. The transcript cannot hold the message, because the placeholder is removed on failure and an existing test requires that. Tests: `AgmenteTests/SessionCreateAuthErrorTests.swift` (3, incl. the -32000 auth text, another error, and dismiss).
+- **Elicitation note:** the "not supported" note now shows only for a required unsupported field. Tests: `ElicitationTests` `testOnlyOptionalUnsupportedFieldShowsNoNote`, `testRequiredUnsupportedFieldShowsNote`.
+- **xcodebuild test:** TEST SUCCEEDED; 286 passed, 0 failed (unit and UI).
+- **Not yet done:** the on-screen re-check of T-35 with the alert (running). The new tests have not been run against the pre-fix code to confirm they fail before the change. A second send-path message ("Failed to create session") can appear after the alert; left as is.
+
+## 2026-11-07 T-35 on screen: PASS (after the alert fix)
+- **Alert on screen:** "Session not created" with "Bob needs authentication. Set BOB_API_KEY on the gateway host." (no-key gateway; the gateway returned -32000 "Authentication required"; audit shows session/new and agent_start). Dismiss clears it.
+- **Found on the way:** with the Working directory left blank, the new-session sheet sent "/", and the gateway refused it (cwd outside the roots, correct). The sheet should not send "/" by default for a gateway server; for a gateway server the project should be picked (FR-26). Open; not in this check.
+- **Screenshots:** scratchpad `sim2/session-not-created-auth-alert.png`.
+- **T-35 status:** PASS (gateway wire, live Bob, on-screen). PLAN 4.9 can be ticked.
+
+## 2026-11-07 New-session sheet for gateway servers (project pick, no "/")
+- **Change:** for a gateway server, the new-session sheet picks a registered project (default: the first); Create is off with no project; the sent cwd is the project's path, never blank or "/". The plain free-text path is unchanged. `ServerViewModel.sendNewSession` refuses a gateway send with no project path.
+- **Files:** `Agmente/Fork/Gateway/GatewayNewSessionPick.swift` (new), `Agmente/Fork/Gateway/GatewayHomeView.swift` (lines 134 to 188, the sheet), `Agmente/ContentView.swift` (the sheet's onCreate and two New Session buttons), `Agmente/ServerViewModel.swift` (`sendNewSession`), tests `AgmenteTests/NewSessionProjectPickTests.swift` (6).
+- **xcodebuild test:** TEST SUCCEEDED; 292 tests, 0 failures. One UI runner launch error appears in the log; not re-run.
+- **Open:** the sheet agent rewrote lines 134 to the end of `GatewayHomeView.swift` after the file had changed on disk, so a concurrent edit may have been overwritten; no copy survives. Lines 1 to 133 are unchanged. Needs owner check. The on-screen check of the sheet is not done.
+
+## 2026-11-07 Phase 4.2 (secrets file) and 4.3 (trust folder), gateway
+- **4.2:** `agent.secretsFile` (absolute, regular file, mode 0600 or stricter; `NAME=value` lines; names must be in `agent.envPassthrough`, others ignored with a `secret_ignored` audit line, name only; HOME and PATH refused). Values go only into the runner CLI's environment; the agent gets `-e NAME`. Read at each agent start. Tests: `internal/config/secrets_test.go`, `internal/server/runner_secrets_test.go`, `gateway/test/secrets-file.test.mjs` (pass). The agent's argv holds no value; the audit log holds no value.
+- **4.3:** at project create, the project path is written as `TRUST_FOLDER` into the project home's `.bob/trustedFolders.json`, in the format the local Bob uses (`{"version":1,"folders":{...}}`). Existing entries are kept; an unparseable file is refused and left untouched. Atomic write, `.bob` 0700. `--trust` never appears in any argv. Tests: `internal/server/trust_test.go`, `gateway/test/trust-folder.test.mjs` (pass).
+- **Not done:** the live T-33 trust check and the live Bob run with a key (not run in this step); PLAN 4.2 and 4.3 remain unticked until that check.
+- **Note:** `TestSnapshotRunsNoFilterUnderPodman` timed out once under load and passed on rerun.
+
+## 2026-11-07 Full gate after Phase 4.2, 4.3 and the project-pick sheet
+- **Gate:** `scripts/check.sh` → All checks passed (exit 0). Wire suite 247 of 247 (log: scratchpad `gate/check-4-2.log`).
+
+## 2026-11-07 Live: secrets file (4.2), trust folder (4.3), T-33 (Apple runner, real Bob 2.0.9)
+- **Setup:** Apple runner; BOB_API_KEY from `agent.secretsFile` (mode 0600), named in `envPassthrough` (not in the config file); the trust file written at project create.
+- **Result:** project created; session/new in the registered project ok (T-33 new session); session/prompt "Reply with the word OK." → `end_turn`; session/close ok.
+- **Trust file:** `<stateDir>/homes/<projectId>/.bob/trustedFolders.json` holds the project path as its key.
+- **Audit:** 0 matches of the key (full and the first 8 characters); no `--trust` in the gateway source. The audit line does not carry argv, so `--trust` absence in the live argv rests on the unit test (`trust_test.go`) and the wire test.
+- **Cleanup:** gateway stopped by PID; no agmente containers left; the test folder removed.
+- **Status:** T-33 (new session, prompt) passes live; 4.2 and 4.3 pass with the wire and live evidence above.
+
+## 2026-11-07 On-screen: project picker for a gateway server (simulator)
+- **Default:** the sheet lists the gateway's projects, ticks the first, and Create is enabled. PASS.
+- **Choose a second project, Create:** the audit shows session/new routed to the chosen project; the session opened. PASS. (The audit does not log cwd; the routing implies it was inside the chosen project.)
+- **Zero projects:** "No projects. Add one on the gateway." shown; Create disabled; no session/new. PASS.
+- **Observed, open:** the app sent a `session/list` with a cwd the gateway refused (`cwd_rejected`); the session still opened. Likely the app's own list call for a gateway server carries a path; to investigate.
+- **Screenshots:** scratchpad `sim3/01-new-session-default-alpha.png`, `02-new-session-beta-selected.png`, `03-zero-projects-new-session.png`.
+- **Owner:** two test servers ("Check Gateway", "Empty Gateway") remain in the simulator app; delete them there.
+
+## 2026-11-07 Fix: session/list sent with a refused cwd (gateway servers)
+- **Root cause:** `ServerViewModel` built `session/list` from the server's working directory; an empty one became "/", which is outside every gateway root, so the gateway refused it (`cwd_rejected`, guard.go cwdAllowed, checked in server.go before routing).
+- **Fix (app only):** `Agmente/Fork/Gateway/SessionListPayload.swift` (`ACPSessionListPayload.forServer`): a gateway server sends no cwd; a plain ACP server is unchanged. Both request sites in `ServerViewModel.swift` use it. The gateway guard for session/new is unchanged.
+- **Tests:** `AgmenteTests/SessionListCwdTests.swift` (4). xcodebuild → TEST SUCCEEDED, 296 unit tests, 0 failures (re-run without a launch flake; one earlier UI launch flake).
+- **Caveat:** a gateway socket with no project yet answers `session/list` with -32602 "no project" (by design, supervisor_test.mjs:189), so that call returns no list. The gateway home uses `sessions/index`; the on-screen effect is not yet checked.
+
+## 2026-11-07 On-screen: gateway home after the session/list fix (partial)
+- **Home:** the project "Alpha scratch" and the session row are visible on first connect and on relaunch; no error text or alert. PASS.
+- **cwd_rejected for session/list:** 1 on the first connect after Add Server; 0 on relaunch. The first fetch appears to have gone out before the app knew the server was a gateway (flag still false), so it sent "/". FAIL for "no cwd_rejected"; not yet fixed.
+- **Next:** make the gateway flag known before the first session/list, and re-check.
+
+## 2026-11-07 Fix: first session/list waits for the gateway flag
+- **Root cause:** the first session/list after Add Server went out before the initialize result was applied, so the gateway flag was still false and the app fell back to "/", which the gateway refused (cwd_rejected).
+- **Fix:** `ACPSessionListPayload.forServerIfKnown` (`Agmente/Fork/Gateway/SessionListPayload.swift`) returns nil until the initialize result is applied; `ServerViewModel` keeps `hasAppliedInitializeResult` (set in `updateGatewayInfo`) and gates both list paths on it. Plain ACP servers also wait for their initialize result before the first list.
+- **Tests:** 3 new in `AgmenteTests/SessionListCwdTests.swift`; xcodebuild → TEST SUCCEEDED, 299 executed, 0 failures (one earlier UI launch flake, re-run passed).
+- **Still open:** the on-screen re-check of the first connect (no cwd_rejected).
+
+## 2026-11-07 On-screen: first connect after Add Server (PASS)
+- **Home:** the project "demo" and session "hello from sim5 seed" appear on the first connect; no error text or alert. PASS.
+- **Audit:** cwd_rejected 0 (including session/list). One `route_refused` for session/list with "no project: send a cwd inside a registered project or a sessionId" (the by-design route refusal before the socket has a project; not shown to the person).
+- **Screenshot:** scratchpad `sim5/first-connect-home.png`; audit `sim5/audit.jsonl`.
+- **Status:** the session/list cwd issue is closed on screen.
+
+## 2026-11-07 On-screen: app MCP list (6.1) is not reachable from the UI (BLOCKED, correction)
+- **Found:** `MCPServersView` is never presented anywhere in the app. The only MCP wiring is `mcpServersForSession()` at the session/new and session/resume call sites. My earlier note that 6B was "wired" referred to the request path only; the UI entry point was never added.
+- **Effect:** the live end-to-end check of the MCP list (add an HTTP server in the app, start a session, check Bob uses it) could not run. Task 6.1 must not be ticked.
+- **Next:** add an entry point for gateway servers (recommendation taken: a row in the gateway server's settings opening `MCPServersView`), then re-run the on-screen check.
+
+## 2026-11-07 MCP servers entry point (6B.2 UI) and bundle ID for device builds
+- **Entry point:** a "MCP Servers" row in the More menu of a gateway server (`ContentView.swift`, identifier `gatewayMCPServers`), presenting `GatewayMCPServersSheet` (`Agmente/Fork/MCP/MCPEntryPoint.swift`). Plain ACP servers are unchanged. Unit tests: `AgmenteTests/MCPEntryPointTests.swift` (2, pass). Reachability is from reading the navigation code; the on-screen check is not yet run.
+- **App unit tests:** 301 executed, 0 failures (both runs). The UI test runner (`com.example.AgmenteUITests.xctrunner` in the old ID) failed to launch in the last run; run 1 reported success. Not yet diagnosed.
+- **Bundle IDs:** now `com.adammakarucha.agmente` (app), `.tests`, `.uitests`, in `Agmente.xcodeproj/project.pbxproj`.
+- **Device build:** blocked. Xcode reports the Apple Developer Program License Agreement for team `JNPGD7477Q` must be accepted by the account holder before a profile can be created.
+
+## 2026-11-07 On-screen end-to-end: app MCP list reaches Bob (6.1)
+- **Enabled entry (HTTP marker server, real Bob 2.0.9, gateway host runner):** the app's session/new carried one http entry (audit `mcp_servers stdio=0 http=1`); the marker server got tools/call; Bob answered "The exact output of `marker_tool` is: MARKER-OK". PASS.
+- **Disabled entry:** the next new session carried no entry (audit `http=0`); the marker server got no new requests; Bob said the tool is not available. PASS.
+- **Found:** right after connect, the More menu had no "MCP Servers" row; it appeared after Refresh and reopening the menu. Likely stale SwiftUI state (the gateway flag is not observed). Open.
+- **Status:** T-40 (app path) and T-42 pass; task 6.1 can be ticked.
+
+## 2026-11-07 Fix: More-menu MCP row appears after connect (unit level)
+- **Cause:** `ServerViewModel.gatewayInfo` was not `@Published`, so the More menu did not re-render when the gateway flag arrived.
+- **Fix:** `ServerViewModel.swift:118` now `@Published private(set) var gatewayInfo`.
+- **Test:** `AgmenteTests/MCPEntryPointTests.swift` `testUpdateGatewayInfoPublishesChangeSoMenuRefreshes` (failed before, passes after). Unit tests: 302 executed, 0 failures.
+- **UI tests:** `AgmenteUITests.testExample` and `testLaunchPerformance` fail at app launch ("does not have a process ID"; "Failed to get background assertion") in both runs. Not yet diagnosed; the base code is not checked the same way.
+- **Not checked on screen yet.**
+
+## 2026-11-07 On-screen: More-menu MCP row after first connect (PASS)
+- **Result:** the "MCP Servers" row is in the More menu of a new gateway server right after the first connect; no Refresh was tapped. Menu items: Settings, Refresh, Disconnect, MCP Servers, Edit Server, Delete.
+- **Screenshots:** scratchpad `morerow/more-menu-first-connect.png`, `morerow/more-menu-attempt2.png`.
+
+## 2026-11-07 UI test launch failures: diagnosis
+- **Wiring:** the app, unit tests and UI tests use the new bundle IDs consistently (`com.adammakarucha.agmente`, `.tests`, `.uitests`); the UI tests target the app.
+- **Runs:** UI-only runs passed twice (exit 0). Each first logged a transient launch failure on a simulator clone (`Code=-308 (ipc/mig) server died` in one; `RequestDenied`/`launch-failed` in the other), then retried and passed.
+- **Not established:** the cause of the transient launch failure. Not a signing or DerivedData issue (the build succeeded). It looks like a simulator launch-service flake.
+- **Next:** if the failures recur, capture the `.xcresult`. A simulator reset would erase its data and needs confirmation first.
+
+## 2026-11-07 Device build, install and launch (iPhone 14 Pro, Debug)
+- **Build:** `xcodebuild … -destination id=00008120-0009751A0A33401E -allowProvisioningUpdates AGMENTE_DEVELOPMENT_TEAM=JNPGD7477Q` → BUILD SUCCEEDED, after the Apple license agreement was accepted by the account holder.
+- **Install:** `xcrun devicectl device install app` → installed (bundle `com.adammakarucha.agmente`).
+- **Launch:** `xcrun devicectl device process launch` → launched.
+- **Still to do on the phone:** the Face ID check (skill save gate). Not run yet.
+
+## 2026-11-07 Phone to Mac gateway over mutual TLS (user test, real device)
+- **Path:** iPhone 14 Pro, Agmente Debug build → `wss://adams-mac-studio.local:8443` (Caddy, client certificate required, `tls internal`) → gateway on 127.0.0.1:8788 (host runner, test mode; Bob runs on the Mac).
+- **Result:** the first attempt returned 401 (certificate accepted, bearer token missing from the form). With the token entered, the app connected. The user confirmed the server works from the phone.
+- **Not yet covered:** a session from the phone, the Face ID check, the switch to the Apple container runner before real use.
+
+## 2026-11-07 Phone: project list over mutual TLS (user test)
+- **Result:** after the token was entered, the phone connected, but the project list was empty because the local gateway had no project registered. Registered "Phone test" (scratch folder) with `_agmente/projects/create`; the user confirmed the project now appears on the phone.
+- **Session from the phone (user test):** a prompt sent from the phone to the "Phone test" project got a reply. End-to-end path confirmed: phone → Caddy (mutual TLS) → gateway → Bob on the Mac.

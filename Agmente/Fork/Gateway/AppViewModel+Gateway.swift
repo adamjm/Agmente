@@ -48,8 +48,8 @@ extension AppViewModel {
         case .approvalAnswered(let approvalId):
             sessionViewModel?.dismissPermissionRequest(id: .string(approvalId))
             gatewayApprovals.closed(approvalId: approvalId)
-        case .other:
-            break
+        case .other(let method):
+            handleGatewayElicitationEvent(event, method: method, server: server) // FR-44, PLAN 6C.3
         }
     }
 }

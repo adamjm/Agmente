@@ -26,6 +26,7 @@ type Fields struct {
 	Signal                   string
 	Project                  string
 	Path                     string // a project-relative file path (file events, D-063); never a token
+	FolderCreated            bool   // project_created: the gateway made the project folder (D-091)
 }
 
 // Who identifies one connection in every line it writes.
@@ -80,6 +81,9 @@ func (l *Logger) Log(event string, f Fields) {
 	str("dir", f.Dir)
 	str("project", f.Project)
 	str("path", f.Path)
+	if f.FolderCreated {
+		buf = append(buf, `,"folderCreated":true`...)
+	}
 	num("code", f.Code, f.Code != 0)
 	num("pid", f.Pid, f.Pid != 0)
 	if f.HasExit {

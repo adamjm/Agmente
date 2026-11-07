@@ -131,12 +131,23 @@ struct GatewaySessionRow: View {
     }
 }
 
-/// New session for a gateway server: pick a project, not a path (FR-26).
+/// New session for a gateway server: pick a project, not a path (FR-26). The first project is the
+/// default; Create stays off while there is no project to start in.
 struct GatewayNewSessionSheet: View {
     let projects: [GatewayProject]
     let onCancel: () -> Void
     let onCreate: (GatewayProject) -> Void
     @State private var selection: String?
+
+    /// `initialSelection` is the project the home has selected (D-091), when it is still listed.
+    init(projects: [GatewayProject], initialSelection: String? = nil, onCancel: @escaping () -> Void, onCreate: @escaping (GatewayProject) -> Void) {
+        self.projects = projects
+        self.onCancel = onCancel
+        self.onCreate = onCreate
+        _selection = State(initialValue: initialSelection)
+    }
+
+    private var chosen: GatewayProject? { gatewayNewSessionChosenProject(projects, selection: selection) }
 
     var body: some View {
         NavigationStack {
@@ -150,14 +161,18 @@ struct GatewayNewSessionSheet: View {
                             Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
-                        if selection == project.id { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                        if chosen?.id == project.id { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                     }
                 }
                 .accessibilityIdentifier("gatewayProjectChoice.\(project.id)")
             }
             .overlay {
                 if projects.isEmpty {
-                    Text("No projects on the gateway").foregroundStyle(.secondary)
+                    Text("No projects. Add one on the gateway.")
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                        .accessibilityIdentifier("gatewayNoProjects")
                 }
             }
             .navigationTitle("New Session")
@@ -168,9 +183,11 @@ struct GatewayNewSessionSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        if let project = projects.first(where: { $0.id == selection }) { onCreate(project) }
+                        if let project = chosen, gatewayNewSessionCwd(selectedProjectPath: project.path) != nil {
+                            onCreate(project)
+                        }
                     }
-                    .disabled(selection == nil)
+                    .disabled(chosen == nil || gatewayNewSessionCwd(selectedProjectPath: chosen?.path) == nil)
                     .accessibilityIdentifier("gatewayCreateSession")
                 }
             }

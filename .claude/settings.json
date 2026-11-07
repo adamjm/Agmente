@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/check.sh)",
+      "Bash(./scripts/check.sh)",
+      "Bash(npm ci --prefix gateway)",
+      "Bash(npm test --prefix gateway)",
+      "Bash(node --test:*)",
+      "Bash(node --check:*)",
+      "Bash(node gateway/test/bench.mjs:*)",
+      "Bash(gateway/bin/agmente-gateway --config gateway/config.example.json --dry-run)",
+      "Bash(node scripts/check-docs.mjs)",
+      "Bash(swift test:*)",
+      "Bash(xcodebuild test:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(npm install:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.p8)",
+      "Read(**/*.p12)",
+      "Read(**/Signing.local.xcconfig)"
+    ]
+  }
+}

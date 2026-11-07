@@ -134,14 +134,14 @@ Early probe (2026-11-06): 4.4 to 4.6 were run on Bob 2.0.7 and then 2.0.9 (now i
 Goal: Bob runs safely behind the gateway. Closes T-32 to T-35.
 
 - [ ] 4.1 Container image for a project: pinned `@ibm/bob` version, unprivileged user, read-only root where possible. Draft: `deploy/bob-project.Containerfile` (verify). Check: T-47 on the Linux host.
-- [ ] 4.2 Load `BOB_API_KEY` from a secrets file into the container environment only.
-- [ ] 4.3 At registration, write the project path as `TRUST_FOLDER` in the container's `$HOME/.bob/trustedFolders.json`, and start Bob with its process `cwd` set to the project (F-15, D-013). Never pass `--trust`. Do not rely on Bob's trust check to confine Bob. Check: T-33 passes in a registered project, and a `session/new` whose `cwd` is outside roots never reaches Bob (T-8). Q-6 is answered (RESULTS 2026-11-06).
+- [x] 4.2 Load `BOB_API_KEY` from a secrets file into the container environment only.
+- [x] 4.3 At registration, write the project path as `TRUST_FOLDER` in the container's `$HOME/.bob/trustedFolders.json`, and start Bob with its process `cwd` set to the project (F-15, D-013). Never pass `--trust`. Do not rely on Bob's trust check to confine Bob. Check: T-33 passes in a registered project, and a `session/new` whose `cwd` is outside roots never reaches Bob (T-8). Q-6 is answered (RESULTS 2026-11-06).
 - [x] 4.4 Probe `initialize` through the gateway. Check: T-32.
 - [x] 4.5 Session lifecycle on Bob. Check: T-33.
 - [x] 4.6 Answer Q-1 live. Check: T-34.
 - [x] 4.7 App: handle `plan_update`, `plan_removed`, `session_info_update`, `usage_update` (FR-33).
 - [x] 4.8 App: mode picker (FR-34).
-- [ ] 4.9 App: auth error (FR-35). Check: T-35.
+- [x] 4.9 App: auth error (FR-35). Check: T-35.
 - [x] 4.10 App: `session/delete` (FR-36).
 
 Plan notes:
@@ -154,7 +154,7 @@ Goal: the app shows agent images and HTML without new risk. Closes T-36 to T-39.
 - [x] 5.2 Image view with ImageIO downsampling and MIME allow-list. Check: T-36.
 - [x] 5.3 Gateway signed file URLs on a separate preview host. Check: T-37. (D-061 to D-064; 14 wire tests in `gateway/test/files.test.mjs`; Caddy routing of the files host is "verify" and not checked on the host.)
 - [x] 5.4 HTML preview view. Check: T-38. (Passes; see RESULTS 2026-11-07. The test cannot tell the rule list from the content policy, each alone holds.)
-- [ ] 5.5 Answer Q-2 on Bob. Check: T-39.
+- [x] 5.5 Answer Q-2 on Bob. Check: T-39.
 
 Plan notes:
 
@@ -162,11 +162,81 @@ Plan notes:
 
 Goal: toggle MCP servers and tools, and manage skills, from the phone. Closes T-40 to T-45.
 
-- [ ] 6.1 App: client-owned HTTP MCP server list (FR-40). Answer Q-3. Check: T-42.
-- [ ] 6.2 Gateway: MCP config API (FR-41). Check: T-40.
+- [x] 6.1 App: client-owned HTTP MCP server list (FR-40). Answer Q-3. Check: T-42.
+- [x] 6.2 Gateway: MCP config API (FR-41). Check: T-40.
 - [ ] 6.3 Gateway: aggregating MCP proxy with per-tool toggles (FR-42). Check: T-41.
-- [ ] 6.4 Gateway: skills API (FR-43). Check: T-44. Answer Q-4: T-43.
+- [x] 6.4 Gateway: skills API (FR-43). Check: T-44. Answer Q-4: T-43.
 - [ ] 6.5 App: skills editor with Face ID confirmation.
 - [ ] 6.6 App: ACP elicitation forms (FR-44). Check: T-45.
 
 Plan notes:
+
+- Drafted 2026-11-07 in plan mode; no code changed. Read: SPEC FR-40 to FR-44, T-40 to T-45, Q-3, Q-4, F-16 to F-19, F-23, F-24, 6.2; ARCHITECTURE 1, 2.3, 2.5; DECISIONS D-009, D-013, D-015, D-024 to D-029, D-032, D-034, D-061 to D-064; RESULTS 2026-11-07 "Open questions on Bob 2.0.9". Code read: `gateway/internal/server/server.go` (routing and forward), `supervisor.go` (own load sends `mcpServers: []`, line 605), `projects.go`, `files.go`, `gateway/internal/config/config.go`; app `ServerViewModel.swift` (lines 986, 1353, 1451 send `mcpServers: []`), `Agmente/Security/KeychainStore.swift`, `Agmente/Fork/Gateway/`, `ACPClient/Sources/ACPClient/Gateway/GatewayClient.swift`.
+- Q-3 and Q-4 are answered (RESULTS 2026-11-07; F-23, F-24). Task 6.1 "Answer Q-3" is done, and its remaining work is the app's list (FR-40). T-42 and T-43 have recorded results. Two gaps stay open: resume of a session with earlier turns was not tested (Q-3), and the Q-4 probe ran on the host runner only (probe P4).
+- Finding F1: the gateway forwards phone `session/new`, `session/load` and `session/resume` params unchanged except `cwd` and `sessionId`. A phone-sent stdio entry in `mcpServers` would make Bob start a `command` inside the project container. The gateway must filter it (6A.1).
+- Finding F2: the gateway's own load (D-032) sends `mcpServers: []`. F-23 says `[]` drops HTTP servers, so an idle stop or idle close silently removes the phone's servers. The gateway must keep each live session's list in memory and send that list in its own load.
+- Finding F3: D-029 answers `session/resume` for a live session from the gateway's cache and never forwards it. A changed list therefore cannot reach Bob on a live session. It applies on the next `session/new` or after an idle reload (owner decision 3 covers the alternative).
+- Finding F4: `alwaysAllow` in `mcp.json` skips the permission request for those tools. FR-41 as written would let the phone write a standing approval, which D-009 rules out. A repo's own `<project>/.bob/mcp.json` can already carry `alwaysAllow` (probe P3).
+- Finding F5: the project folder and the home (`<stateDir>/homes/<id>`) are bind mounts at host paths on the host, Podman and Apple runners (D-025, D-079). The gateway can read and write config and skills there without `exec`: no repo code runs and no container starts. Whether a host write shows inside a running container is probe P4.
+- Finding F6: Bob's MCP keys are per server (`disabled`, `alwaysAllow`, F-16). Per-tool toggles need the proxy (6.3).
+- Owner decisions needed before 6A:
+  1. One source of truth. FR-40 (phone-owned HTTP list, sent per session) and FR-41 (gateway-owned `mcp.json`) both exist. Recommended: the phone owns HTTP servers; FR-41 only sets `disabled` on servers already in `mcp.json`, and never writes an HTTP server to a host file. Writing `<project>/.bob/mcp.json` changes a git-tracked file, so it shows in `git/status`.
+  2. Should MCP headers ever leave the device? Recommended: yes, over the existing TLS connection, only inside `session/new` or `session/resume`. The gateway keeps them in memory for the life of the session (F2) and never writes or logs them. A gateway restart forgets them, so the app resends on reopen. This holds only if probe P2 shows Bob does not persist them. If Bob does, the owner chooses between storing secrets in the container home and dropping authenticated HTTP servers.
+  3. Is a per-tool toggle needed? Recommended: no. Build 6.2 (per-server `disabled`); mark 6.3 "deferred, not built" and T-41 "deferred" in RESULTS, not passed. The proxy would be a new listener the agent container can reach, on the tool-call path.
+  4. Refuse `alwaysAllow` from the phone (recommended), so FR-41 offers only `disabled`.
+  5. Refuse non-HTTP entries in phone `mcpServers` (recommended).
+  6. Skill scope: project only (recommended first), or also `~/.bob/skills` in the home.
+  7. Face ID: a UI gate only (recommended; see 6B.3), or a signature from a Secure Enclave key that the gateway checks (larger, needs a new D-n and a key registration method).
+  8. Skill size cap below 70 KiB for T-44. Recommended 64 KiB, checked against Bob's own loader limit (probe P6).
+  9. Elicitation: may the phone accept Bob's license (T-45), and may `--accept-license` leave `gateway/config.example.json` and `config.mac.example.json`? Both list it today.
+- Probes before any code (host runner, disposable HOME, key values never printed, results in RESULTS as for Q-3 and Q-4):
+  - P1 (T-40): `disabled: true` in `~/.bob/settings/mcp.json`: does a new session lack that server's tools? Does a session with earlier turns, resumed with a changed list, follow it? (the Q-3 gap)
+  - P2: after an HTTP server with a marker header is used, grep the home (`bob.db`, logs) for the marker. Decision 2 depends on it.
+  - P3: does a repo `<project>/.bob/mcp.json` with `alwaysAllow` skip the permission request, and does Bob merge it with a session `mcpServers` list?
+  - P4: on Podman and on Apple, write a skill and flip `disabled` from the host; does Bob in a running container see it, and how fast?
+  - P5 (6C): run `bob acp` without `--accept-license` with `clientCapabilities.elicitation.form`. Record the method name, params, answer shape and timeout. The ACP elicitation schema is not in `ACPClient/Docs` (verify against the ACP spec). Check whether tool inputs also use elicitation.
+  - P6: Bob's skill size and frontmatter rules (F-17 gives the name rule only; verify).
+- 6A gateway MCP config and skills (no app). Test first in each task: write the wire or unit test, see it fail, then change the code.
+  - 6A.1 Guard and F2 fix. Wire (`gateway/test/mcp-guard.test.mjs`): a phone `session/new` with a stdio entry gets `-32602`; HTTP entries pass; the fake agent records the list it received (new test hook in `fake-agent.mjs`); after an idle stop the own load carries the kept list (fake runner). Go unit test for the filter. Code: `server.go` (route), `supervisor.go` (kept list), `idle.go`. Mutations: drop the filter, and send `[]` on own load. Each must fail.
+  - 6A.2 List and disable (FR-41, T-40 wire part). New `gateway/internal/server/mcp.go` and `gateway/internal/mcpconf/`. Read both files through the host paths with the D-063 rules: realpath inside the project or home, no symlink in any component, 256 KiB cap, JSON only, never executed. `_agmente/mcp/set {projectId, name, disabled}` writes atomically (temp file in the same folder, `O_EXCL`, fsync, rename), mode 0600, and refuses a symlinked file. `alwaysAllow` is refused (decision 4). Rewriting drops comments (verify Bob accepts the output). Tests: `gateway/test/mcp.test.mjs`, Go unit tests for parse, write and symlink refusal. Mutations: accept `alwaysAllow`; follow a symlink.
+  - 6A.3 Skills (FR-43, T-44). `_agmente/skills/list|put|delete {projectId, scope, name, content?}`. Name `^[a-z][a-z0-9-]{0,63}$` (F-17). Content is UTF-8 up to the cap in decision 8. Path `<project>/.bob/skills/<name>/SKILL.md` with the D-063 path rules, `O_NOFOLLOW` on each component, temp file and rename. Delete removes that one folder. Audit `skill_put` and `skill_deleted` with name, project and byte count only. Tests: `gateway/test/skills.test.mjs` with T-44's cases (`Bad Name`, `../x`, 65 characters, 70 KiB), Go unit tests for the name rules and the atomic write. Mutations: skip the name check; write through a symlink.
+  - 6A.4 Live check. Run P1 and P4 on live Bob and record T-40 (new-session part) and the container path in RESULTS. T-42 and T-43 are already recorded; add a line that links them to this plan.
+  - Stop 6A: report, the owner confirms decisions 1 to 5 and the probe results. Checks: `scripts/check.sh`, `npm test --prefix gateway`, `(cd gateway && go test ./...)`.
+- 6B app MCP and skills screens (needs 6A.1 and decisions 1 to 2).
+  - 6B.1 Headers in the Keychain. `Agmente/Security/MCPHeaderStore.swift` over `KeychainStore` (per server and entry, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`). Deleting a server deletes its headers (hook in `SessionStorage.deleteServer`). Tests in `AgmenteTests/MCPHeaderStoreTests.swift`: round trip, delete, and no header value in the Core Data file (the T-14 method).
+  - 6B.2 MCP list (FR-40). `Agmente/Fork/MCP/MCPServersModel.swift` and `MCPServersView.swift`. Names, URLs and enabled flags are stored in a file with no secret; headers stay in 6B.1. The list is sent with `session/new` and `session/resume` at the three call sites (ServerViewModel 986, 1353, 1451), only when `mcpCapabilities.http` is set and the server is a gateway server. URLs follow the transport policy (`https`; `http` only under D-019). Tests in `AgmenteTests/ForkMCPTests.swift`: the payload holds only HTTP entries; headers appear in the payload and nowhere on disk.
+  - 6B.3 Skills screen with Face ID. `Agmente/Fork/Skills/SkillsModel.swift`, `SkillsEditorView.swift`, `SkillBiometricGate.swift`. The gate calls `LAContext.evaluatePolicy` (`.deviceOwnerAuthenticationWithBiometrics`, or `.deviceOwnerAuthentication` if decision 7 keeps the passcode fallback). It stores nothing and needs no Keychain item. `NSFaceIDUsageDescription` is absent from `Agmente/Info.plist` and must be added (verify). The save request is sent only after the gate returns true. The gate is a UI control, not a server check: the gateway cannot see Face ID, and the audit line shows which device saved.
+  - Tests: the model takes a `SkillSaveGate` protocol, so unit tests show no save without a true. A simulator UI test shows no request when the gate fails.
+  - The simulator cannot test a real Face ID match, lockout, the passcode path on a locked device, enrolment changes, or Secure Enclave behaviour. It can set enrolment and matching from the Features menu (verify whether a headless trigger exists). A device run is needed for sign-off, and is marked BLOCKED until one is available.
+  - Stop 6B: simulator checks and the report.
+- 6C elicitation (FR-44, T-45). Needs P5 and decision 9.
+  - 6C.1 Probe P5 first. Its shape goes into RESULTS and a new D-n entry before any code.
+  - 6C.2 Gateway: advertise `elicitation.form` toward Bob (this replaces the `clientCapabilities: {}` rule in D-026 for this capability). Relay the agent's elicitation request to subscribers as an event, the same way as `session/request_permission` (D-031). The phone's answer goes back to the agent under the agent's id. The gateway never answers itself. A timeout sends decline or cancel, never accept. Wire test with the fake agent: relay, forwarded answer, timeout. Mutation: auto-accept, which must fail.
+  - 6C.3 App: `Agmente/Fork/Elicitation/ElicitationFormView.swift` and a model. Only string, number, boolean and enum fields render; any other field is answered cancel. Unit tests for the parser; a UI test for the license form.
+  - 6C.4 T-45 live: a test config without `--accept-license` (decision 9) and a disposable HOME. Record the result. The license is accepted only by the owner's tap.
+  - Stop 6C.
+- 6D is not planned. Build the 6.3 proxy only if decision 3 is overturned: it gets its own plan, a listener design and a D-n entry before code.
+- New decisions to add when approved: D-084 MCP source and header handling (decisions 1, 2); D-085 config and skill files through the host mounts, no exec (F5); D-086 `alwaysAllow` refused and phone MCP entries limited to HTTP (decisions 4, 5); a note superseding part of D-032 (F2) and D-029 (F3); D-087 elicitation relay (6C).
+
+Owner decisions, 2026-11-07:
+- 1 (one source of truth): accepted as recommended.
+- 2 (headers may leave the device): accepted as recommended, held in gateway memory only; depends on probe P2.
+- 3 (no per-tool toggle): accepted; 6.3 deferred, T-41 deferred in RESULTS.
+- 4 (alwaysAllow): OPEN. The owner asked to allow it because the environment is sandboxed. This conflicts with D-009 (the gateway never approves a tool call), so it is not built until the owner confirms the conflict in writing and a D-n entry records it. 6A.2 refuses alwaysAllow until then.
+- 5 (non-HTTP entries from the phone): CHANGED by the owner, 2026-11-07. Stdio entries are allowed, with a warning in the app that the server must be configured. The command runs inside the project container as the project user (never on the host). The gateway never logs the entry's args or env values, and passes the env only to that container. Needs a new D-n entry (D-086 revised) before 6A.1 code.
+- 6 (skill scope project only): accepted.
+- 7 (Face ID as a UI gate): accepted.
+- 8 (skill cap 64 KiB): accepted.
+- 9 (elicitation licence, --accept-license left in example configs): accepted.
+- Status 2026-11-07: 6A gateway done and recorded (RESULTS); 6B app side built and tested, wired; Face ID on a device BLOCKED; 6C.2 gateway relay in progress; 6C.3 app and 6C.4 live T-45 blocked on a non-internal Bob account (owner decision pending).
+
+## Backlog (set aside 2026-11-07)
+
+Owner decision, 2026-11-07: Linux host work is moved to the backlog. Not started; re-open when a Linux host is available.
+- [ ] 1.11 Deploy on the host: Caddy with `deploy/Caddyfile`, gateway with `deploy/agmente-gateway.service` (Linux).
+- [ ] 1.12 Point the unmodified app at the gateway on the Linux host (needs 1.11).
+- [ ] 4.1 Bob project container on Linux, T-47 cold start on the Linux host (`deploy/bob-project.Containerfile`, verify).
+
+Set aside, not investigated (owner decision, 2026-11-07): the first concurrent Podman run stalled after N=2 with idle containers (RESULTS 2026-11-07, concurrency entry). Cause unknown.
+
+Accepted, not met (owner decision, 2026-11-07): NFR-15 cold start at 3 s p95 under the Apple runner at concurrency. Single-project load meets the target; concurrent load does not (D-083).

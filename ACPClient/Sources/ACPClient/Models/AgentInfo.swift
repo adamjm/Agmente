@@ -104,6 +104,9 @@ public struct AgentCapabilityState: Equatable, Sendable {
     /// Whether the agent advertises `sessionCapabilities.delete` (session/delete, FR-36).
     public var deleteSession: Bool = false
 
+    /// Whether the agent advertises `mcpCapabilities.http` (PLAN 6B.2: HTTP MCP servers are sent only then).
+    public var mcpHTTP: Bool = false
+
     public init(
         loadSession: Bool = false,
         resumeSession: Bool = false,
@@ -331,6 +334,10 @@ public extension AgentProfile {
             }
         }
 
+        if let mcpCaps = capabilitiesObj["mcpCapabilities"]?.objectValue {
+            capabilities.mcpHTTP = mcpCaps["http"]?.boolValue ?? false
+        }
+
         if let listSessions = capabilitiesObj["listSessions"]?.boolValue {
             capabilities.listSessions = listSessions
         }
@@ -413,6 +420,10 @@ public extension AgentProfile {
             if sessionCaps["delete"] != nil {
                 capabilities.deleteSession = true
             }
+        }
+
+        if let mcpCaps = capabilitiesObj["mcpCapabilities"] as? [String: Any] {
+            capabilities.mcpHTTP = (mcpCaps["http"] as? Bool) ?? false
         }
 
         if let listSessions = capabilitiesObj["listSessions"] as? Bool {

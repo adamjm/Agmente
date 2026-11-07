@@ -71,6 +71,7 @@ func (a *projectAgent) idleLoop(proc *agentProcess) {
 }
 
 // openApprovals returns the sessions of this agent with an open approval, and whether any is open.
+// An open elicitation (FR-44) counts the same way: the phone is being asked, so the agent stays up.
 func (s *Server) openApprovals(a *projectAgent) (map[string]bool, bool) {
 	s.permMu.Lock()
 	defer s.permMu.Unlock()
@@ -79,6 +80,12 @@ func (s *Server) openApprovals(a *projectAgent) (map[string]bool, bool) {
 		if p.agent == a {
 			any = true
 			out[p.session] = true
+		}
+	}
+	for _, e := range s.elics {
+		if e.agent == a && e.closedBy == "" {
+			any = true
+			out[e.session] = true
 		}
 	}
 	return out, any

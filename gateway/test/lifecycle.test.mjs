@@ -11,6 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { auth, connect, FAKE_AGENT, rpc, sleep, startGateway, useProject } from './helpers.mjs';
 
 const FAKE_PODMAN = fileURLToPath(new URL('./fixtures/fake-podman.mjs', import.meta.url));
+const FAKE_CONTAINER = fileURLToPath(new URL('./fixtures/fake-container.mjs', import.meta.url));
+// The same cases run on the podman runner and on the Apple runner (lifecycle-apple.test.mjs sets this).
+const APPLE = process.env.AGMENTE_LIFECYCLE_RUNNER === 'apple';
 
 /** A gateway on the fake podman, with its own log folder (FAKE_PODMAN_DIR reaches podman through the gateway environment). */
 async function lifecycle({ startMs = 0, exitDelayMs = 0 } = {}) {
@@ -19,10 +22,14 @@ async function lifecycle({ startMs = 0, exitDelayMs = 0 } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'agmente-podman-'));
   const gw = await startGateway({ limits: { idleSeconds: 1 } }, {
     configFn: (dirs, config) => {
-      config.runner = { kind: 'podman', image: 'fake-image:1', podman: FAKE_PODMAN };
+      config.runner = APPLE
+        ? { kind: 'apple', image: 'fake-image:1', container: FAKE_CONTAINER }
+        : { kind: 'podman', image: 'fake-image:1', podman: FAKE_PODMAN };
       config.agent.command = [process.execPath, FAKE_AGENT, ...(exitDelayMs ? ['--exit-delay', String(exitDelayMs)] : [])];
     },
-    env: { FAKE_PODMAN_DIR: dir, FAKE_PODMAN_START_MS: String(startMs) },
+    env: APPLE
+      ? { FAKE_CONTAINER_DIR: dir, FAKE_CONTAINER_START_MS: String(startMs) }
+      : { FAKE_PODMAN_DIR: dir, FAKE_PODMAN_START_MS: String(startMs) },
   });
   gw.podmanLog = () => (existsSync(join(dir, 'log.jsonl'))
     ? readFileSync(join(dir, 'log.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);

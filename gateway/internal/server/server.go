@@ -57,6 +57,7 @@ type Server struct {
 	perms   map[string]*permission // gateway permission id -> agent request
 	closing map[string]string      // approvals taken but not yet recorded: id -> who closed them
 	permSeq int64
+	elics   map[string]*elicitation // elicitations relayed to phones (FR-44), by gateway id; guarded by permMu
 
 	capsMu sync.Mutex
 	caps   []byte // the agent's last initialize result
@@ -88,6 +89,7 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 		agents:      map[string]*projectAgent{},
 		perms:       map[string]*permission{},
 		closing:     map[string]string{},
+		elics:       map[string]*elicitation{},
 		subs:        map[string]map[*client]*subscription{},
 		caps:        defaultInitialize,
 	}
@@ -102,6 +104,10 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 		Handler:           s,
 		ReadHeaderTimeout: 10 * time.Second,
 		MaxHeaderBytes:    16 * 1024,
+	}
+	// A secrets-file name that envPassthrough does not list is ignored; say so, by name only (PLAN 4.2).
+	for _, name := range cfg.SecretsIgnored {
+		s.audit.Log("secret_ignored", audit.Fields{Reason: name})
 	}
 	return s
 }
@@ -500,6 +506,13 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 		return
 	}
 
+	if mcpMethods[method] {
+		// The phone's MCP list is checked before routing, so a refused list reaches no agent (D-084).
+		if rerr := s.checkMCPList(who, method, msg.Get("params")); rerr != nil {
+			reply(id, nil, rerr)
+			return
+		}
+	}
 	a, rerr := s.route(ctx, c, msg, method)
 	if rerr != nil {
 		s.audit.Log("route_refused", with(who, audit.Fields{Method: method, Reason: rerr.Message}))

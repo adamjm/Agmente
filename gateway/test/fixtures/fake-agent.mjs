@@ -33,7 +33,7 @@
 //
 // Shapes marked "verify" follow the ACP schema and were not seen in a Bob probe:
 //   modes.currentModeId, session/list cwd and updatedAt, the permission option list.
-import { mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { crc32, deflateSync } from 'node:zlib';
@@ -193,6 +193,29 @@ async function runTurn(msg, entry) {
     }
     if (d.image) update(record.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'image', mimeType: 'image/png', data: samplePng() } });
     if (d.link) update(record.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'resource_link', name: 'report.html', uri: 'https://example.com/report.html', mimeType: 'text/html' } });
+    // Test-only (6C.2): when AGMENTE_TEST_ELICITATION names a file, every turn first sends the client
+    // an elicitation/create form, waits for the client's whole answer, and appends that answer to the
+    // file as one JSON line. Nothing else changes, and the variable is never set in other tests.
+    const elicitationRecord = process.env.AGMENTE_TEST_ELICITATION;
+    if (elicitationRecord) {
+      const req = requestClient('elicitation/create', {
+        sessionId: record.sessionId,
+        mode: 'form',
+        message: 'Accept the licence to continue',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            accept_license: { type: 'boolean', title: 'Accept the licence' },
+            seats: { type: 'number', title: 'Seats' },
+            name: { type: 'string', title: 'Name' },
+            tags: { type: 'array', items: { type: 'string' }, title: 'Tags' },
+          },
+          required: ['accept_license'],
+        },
+      });
+      const answer = await req.response;
+      appendFileSync(elicitationRecord, `${JSON.stringify(answer)}\n`);
+    }
     if (d.permission) {
       const toolCallId = `call-${randomBytes(3).toString('hex')}`;
       const toolCall = { toolCallId, title: 'Run echo', kind: 'execute', status: 'pending', rawInput: { command: 'echo fake' } };
@@ -327,6 +350,8 @@ const handlers = {
     values: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('AGMENTE_TEST_'))),
   }),
   '_test/argv': (msg) => reply(msg.id, { args: process.argv.slice(2) }),
+  // The value of one named variable, for the secrets-file test (PLAN 4.2). Present is false when unset.
+  '_test/getenv': (msg) => reply(msg.id, { present: Object.hasOwn(process.env, msg.params.name), value: process.env[msg.params.name] ?? null }),
   '_test/received': (msg) => reply(msg.id, { methods: received }),
   '_test/responses': (msg) => reply(msg.id, { responses }),
   '_test/permissions': (msg) => reply(msg.id, { answers: permissionLog }),
@@ -373,6 +398,16 @@ const handlers = {
   },
 };
 
+// Test hook (mcp-guard.test.mjs): when AGMENTE_TEST_RECORD_DIR names a folder, the params of the
+// last session/new, session/load and session/resume are written there as <method>.json. Nothing
+// else changes; the gateway passes the variable to this process only when the config names it.
+const recordDir = process.env.AGMENTE_TEST_RECORD_DIR;
+function recordParams(msg) {
+  if (!recordDir || !['session/new', 'session/load', 'session/resume'].includes(msg.method)) return;
+  mkdirSync(recordDir, { recursive: true });
+  writeFileSync(join(recordDir, `${msg.method.slice('session/'.length)}.json`), JSON.stringify(msg.params ?? null));
+}
+
 const rl = createInterface({ input: process.stdin });
 rl.on('line', (line) => {
   let msg;
@@ -383,6 +418,7 @@ rl.on('line', (line) => {
   }
   if (typeof msg.method === 'string') {
     received.push(msg.method);
+    recordParams(msg);
   } else if (msg.id !== undefined) {
     responses.push(msg);
     const waiting = pendingAgentRequests.get(msg.id);

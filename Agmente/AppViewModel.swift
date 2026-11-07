@@ -211,6 +211,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     @Published private(set) var gatewayInfos: [UUID: GatewayInfo] = [:]
     /// The selected gateway's open approvals (FR-22). The home shows a banner for them.
     let gatewayApprovals = ApprovalsInboxModel()
+    /// Elicitation forms the gateway asked the selected gateway's session for (FR-44, PLAN 6C.3).
+    let gatewayElicitations = ElicitationInboxModel()
     /// Read-only git state of the selected gateway's projects (FR-31).
     lazy var gitStore = GitStore(serverId: { [weak self] in self?.selectedServerId },
                                  client: { [weak self] in self?.selectedGatewayClient() },

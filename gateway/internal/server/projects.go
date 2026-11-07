@@ -70,6 +70,12 @@ const maxProjectName = 100
 
 // handleExtension answers one `_agmente/*` request. It returns the result to send, or an error.
 func (s *Server) handleExtension(ctx context.Context, who audit.Who, method string, params *jsonv.Value) (any, *rpcError) {
+	if result, rerr, handled := s.serveMCPConfig(ctx, who, method, params); handled {
+		return result, rerr
+	}
+	if result, rerr, handled := s.serveSkills(ctx, who, method, params); handled {
+		return result, rerr
+	}
 	switch method {
 	case "_agmente/projects/list":
 		projects, err := s.store.Projects(ctx)
@@ -82,12 +88,14 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		}
 		return map[string]any{"projects": out}, nil
 	case "_agmente/projects/create":
-		p, rerr := s.createProject(ctx, params)
+		p, folderCreated, rerr := s.createProject(ctx, params)
 		if rerr != nil {
 			return nil, rerr
 		}
-		s.audit.Log("project_created", with(who, audit.Fields{Project: p.ID}))
+		s.audit.Log("project_created", with(who, audit.Fields{Project: p.ID, FolderCreated: folderCreated}))
 		return map[string]any{"project": toProjectJSON(*p)}, nil
+	case "_agmente/projects/roots":
+		return s.projectRoots(), nil
 	case "_agmente/projects/addDenyPaths":
 		return s.addProjectList(ctx, who, params, "denyPaths")
 	case "_agmente/projects/addWatchSkip":
@@ -100,6 +108,8 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		return s.pendingApprovals()
 	case "_agmente/approvals/answer":
 		return s.answerApproval(ctx, who, params)
+	case "_agmente/elicitation/answer":
+		return s.answerElicitation(ctx, who, params)
 	case "_agmente/push/register":
 		return s.pushRegister(ctx, who, params)
 	case "_agmente/push/unregister":
@@ -127,17 +137,67 @@ func with(who audit.Who, f audit.Fields) audit.Fields {
 // createProject validates and registers a project (FR-17, T-25). The path must be an existing
 // directory whose realpath is inside a configured root; the realpath is what is stored. It then
 // creates the project's HOME under stateDir and trusts the project folder for Bob (D-013).
-func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store.Project, *rpcError) {
-	name, ok := params.Get("name").StringValue()
-	name = strings.TrimSpace(name)
-	if !ok || name == "" || utf8.RuneCountInString(name) > maxProjectName || strings.IndexFunc(name, unicode.IsControl) >= 0 {
-		return nil, invalidParams("name must be 1 to %d characters with no control characters", maxProjectName)
+//
+// With createFolder true the gateway makes <path>/<name> first, and <name> is the project's name
+// (D-091). The bool result is true when this call created the folder.
+func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store.Project, bool, *rpcError) {
+	createFolder, rerr := folderFlag(params.Get("createFolder"))
+	if rerr != nil {
+		return nil, false, rerr
 	}
+	rawName, nameOK := params.Get("name").StringValue()
+	name := strings.TrimSpace(rawName)
+	switch {
+	case createFolder:
+		if !nameOK {
+			return nil, false, invalidParams("folder name must be a string")
+		}
+		if rerr := checkFolderName(rawName); rerr != nil {
+			return nil, false, rerr
+		}
+		name = rawName
+	case !nameOK || name == "" || utf8.RuneCountInString(name) > maxProjectName || strings.IndexFunc(name, unicode.IsControl) >= 0:
+		return nil, false, invalidParams("name must be 1 to %d characters with no control characters", maxProjectName)
+	}
+	mode, deny, skip, rerr := parseProjectOptions(params)
+	if rerr != nil {
+		return nil, false, rerr
+	}
+	if createFolder {
+		p, rerr := s.createFolderProject(ctx, params, name, mode, deny, skip)
+		return p, true, rerr
+	}
+	rawPath, ok := params.Get("path").StringValue()
+	if !ok || !filepath.IsAbs(rawPath) {
+		return nil, false, invalidParams("path must be an absolute path")
+	}
+	real, err := realpath(rawPath)
+	if err != nil {
+		return nil, false, invalidParams("path does not exist")
+	}
+	if info, err := os.Stat(real); err != nil || !info.IsDir() {
+		return nil, false, invalidParams("path must be a directory")
+	}
+	if !isInsideRoots(real, s.roots) {
+		return nil, false, invalidParams("path is outside the allowed project roots")
+	}
+	if existing, err := s.store.ProjectByPath(ctx, real); err != nil {
+		return nil, false, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
+	} else if existing != nil {
+		return nil, false, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
+	}
+	p, rerr := s.registerProject(ctx, name, real, mode, deny, skip)
+	return p, false, rerr
+}
+
+// parseProjectOptions reads the optional defaultMode, denyPaths and watchSkip of a create request
+// (D-050, D-065). Each is checked the same way in both create modes.
+func parseProjectOptions(params *jsonv.Value) (string, []string, []string, *rpcError) {
 	mode := ""
 	if m := params.Get("defaultMode"); !m.IsNull() {
 		v, ok := m.StringValue()
 		if !ok || !modeID.MatchString(v) {
-			return nil, invalidParams("defaultMode must be a mode id such as \"agent\", \"plan\" or \"ask\"")
+			return "", nil, nil, invalidParams("defaultMode must be a mode id such as \"agent\", \"plan\" or \"ask\"")
 		}
 		mode = v
 	}
@@ -145,42 +205,28 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 	if dv := params.Get("denyPaths"); !dv.IsNull() {
 		in, rerr := stringList(dv, "denyPaths must be a list of glob strings")
 		if rerr != nil {
-			return nil, rerr
+			return "", nil, nil, rerr
 		}
 		if deny, rerr = checkedList("denyPaths", in, validateDenyPaths); rerr != nil {
-			return nil, rerr
+			return "", nil, nil, rerr
 		}
 	}
 	var skip []string
 	if wv := params.Get("watchSkip"); !wv.IsNull() {
 		in, rerr := stringList(wv, "watchSkip must be a list of folder names")
 		if rerr != nil {
-			return nil, rerr
+			return "", nil, nil, rerr
 		}
 		if skip, rerr = checkedList("watchSkip", in, validateWatchSkip); rerr != nil {
-			return nil, rerr
+			return "", nil, nil, rerr
 		}
 	}
-	rawPath, ok := params.Get("path").StringValue()
-	if !ok || !filepath.IsAbs(rawPath) {
-		return nil, invalidParams("path must be an absolute path")
-	}
-	real, err := realpath(rawPath)
-	if err != nil {
-		return nil, invalidParams("path does not exist")
-	}
-	if info, err := os.Stat(real); err != nil || !info.IsDir() {
-		return nil, invalidParams("path must be a directory")
-	}
-	if !isInsideRoots(real, s.roots) {
-		return nil, invalidParams("path is outside the allowed project roots")
-	}
-	if existing, err := s.store.ProjectByPath(ctx, real); err != nil {
-		return nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
-	} else if existing != nil {
-		return nil, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
-	}
+	return mode, deny, skip, nil
+}
 
+// registerProject stores a checked project folder under a new id (FR-17, D-024). It creates the
+// project's HOME and trusts the folder for Bob (D-013). It is the one path both create modes use.
+func (s *Server) registerProject(ctx context.Context, name, real, mode string, deny, skip []string) (*store.Project, *rpcError) {
 	id, err := newProjectID()
 	if err != nil {
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create a project id"}
@@ -293,10 +339,10 @@ func newProjectID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// prepareHome creates the HOME folder (0700) and writes Bob's trust file for the project folder,
-// so the project keeps working if Bob brings back the 2.0.7 default of refusing unlisted folders
-// (F-15, D-013). The trusted path is the path the agent sees; with the host runner that is the
-// host path (task 3.4 sets the container path for the podman runner).
+// prepareHome creates the HOME folder (0700) and trusts the project folder for Bob (F-15, D-013):
+// it adds TRUST_FOLDER for agentPath to <home>/.bob/trustedFolders.json. The trusted path is the
+// path the agent sees; with the host runner that is the host path, and the container runners mount
+// the project at its host path too, so it is the same string in both cases.
 func prepareHome(home, agentPath string) error {
 	bob := filepath.Join(home, ".bob")
 	if err := os.MkdirAll(bob, 0o700); err != nil {
@@ -305,15 +351,89 @@ func prepareHome(home, agentPath string) error {
 	if err := os.Chmod(home, 0o700); err != nil {
 		return err
 	}
-	data, err := json.Marshal(map[string]any{"version": 1, "folders": map[string]string{agentPath: "TRUST_FOLDER"}})
+	return addTrustEntry(filepath.Join(bob, "trustedFolders.json"), agentPath)
+}
+
+// addTrustEntry sets folders[folder] to "TRUST_FOLDER" in the trust file at path, keeping every
+// other entry and every other key. The format is the one Bob 2.0.9 writes and reads (RESULTS
+// 2026-11-06): {"version":1,"folders":{"<path>":"TRUST_FOLDER"}}. A file that is not that shape is
+// refused and left as it is, so no entry is ever lost. The write is atomic (writeFileAtomic).
+func addTrustEntry(path, folder string) error {
+	doc := map[string]json.RawMessage{}
+	folders := map[string]json.RawMessage{}
+	data, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// A new file.
+	case err != nil:
+		return err
+	default:
+		if err := json.Unmarshal(data, &doc); err != nil || doc == nil {
+			return errors.New("trustedFolders.json is not a JSON object")
+		}
+		if raw, ok := doc["folders"]; ok && string(raw) != "null" {
+			if err := json.Unmarshal(raw, &folders); err != nil {
+				return errors.New("trustedFolders.json: folders must be an object")
+			}
+		}
+	}
+	if _, ok := doc["version"]; !ok {
+		doc["version"] = json.RawMessage("1")
+	}
+	folders[folder] = json.RawMessage(`"TRUST_FOLDER"`)
+	encoded, err := json.Marshal(folders)
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(bob, ".trustedFolders.json.tmp")
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	doc["folders"] = encoded
+	out, err := json.Marshal(doc)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(bob, "trustedFolders.json"))
+	return writeFileAtomic(path, out)
+}
+
+// writeFileAtomic replaces path with data: a new temporary file in the same folder, created with
+// O_EXCL and mode 0600, fsynced, then renamed over path. The folder is fsynced after the rename.
+func writeFileAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, "."+filepath.Base(path)+"."+hex.EncodeToString(suffix[:])+".tmp")
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	done := false
+	defer func() {
+		if !done {
+			f.Close()
+			os.Remove(tmp)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	done = true
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 // rpcResult and rpcErrorResponse build the JSON-RPC response for a request id.

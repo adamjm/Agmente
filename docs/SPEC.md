@@ -54,7 +54,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | F-19 | Bob starts each configured MCP server once per ACP session. | [S4] |
 | F-20 | A repository can make git run programs through `core.fsmonitor`, `diff.external`, textconv drivers, `core.pager` and clean filters. | [S7] |
 | F-21 | Two Bob processes with one `HOME` can open the same session at once: neither refuses. A turn that the second process completed (`end_turn`) was missing from the stored history afterwards. Bob logged no lock or conflict error (D-014). | [S3] live probe on 2.0.9, 2026-11-06 |
-| F-22 | Bob 2.0.9 does not forward MCP image content over ACP. A tool that returns `[text, image/png]` gives a `tool_call_update` whose `content` holds only the text block, and whose `rawOutput` is `{"result": <text>}`. No `image` block reaches the client (RESULTS 2026-11-07). | [S3] live probe `gateway/scripts/probe-bob-open-questions.mjs`, 2026-11-07 |
+| F-22 | Bob 2.0.9 does not forward MCP image content over ACP. A tool that returns `[text, image/png]` gives a `tool_call_update` whose `content` holds only the text block, and whose `rawOutput` is `{"result": <text>}`. No `image` block reaches the client (RESULTS 2026-11-07). The follow-up (RESULTS 2026-11-07, Q-2) shows the same for an embedded resource (blob), a `resource_link`, and two images in one result: text only, images dropped without a note. | [S3] live probe `gateway/scripts/probe-bob-open-questions.mjs`, 2026-11-07 |
 | F-23 | Bob 2.0.9 `session/resume` accepts a changed `mcpServers` list. Adding an HTTP server connects it during the resume (`server/discover`, `initialize`, `tools/list`), and its tool is callable on the next prompt. Resuming with `[]` drops it: no request reaches the server, and the tool is absent. Bob sends `server/discover` before `initialize`; a server that answers `-32601` to it still works (RESULTS 2026-11-07). | [S3] live probe, 2026-11-07 |
 | F-24 | Bob 2.0.9 invokes a skill added to `<project>/.bob/skills/<name>/SKILL.md` in a running session on the next prompt, with no `session/load`. No `available_commands_update` is sent when the file is added. The command list is refreshed by `session/load` (its replay starts with `available_commands_update`) and by a new `session/new` (RESULTS 2026-11-07). | [S3] live probe, 2026-11-07 |
 | F-25 | Bob 2.0.9 advertises `sessionCapabilities.close` and answers `session/close {sessionId}` with `{}`. The closed session stays loadable: a later `session/load` succeeds and replays history, and a prompt then completes. Not tested: close during a turn (RESULTS 2026-11-07). | [S3] live probe, 2026-11-07 |
@@ -105,7 +105,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | FR-38 | The gateway issues short-lived signed URLs for project files. It refuses paths outside the project root, including through symlinks. | Must | 5 |
 | FR-39 | The app shows agent HTML in a sandboxed `WKWebView`: non-persistent data store, injected CSP, a content rule list that blocks network loads, navigation locked to the preview scheme, scripts off by default. | Must | 5 |
 | FR-40 | The app keeps a list of client-owned HTTP MCP servers, with headers in the Keychain. It sends enabled servers on the next `session/new` or `session/resume` when the agent advertises `mcpCapabilities.http`. | Should | 6 |
-| FR-41 | The gateway exposes MCP config: list servers and set `disabled` and `alwaysAllow` in Bob's `mcp.json`. | Should | 6 |
+| FR-41 | The gateway exposes MCP config: list servers and set `disabled` and `alwaysAllow` in Bob's `mcp.json`. The gateway never writes an HTTP server into a file (D-084). | Should | 6 |
 | FR-42 | The gateway acts as one aggregating MCP server that filters `tools/list` and `tools/call` by per-tool toggles. | Could | 6 |
 | FR-43 | The gateway exposes skills: list, put and delete, with name validation, a size cap and atomic writes. The app requires Face ID to save a skill. | Should | 6 |
 | FR-44 | The app supports ACP elicitation forms. | Should | 6 |
@@ -129,7 +129,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | NFR-12 | Signed file URLs expire in at most 300 s. |
 | NFR-13 | The app decodes images to at most 4096 px on the longest side and refuses image data over 20 MiB. |
 | NFR-14 | The gateway config file holds no secrets. Tokens are stored as SHA-256 hashes. |
-| NFR-15 | A cold project start (container start to an existing session loaded and replayed) takes at most 3 s p95 on the host. Measured on a Mac Podman VM: 1.6 s max (RESULTS 2026-11-06). |
+| NFR-15 | A cold project start (container start to an existing session loaded and replayed) takes at most 3 s p95 on the host. Measured on a Mac Podman VM: 1.6 s max (RESULTS 2026-11-06). Under the Apple runner, the single-project load is about 2.4 s median and load time rises with concurrent projects (RESULTS 2026-11-07); this target is not met at concurrency. |
 
 ## 5. Architecture
 
@@ -169,14 +169,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 | `_agmente/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
 | `_agmente/push/register`, `_agmente/push/unregister` | `{ deviceToken, environment }` (`sandbox` or `production`), none | `{}` (D-052; the token is kept per identity and device) |
 | `_agmente/files/url` | `{ projectId, path }` | `{ url, expiresAt }`: `url` is `https://<files.host>/f/<token>`; `path` is relative to the project and must pass D-063; refusals are `-32602`, a disabled feature `-32000` (D-061, D-062) |
-| `_agmente/mcp/list`, `_agmente/mcp/set` | `{ projectId?, name, disabled?, alwaysAllow? }` | `{ servers }` |
-| `_agmente/skills/list`, `put`, `delete` | `{ scope, name, content? }` | `{ skills }` |
+| `_agmente/mcp/list` | `{ projectId }` | `{ servers }` (D-084, D-085) |
+| `_agmente/mcp/set` | `{ projectId, name, disabled, alwaysAllow?, source? }`: `alwaysAllow` allowed per D-089; `source` is `project` or `home`, and when left out the project's file is tried first | `{ servers }`: changes `disabled` and `alwaysAllow` of a server already in the file only (D-084, D-085, D-086) |
+| `_agmente/skills/list` | `{ projectId, scope }`: `scope` is `project` (D-087) | `{ skills: [{ name, bytes }] }` |
+| `_agmente/skills/put` | `{ projectId, scope, name, content }`: name `^[a-z0-9]+(-[a-z0-9]+)*$`, content at most 64 KiB (D-087) | `{ skill: { name, bytes } }`; atomic write (D-085) |
+| `_agmente/skills/read` | `{ projectId, scope, name }` | `{ name, content, bytes }` |
+| `_agmente/skills/delete` | `{ projectId, scope, name }` | `{}`; removes that skill's folder only |
 
 Shapes are a draft. Each phase confirms them in its plan notes and records changes in DECISIONS.md.
 
 ### 6.3 Gateway config file
 
-JSON, path from `--config`. Example: `gateway/config.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)), `push` (optional; delivery is off when absent, D-053, D-055), `files` (optional, D-061: `host` (required, the files host name), `ttlSeconds` (1 to 300, default 300, NFR-12), `maxBytes` (default 20 MiB), `secretFile` (optional absolute path to a key file, mode 0600 or stricter, at least 32 bytes; no key in the config). Absent means signed file URLs are off).
+JSON, path from `--config`. Example: `gateway/config.example.json`; the Mac example is `gateway/config.mac.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `apple` (D-079) with `image` (full name, for example `localhost/agmente-bob:2.0.9`), optional `container` (absolute path to the Apple `container` CLI; default `container`), optional `dns` (an IP address of a nameserver, for the container; D-080, D-081), and optional `containerUid`/`containerGid` (D-051; the apple runner sets the user with `-u`), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)), `push` (optional; delivery is off when absent, D-053, D-055), `files` (optional, D-061: `host` (required, the files host name), `ttlSeconds` (1 to 300, default 300, NFR-12), `maxBytes` (default 20 MiB), `secretFile` (optional absolute path to a key file, mode 0600 or stricter, at least 32 bytes; no key in the config). Absent means signed file URLs are off).
 
 The `push` block: `keyFile` (absolute path to the APNs `.p8` key), `keyId` and `teamId` (10 characters each), `topic` (the app's bundle id), and optional `sandboxURL` and `productionURL` (https, host only). Config holds no key material. The gateway refuses to start when the key file is readable by group or others, or does not parse. Two keys are for tests only: `caFile` (a PEM CA trusted for APNs requests) and the URL overrides, which point the wire suite at a fake APNs server (D-055). Deployments leave them out.
 
@@ -246,7 +250,7 @@ The `push` block: `keyFile` (absolute path to the APNs `.p8` key), `keyId` and `
 | --- | --- | --- |
 | Q-1 | Answered 2026-11-06 (RESULTS): `session/load` and `session/resume` during a turn are refused, not cancelled (F-12). | T-34 |
 | Q-2 | Answered 2026-11-07 (RESULTS): no. Bob drops the image block of an MCP tool result and keeps only its text (F-22). Images from Bob's MCP tools do not reach the app. | T-39 |
-| Q-3 | Answered 2026-11-07 (RESULTS): yes. `session/resume` accepts a changed `mcpServers` list; a new HTTP server connects and its tool is callable, and a removed one is gone (F-23). | T-42 |
+| Q-3 | Answered 2026-11-07 (RESULTS): yes. `session/resume` accepts a changed `mcpServers` list; a new HTTP server connects and its tool is callable, and a removed one is gone (F-23). Live: a changed list does not reach a live session until a new session or reload (RESULTS 2026-11-07, Phase 6A). | T-42 |
 | Q-4 | Answered 2026-11-07 (RESULTS): partly. A running session invokes a skill added later on the next prompt without a load, but gets no `available_commands_update`; the list refreshes on load or a new session (F-24). | T-43 |
 | Q-5 | Answered 2026-11-06 (RESULTS): no. Two processes lose a write without an error (F-21). The gateway must never run two Bob processes on one task store (D-014). | T-18 runs with one process; record any lock error |
 | Q-6 | Answered 2026-11-06 (RESULTS): Bob checks trust before auth, against its process working directory. On 2.0.9 it trusts folders with no entry. The gateway `cwd` guard (FR-6), the per-project agent `cwd` and the container are the folder controls (D-013). | T-33 with a key set: record the result of `session/new` in an untrusted folder |
@@ -261,6 +265,7 @@ The `push` block: `keyFile` (absolute path to the APNs `.p8` key), `keyId` and `
 - Apple Developer Program membership: device builds, Keychain sharing, APNs key (`.p8`).
 - IBM Bob licence and `BOB_API_KEY` (phase 4 onward). Review the licence with `bob --show-license acp`.
 - A Linux host with Docker or Podman, a DNS name, Caddy 2 with a client CA for mutual TLS.
+- A Mac with Apple silicon and the Apple `container` CLI 1.7.0 (D-079), for the `apple` runner. See docs/MAC-SETUP.md.
 - Go 1.26 or later for the gateway, with two dependencies: `github.com/coder/websocket` (D-021) and `modernc.org/sqlite` (D-023).
 - Node.js 22.13 or later for the wire test suite (it reads `gateway.db` with `node:sqlite`, D-027) and the fake agent (one npm dependency, `ws`), and for Bob.
 

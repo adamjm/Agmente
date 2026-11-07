@@ -44,6 +44,7 @@ type pendingRequest struct {
 	modeID  string            // set_mode: the mode asked for
 	reload  *reload           // a load or resume the gateway let through after a restart (FR-20)
 	fence   *reload           // the gateway's session/list that ends that load's replay window
+	mcp     *jsonv.Value      // session/new, load, resume: the mcpServers list the phone sent (D-088)
 	reply   chan *jsonv.Value // the gateway's own requests
 }
 
@@ -79,10 +80,11 @@ type projectAgent struct {
 	live     map[string]*liveSession         // sessions open in the current process
 	reloads  map[string]*reload              // by session
 
-	path          string               // the project folder, for the gateway's own session/load
-	canClose      bool                 // the agent offers session/close (FR-24)
-	lastActive    time.Time            // the last request, agent line or busy check of the project
-	sessionActive map[string]time.Time // the same, per live session
+	path          string                  // the project folder, for the gateway's own session/load
+	canClose      bool                    // the agent offers session/close (FR-24)
+	lastActive    time.Time               // the last request, agent line or busy check of the project
+	sessionActive map[string]time.Time    // the same, per live session
+	mcp           map[string]*jsonv.Value // the mcpServers list the phone last sent, per session (D-088, F2)
 
 	writeMu sync.Mutex
 }
@@ -92,6 +94,7 @@ func newProjectAgent(s *Server, id string) *projectAgent {
 		s: s, id: id, changed: make(chan struct{}),
 		pending: map[int64]*pendingRequest{}, sessions: map[string]map[*client]struct{}{}, users: map[*client]struct{}{},
 		live: map[string]*liveSession{}, reloads: map[string]*reload{}, sessionActive: map[string]time.Time{},
+		mcp: map[string]*jsonv.Value{},
 	}
 }
 
@@ -164,6 +167,10 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 	if errors.Is(err, errProjectLocked) {
 		return failStart("locked", &rpcError{Code: rpcAgentUnavailable, Message: err.Error()})
 	}
+	if errors.Is(err, errSecrets) {
+		// The text names the file problem and never a value; the phone gets a generic failure.
+		return failStart("secrets", &rpcError{Code: rpcAgentUnavailable, Message: "agent failed to start"})
+	}
 	if err != nil {
 		return failStart(spawnErrorReason(err), &rpcError{Code: rpcAgentUnavailable, Message: "agent failed to start"})
 	}
@@ -182,7 +189,7 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 	id := a.nextID
 	a.pending[id] = &pendingRequest{method: "initialize", reply: reply}
 	a.mu.Unlock()
-	line := `{"jsonrpc":"2.0","id":` + strconv.FormatInt(id, 10) + `,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}` + "\n"
+	line := `{"jsonrpc":"2.0","id":` + strconv.FormatInt(id, 10) + `,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"elicitation":{"form":{}}}}}` + "\n"
 	_, _ = a.write(proc, []byte(line))
 
 	fail := func(reason string) (*agentProcess, *rpcError) {
@@ -259,6 +266,7 @@ func (a *projectAgent) watchExit(proc *agentProcess) {
 	}
 	a.mu.Unlock()
 	a.s.dropPermissions(proc)
+	a.s.dropElicitations(proc)
 
 	for _, p := range pending {
 		switch {
@@ -418,11 +426,19 @@ func (a *projectAgent) agentResponse(msg, id *jsonv.Value) {
 			if sid, ok := result.Get("sessionId").StringValue(); ok && sid != "" {
 				a.mu.Lock()
 				a.live[sid] = &liveSession{result: copyResult(result, "sessionId")}
+				if p.mcp != nil {
+					a.mcp[sid] = p.mcp
+				}
 				a.mu.Unlock()
 				a.recordSession(sid, p.c)
 			}
 		case "session/load", "session/resume":
 			if p.session != "" {
+				if p.mcp != nil {
+					a.mu.Lock()
+					a.mcp[p.session] = p.mcp
+					a.mu.Unlock()
+				}
 				a.recordSession(p.session, p.c)
 			}
 		case "session/set_mode":
@@ -432,6 +448,9 @@ func (a *projectAgent) agentResponse(msg, id *jsonv.Value) {
 		case "session/delete", "session/close":
 			a.mu.Lock()
 			delete(a.live, p.sid)
+			if p.c != nil {
+				delete(a.mcp, p.sid) // the phone ended the session; the gateway's own closes keep the list (D-088)
+			}
 			a.mu.Unlock()
 			if p.method == "session/delete" {
 				if err := a.s.store.DeleteSession(context.Background(), p.sid); err != nil {
@@ -527,6 +546,10 @@ func (a *projectAgent) detach(c *client) {
 // attached to its session under a gateway id; the first answer goes back (D-009: the gateway
 // itself never answers one). Other agent requests are refused: the phone offers no fs or terminal.
 func (a *projectAgent) agentRequest(proc *agentProcess, msg *jsonv.Value, method string, id *jsonv.Value) {
+	if method == "elicitation/create" {
+		a.elicitationRequest(proc, msg, id)
+		return
+	}
 	if method != "session/request_permission" {
 		_, _ = a.write(proc, append(rpcErrorResponse(id, &rpcError{Code: rpcMethodNotFound, Message: "Method not found"}), '\n'))
 		return
@@ -602,7 +625,7 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			params := jsonv.Obj()
 			params.Set("sessionId", jsonv.Str(sid))
 			params.Set("cwd", jsonv.Str(a.path))
-			params.Set("mcpServers", &jsonv.Value{Kind: jsonv.Array})
+			params.Set("mcpServers", a.keptMCPLocked(sid)) // the list the phone last sent (D-088, F2)
 			load := jsonv.Obj()
 			load.Set("jsonrpc", jsonv.Str("2.0"))
 			load.Set("id", &jsonv.Value{Kind: jsonv.Number, Num: strconv.FormatInt(n, 10)})
@@ -618,6 +641,7 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 		if reopen != "" {
 			if ls := a.live[reopen]; ls != nil {
 				result := ls.result.Marshal()
+				a.mcp[reopen] = mcpKept(msg.Get("params")) // the list the phone last sent (D-088)
 				a.attachLocked(reopen, c)
 				a.mu.Unlock()
 				a.s.reopenLive(a, c, msg.Get("id"), reopen, method, result)
@@ -638,6 +662,9 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 				turn = sid
 			}
 			p := &pendingRequest{c: c, id: msg.Get("id"), method: method, session: reopen, turn: turn, reload: rl}
+			if mcpMethods[method] {
+				p.mcp = mcpKept(msg.Get("params")) // recorded for the session when the agent accepts it (D-088)
+			}
 			switch method {
 			case "session/set_mode":
 				p.sid = sid

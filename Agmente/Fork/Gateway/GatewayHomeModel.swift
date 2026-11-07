@@ -11,6 +11,8 @@ final class GatewayHomeModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasLoaded = false
+    /// The project the home has selected, such as one just created (D-091). The New Session sheet starts on it.
+    @Published private(set) var selectedProjectId: String?
 
     /// Resolved at each refresh, so a reconnect (a new connection) is picked up.
     private var clientProvider: (() -> GatewayClient?)?
@@ -25,6 +27,13 @@ final class GatewayHomeModel: ObservableObject {
         errorMessage = nil
         hasLoaded = false
         isLoading = false
+        selectedProjectId = nil
+    }
+
+    /// Selects a project by id. A project the gateway no longer lists is handled by the sheet, which falls
+    /// back to the first project.
+    func select(projectId: String?) {
+        selectedProjectId = projectId
     }
 
     func sections(search: String = "") -> [GatewayProjectSection] {

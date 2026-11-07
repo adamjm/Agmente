@@ -1,0 +1,258 @@
+# Mac setup: the gateway with Apple `container`
+
+This guide runs the Agmente gateway on a Mac with Apple's `container` CLI. Bob runs in one container per project. The runner is `runner.kind: "apple"` (D-079, D-080, D-081). For the reasons, see `docs/DECISIONS.md` and the 2026-11-07 entries in `docs/RESULTS.md`.
+
+A step marked **verify** was not confirmed in those records. Paths use `~/agmente/` as an example. The config needs absolute paths, because the gateway does not expand `~` in JSON.
+
+## 1. Prerequisites
+
+- An Apple silicon Mac (the spike ran on macOS 27.0.1, arm64).
+- Apple `container` CLI 1.7.0 at `/opt/homebrew/bin/container`.
+- Node 22.13 or later (the live check and test scripts) and Go 1.26 or later (building the gateway), per `gateway/package.json` and `gateway/go.mod`.
+- Podman, only if you build the image on this Mac (step 3). Not needed if you receive the image archive from elsewhere.
+
+Check the versions:
+
+```bash
+/opt/homebrew/bin/container --version
+```
+
+```bash
+node --version
+```
+
+```bash
+go version
+```
+
+```bash
+podman --version
+```
+
+The container CLI reports 1.7.0 on the tested Mac (RESULTS 2026-11-07, spike); the flag form is confirmed on this Mac (2026-11-07).
+
+## 2. Start the container service and kernel
+
+Start the Apple container service:
+
+```bash
+container system start
+```
+
+Install the recommended kernel:
+
+```bash
+container system kernel set --recommended
+```
+
+The first use may download a kernel (the spike used `kata-static-4.3.1-arm64`, from the kata-containers GitHub release). This step needs network access. The owner approved that download on the tested Mac (RESULTS 2026-11-07, spike).
+
+## 3. Build or obtain the image
+
+The gateway expects the image `agmente-bob:2.0.9`, stored under the **full** name `localhost/agmente-bob:2.0.9`.
+
+Why the full name: Apple `container` treats a short name as a Docker Hub name (`docker.io`), and a short name then fails with a 401 (the 401 detail is **verify**; the docker.io behaviour is in D-080). Put the full name in `runner.image`.
+
+The image is built from `deploy/bob-project.Containerfile`, which is marked "verify". The spike used an image built with Podman (the build command was confirmed on this Mac, 2026-11-07):
+
+```bash
+podman build -t agmente-bob:2.0.9 -f deploy/bob-project.Containerfile deploy
+```
+
+Apple `container` needs the OCI archive format. Export the image from Podman as an OCI archive (RESULTS 2026-11-07, spike). The `-o` flag is from `podman save --help`:
+
+```bash
+podman save --format oci-archive -o ~/agmente/agmente-bob-2.0.9.oci.tar localhost/agmente-bob:2.0.9
+```
+
+Load the archive into Apple `container`. The `--input` flag is from `container image load --help`; the spike used this subcommand (RESULTS 2026-11-07, spike):
+
+```bash
+container image load --input ~/agmente/agmente-bob-2.0.9.oci.tar
+```
+
+Check that the image is listed under the full name. This command was confirmed on this Mac (2026-11-07):
+
+```bash
+container image list
+```
+
+Remove the archive once it is loaded (the spike removed its scratch files; the command was confirmed on this Mac, 2026-11-07):
+
+```bash
+rm ~/agmente/agmente-bob-2.0.9.oci.tar
+```
+
+The first start of a fresh image takes about 15 s (init image download). Later starts take about 1 to 1.3 s.
+
+## 4. Find the DNS resolver
+
+Apple's default resolver for containers (192.168.64.1, the vmnet default) did not answer from inside a container on the tested Mac. Use the Mac's own IPv4 resolver instead (D-081).
+
+List the resolvers:
+
+```bash
+scutil --dns
+```
+
+Take the first IPv4 nameserver. This prints the first match, using the same pattern as `macResolver()` in `gateway/scripts/live-bob.mjs`:
+
+```bash
+scutil --dns | grep -E 'nameserver\[[0-9]+\] : [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1
+```
+
+Put that address in `runner.dns` (step 5). Do not copy a value from this guide or from the example file: the example holds a placeholder, and the address depends on the network (D-081).
+
+A public resolver such as `1.1.1.1` also works, but it receives every container lookup in clear text. The owner chose not to use it as the default (D-081).
+
+## 5. Create the folders and the config
+
+Both folders must exist before the gateway starts. The gateway exits when it cannot open the database in `stateDir` (D-024). The gateway creates each project's home folder under `stateDir/homes/` with mode 0700 (D-024). It does not create the project root or `stateDir` itself.
+
+```bash
+mkdir -p ~/agmente/projects ~/agmente/state
+```
+
+Copy the example config out of the repo, then edit the copy (`~/agmente/config.json`):
+
+```bash
+cp gateway/config.mac.example.json ~/agmente/config.json
+```
+
+Set these values:
+
+- `tokens`: build the gateway first (step 7), then run the token command. It prints the token once, and a `config entry` line with `id`, `identity` and `sha256`. Put that entry's values into `tokens`, replacing the placeholder hash. Copy the token into the app, and do not keep it in a file. The gateway stores only the hash.
+
+  ```bash
+  gateway/bin/agmente-gateway new-token <device-id> <identity>
+  ```
+- `projects.roots`: an absolute project root, for example `/Users/<you>/agmente/projects`.
+- `stateDir`: an absolute path, for example `/Users/<you>/agmente/state`. It must not be `/`.
+- `runner.container`: `/opt/homebrew/bin/container`.
+- `runner.image`: `localhost/agmente-bob:2.0.9` (the full name, step 3).
+- `runner.dns`: the address from step 4. Replace the placeholder in the example file.
+- `files.host`: the placeholder `files.example.com`. Set it for your deployment (step 11).
+
+Leave `runner.kind` as `"apple"`. The Apple runner passes the first element of `agent.command` to `--entrypoint`, so `bob` must stay first. `containerUid` and `containerGid` default to 10001; change them only if the image's user changes.
+
+## 6. Environment: BOB_API_KEY
+
+`BOB_API_KEY` must come from the environment or from a secrets file outside the repo. Never put it in the config file. The gateway passes it to Bob by name only (FR-32), using `agent.envPassthrough`.
+
+Either export it in your shell (replace the placeholder with your own key; do not write the real key into a file in the repo):
+
+```bash
+export BOB_API_KEY=<your-bob-api-key>
+```
+
+or load it from a secrets file outside the repo, with `NAME=value` lines:
+
+```bash
+set -a; . ~/agmente/secrets.env; set +a
+```
+
+The live check reads the key from the environment and never prints it.
+
+## 7. Build and dry-run
+
+Build the gateway from the repo root:
+
+```bash
+(cd gateway && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)
+```
+
+Validate your config without starting anything:
+
+```bash
+gateway/bin/agmente-gateway --config ~/agmente/config.json --dry-run
+```
+
+Expected output ends with:
+
+```
+Config OK (dry run).
+```
+
+If the dry run fails, fix the reported problem and run it again before starting the gateway.
+
+## 8. Run the gateway and the live check
+
+Start the gateway in the foreground:
+
+```bash
+gateway/bin/agmente-gateway --config ~/agmente/config.json
+```
+
+Run the live check for the apple runner. It starts its own gateway on a free port, uses a scratch project under `~/.agmente-live/`, needs `BOB_API_KEY` (step 6), and uses the Mac's resolver unless you pass `--dns`:
+
+```bash
+node gateway/scripts/live-bob.mjs --runner apple
+```
+
+Expected last line:
+
+```
+SUMMARY apple: 24/24 passed
+```
+
+The run exits 0. The 24 checks cover turns, reopen, resubscribe, approvals, git status, the turn diff, the idle stop and reload (D-081, RESULTS 2026-11-07).
+
+## 9. MCP servers for the agent
+
+- **Loopback is not reachable from a container.** A container cannot reach the Mac's `127.0.0.1` (RESULTS 2026-11-07, Apple container check). An HTTP MCP server for Bob running in a container must listen on the Mac's LAN address, or on a host name that the container resolves. The LAN address was tested. A host name was not tested (verify).
+- **Gateway URL rule.** The gateway accepts an MCP URL only as `https` to any host, or as `http` to a loopback host (`gateway/internal/server/mcp_guard.go`, D-019). An `http` URL on the LAN is refused, so a LAN server must use `https`. How the certificate reaches the agent is not tested here (verify).
+- A loopback `http` URL passes the gateway's rule, but the container cannot connect to it, so it is not a working setup for a container-run agent.
+
+## 10. Known limits
+
+- **No keep-id.** Apple `container` has no user-namespace mapping, so the container runs as `-u 10001:10001` by default. The 0700 folders stay 0700, and files written by the container appear on the host as the owner's user (RESULTS 2026-11-07, spike; D-079). Change the user with `containerUid` and `containerGid`.
+- **Memory.** Each running Bob container adds about 800 MB of host memory (829 MiB measured for one). The total grows linearly with running projects: about 6205 MiB of new memory with 8 at once (RESULTS 2026-11-07, step 3 and concurrency entry).
+- **Cold load.** About 2.4 s median for one project. About 9.2 s median with 8 at once.
+- **NFR-15 is not met at concurrency** (target: 3 s p95 cold load).
+- **Main memory lever:** `limits.idleSeconds` (1800 in the example). A stop comes 1 to 1.25 idle times after the last activity (D-032, D-078).
+- The apple runner is opt-in. The owner has not decided whether it becomes the Mac default (D-080).
+
+## 11. Troubleshooting
+
+**The container service is not running.** Start it (step 2). The status command was confirmed on this Mac (2026-11-07):
+
+```bash
+container system start
+```
+
+```bash
+container system status
+```
+
+**The kernel is missing.** Install the recommended one (needs network):
+
+```bash
+container system kernel set --recommended
+```
+
+**Image not found.** Check that the image is listed under the full name, and that `runner.image` is `localhost/agmente-bob:2.0.9` (step 3). The list command was confirmed on this Mac (2026-11-07):
+
+```bash
+container image list
+```
+
+**DNS does not resolve inside the containers.** Bob's own log then shows `fetch failed` (D-080). Set `runner.dns` to the first IPv4 nameserver from `scutil --dns` on this Mac (step 4). The gateway passes it to the container as `--dns`. Then run the live check again (step 8).
+
+**A stale container after a crash.** A second start with a name in use fails with `container with id ... already exists` and exit 1. List the container names:
+
+```bash
+container list --quiet
+```
+
+Delete only a container whose name starts with `agmente-`, with the command the gateway itself uses (`runner_apple.go`):
+
+```bash
+container delete --force agmente-<projectId>
+```
+
+Do not use `container inspect` or `container list --format json`. Both print environment values (D-079).
+
+## 12. Not covered
+
+- The deployment: Caddy, the launchd or systemd service, and the public address. See `deploy/` (`deploy/Caddyfile`, `deploy/agmente-gateway.service`).
+- Push delivery and APNs. See `docs/PUSH-TESTING.md`.

@@ -8,6 +8,7 @@ struct ContentView: View {
     @StateObject private var model = AppViewModel()
     @State private var addServerSheet: AddServerSheet?
     @State private var showingSettings = false
+    @State private var showingMCPServers = false // gateway MCP list (FR-40), opened from the More menu
     @State private var navigationPath: [NavigationDestination] = []
     @State private var splitSelection: NavigationDestination?
     @State private var serverToDelete: ACPServerConfiguration?
@@ -75,7 +76,13 @@ struct ContentView: View {
         containerView
         .sheet(item: $addServerSheet, content: addServerSheet)
         .sheet(item: $serverToEdit, content: editServerSheet)
+        .background(ElicitationSheetHost(inbox: model.gatewayElicitations)) // FR-44, PLAN 6C.3
         .sheet(isPresented: $showingSettings, content: settingsSheet)
+        .sheet(isPresented: $showingMCPServers) {
+            if let serverId = model.selectedServerId {
+                GatewayMCPServersSheet(serverId: serverId)
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             startupLog("scenePhase changed to \(String(describing: newPhase))")
             if newPhase == .active {
@@ -171,6 +178,14 @@ struct ContentView: View {
             Button("OK", role: .cancel) { deepLinkNotice = nil }
         } message: {
             Text(deepLinkNotice ?? "")
+        }
+        .alert("Session not created", isPresented: .init(
+            get: { model.selectedServerViewModel?.sessionCreateError != nil },
+            set: { if !$0 { model.selectedServerViewModel?.dismissSessionCreateError() } }
+        )) {
+            Button("OK", role: .cancel) { model.selectedServerViewModel?.dismissSessionCreateError() }
+        } message: {
+            Text(model.selectedServerViewModel?.sessionCreateError ?? "")
         }
         .alert("Delete Server", isPresented: .init(
             get: { serverToDelete != nil },
@@ -439,6 +454,15 @@ private extension ContentView {
                 }
                 .disabled(model.connectionState == .disconnected)
 
+                if MCPEntryPoint.showsServersRow(isGateway: model.selectedServerViewModel?.isGatewayServer ?? false) {
+                    Button {
+                        showingMCPServers = true
+                    } label: {
+                        Label("MCP Servers", systemImage: "puzzlepiece.extension")
+                    }
+                    .accessibilityIdentifier("gatewayMCPServers")
+                }
+
                 if let current = model.servers.first(where: { $0.id == model.selectedServerId }) {
                     Button {
                         serverToEdit = current
@@ -487,6 +511,7 @@ private struct SessionListPage: View {
     @State private var customWorkingDirectory: String = ""
     @StateObject private var gatewayHome = GatewayHomeModel()
     @State private var showingApprovals: Bool = false
+    @State private var showingNewProjectSheet: Bool = false // D-091: New project on a gateway server
     @AppStorage("summaryCardCollapsed") private var summaryCardCollapsed: Bool = false
     @AppStorage("sessionGroupingMode") private var groupingMode: SessionGroupingMode = .byTime
     private static let lastConnectedFormatter: DateFormatter = {
@@ -693,6 +718,14 @@ private struct SessionListPage: View {
 #endif
     }
 
+    private var newProjectPlacement: ToolbarItemPlacement {
+#if os(macOS)
+        .automatic
+#else
+        .navigationBarTrailing
+#endif
+    }
+
     private var searchPlacement: SearchFieldPlacement {
 #if os(macOS)
         return .toolbar
@@ -779,6 +812,17 @@ private struct SessionListPage: View {
         .textInputAutocapitalization(.never)
 #endif
         .disableAutocorrection(true)
+        .sheet(isPresented: $showingNewProjectSheet) {
+            // D-091: the gateway makes <root>/<name> and registers it; the new project is then selected.
+            GatewayNewProjectSheet(
+                clientProvider: { [weak model] in model?.selectedGatewayClient() },
+                onCreated: { project in
+                    await gatewayHome.refresh()
+                    gatewayHome.select(projectId: project.id)
+                },
+                onClose: { showingNewProjectSheet = false }
+            )
+        }
         .sheet(isPresented: $showingApprovals) {
             ApprovalsInboxView(
                 inbox: model.gatewayApprovals,
@@ -792,9 +836,12 @@ private struct SessionListPage: View {
                 // A gateway server picks a project, not a path (FR-26).
                 GatewayNewSessionSheet(
                     projects: gatewayHome.projects,
+                    initialSelection: gatewayHome.selectedProjectId,
                     onCancel: { showingNewSessionSheet = false },
                     onCreate: { project in
-                        model.sendNewSession(workingDirectory: project.path)
+                        if let cwd = gatewayNewSessionCwd(selectedProjectPath: project.path) {
+                            model.sendNewSession(workingDirectory: cwd)
+                        }
                         showingNewSessionSheet = false
                     }
                 )
@@ -811,6 +858,18 @@ private struct SessionListPage: View {
             }
         }
         .toolbar {
+            if model.selectedServerIsGatewayHome {
+                // D-091: a new project is made inside a configured root on the gateway.
+                ToolbarItem(placement: newProjectPlacement) {
+                    Button {
+                        showingNewProjectSheet = true
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                    }
+                    .accessibilityLabel("New project")
+                    .accessibilityIdentifier("gatewayNewProject")
+                }
+            }
             if !model.serverSessionSummaries.isEmpty {
                 let leadingPlacement: ToolbarItemPlacement = {
 #if os(macOS)
@@ -1092,7 +1151,11 @@ private struct SessionListPage: View {
         HStack(spacing: newSessionButtonSpacing) {
             Button {
                 guard model.connectionState == .connected else { return }
-                model.sendNewSession()
+                if model.selectedServerIsGatewayHome {
+                    showingNewSessionSheet = true // FR-26: a gateway session starts in a picked project
+                } else {
+                    model.sendNewSession()
+                }
             } label: {
                 Label {
                     Text("New Session")
@@ -1157,7 +1220,11 @@ private struct SessionListPage: View {
         HStack(spacing: newSessionButtonSpacing) {
             Button {
                 guard model.connectionState == .connected else { return }
-                model.sendNewSession()
+                if model.selectedServerIsGatewayHome {
+                    showingNewSessionSheet = true // FR-26: a gateway session starts in a picked project
+                } else {
+                    model.sendNewSession()
+                }
             } label: {
                 Label("New Session", systemImage: "plus")
                     .font(.body.weight(.semibold))

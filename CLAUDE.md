@@ -25,7 +25,7 @@ A "fail" result is a valid outcome. Do not change a test to make it pass.
 5. Record test results in `docs/RESULTS.md` with date, command and output.
 
 ## Rules
-- The gateway must never approve a tool call. Reason: the phone's approval is the last control before a shell (D-009).
+- The gateway must never approve a tool call. Reason: the phone's approval is the last control before a shell (D-009). Exception: the phone may send MCP `alwaysAllow` for named tools, by owner override (D-089); the gateway still never approves on its own.
 - Never add a code path that lets an unauthenticated request spawn a process. Reason: that is the flaw this fork removes (F-1).
 - Run git and Bob in the project container, never in the gateway process. Reason: repo config can run programs (F-20, D-008).
 - Put new app code in new files under `Agmente/Fork/` or `Agmente/Security/` when it is a new feature. Upstream files may be changed freely when that is the cleaner design. Reason: this is a hard fork with no upstream merges (D-017).

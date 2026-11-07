@@ -28,8 +28,11 @@ type runner interface {
 }
 
 func newRunner(cfg *config.Config) runner {
-	if cfg.Runner.Kind == "podman" {
+	switch cfg.Runner.Kind {
+	case "podman":
 		return podmanRunner{cfg: cfg}
+	case "apple":
+		return newAppleRunner(cfg)
 	}
 	return hostRunner{cfg: cfg}
 }
@@ -47,6 +50,35 @@ func agentEnv(names []string, home string) []string {
 	return append(env, "HOME="+home)
 }
 
+// errSecrets means the agent secrets file could not be read at start. Its text names the problem,
+// never a value.
+var errSecrets = errors.New("the agent secrets file cannot be read")
+
+// secretEnv reads the agent secrets file now and returns NAME=value for each entry the agent may
+// receive (PLAN 4.2). The values go only into the runner CLI's environment (cmd.Env). They never go
+// in argv: the container runners pass the name with `-e NAME`, and the host runner sets the variable
+// directly. Nothing here logs a value.
+func secretEnv(cfg *config.Config) ([]string, error) {
+	if cfg.SecretsFile == "" {
+		return nil, nil
+	}
+	secrets, err := config.ReadSecretsFile(cfg.SecretsFile)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errSecrets, err)
+	}
+	allowed := make(map[string]bool, len(cfg.SecretNames))
+	for _, name := range cfg.SecretNames {
+		allowed[name] = true
+	}
+	var env []string
+	for _, s := range secrets {
+		if allowed[s.Name] {
+			env = append(env, s.Name+"="+s.Value)
+		}
+	}
+	return env, nil
+}
+
 // hostRunner runs the agent on the gateway host, as the gateway user, with its working directory
 // set to the project (D-013) and HOME set to the project home. For tests and development only:
 // config refuses it unless runner.allowHost is true.
@@ -56,13 +88,18 @@ func agentEnv(names []string, home string) []string {
 type hostRunner struct{ cfg *config.Config }
 
 func (r hostRunner) start(p store.Project, home string) (*agentProcess, error) {
+	secrets, err := secretEnv(r.cfg)
+	if err != nil {
+		return nil, err
+	}
 	lock, err := lockHome(home)
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(r.cfg.AgentCommand[0], r.cfg.AgentCommand[1:]...)
 	cmd.Dir = p.Path
-	cmd.Env = agentEnv(r.cfg.EnvPassthrough, home)
+	// Later entries win for a duplicate name, so a secret overrides the same name from the gateway's env.
+	cmd.Env = append(agentEnv(r.cfg.EnvPassthrough, home), secrets...)
 	proc, err := startProcess(cmd, []*os.File{lock})
 	if err != nil {
 		lock.Close()
@@ -138,8 +175,12 @@ func (r podmanRunner) start(p store.Project, home string) (*agentProcess, error)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, err
 	}
+	secrets, err := secretEnv(r.cfg)
+	if err != nil {
+		return nil, err
+	}
 	cmd := exec.Command(r.cfg.Runner.Podman, r.args(p, home)...)
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), secrets...)
 	proc, err := startProcess(cmd, nil)
 	if err != nil {
 		return nil, fmt.Errorf("podman: %w", err)

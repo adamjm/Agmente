@@ -72,7 +72,9 @@ func (s *Server) runGit(ctx context.Context, p store.Project, extraEnv []string,
 
 // runCapped runs cmd with the timeout and output cap. Output past the cap is dropped and the
 // process is killed, with Truncated set. A timeout kills the process group and returns errGitTimeout.
-func runCapped(ctx context.Context, cmd *exec.Cmd, stdin []byte) (gitResult, error) {
+// onKill functions run at each kill, before the output is drained: a process that a kill does not
+// reach (see runner_apple.go) can keep the output open, so cleanup cannot wait for the return.
+func runCapped(ctx context.Context, cmd *exec.Cmd, stdin []byte, onKill ...func()) (gitResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -87,7 +89,12 @@ func runCapped(ctx context.Context, cmd *exec.Cmd, stdin []byte) (gitResult, err
 	if err := cmd.Start(); err != nil {
 		return gitResult{}, err
 	}
-	kill := func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	kill := func() {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		for _, f := range onKill {
+			f()
+		}
+	}
 	done := make(chan struct{})
 	go func() {
 		select {

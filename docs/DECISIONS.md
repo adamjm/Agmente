@@ -569,3 +569,109 @@ Append only. To change a decision, add a new entry that supersedes the old one. 
 - **Date:** 2026-11-07
 - **Decision:** Refines D-032. When a socket closes, each session it was subscribed to is touched (the project's and that live session's last-activity time are set to now) before the idle check can see the project without a subscriber. The idle time then runs from the moment the subscriber left. The check interval and everything else in D-032 stay as they were.
 - **Reason:** D-032 said a stop comes between 1 and 1.25 idle times after the last activity, but a subscriber was only counted as activity at the periodic check (every quarter of the idle time). A subscriber leaving just after a check was therefore followed by a stop after as little as 0.75 idle times. Four agents saw `T-46 a subscriber keeps the container running` fail under load for this reason, and an A/B on the untouched base failed 2 of 5 runs. Found by the test, not by a new requirement; the test was not changed.
+
+## D-079 Apple `container` runner beside Podman; git through `container exec` into the agent's container
+- **Date:** 2026-11-07
+- **Decision:** Adds `runner.kind: "apple"` (config keys `image`, optional `container`: an absolute path to the `container` CLI, optional `containerUid`/`containerGid`). Podman stays as the Linux runner and as the Mac fallback; `host` stays for tests. The `runner` interface does not change; `appleRunner` (`gateway/internal/server/runner_apple.go`) implements it.
+  - **Agent.** `container run -i --rm --progress none --name agmente-<projectId> --init -u U:G`, with the project folder and home mounted at their host paths, the same allow-listed environment rule as Podman (names only), and the image. The container name is the lock (D-015). Before start the gateway refuses if `container list --quiet` already lists the name. `start` returns once the name is listed as running.
+  - **Git.** When the project's agent container is up, every git command runs as `container exec -i -u U:G -w <project> -e <git env> agmente-<projectId> git ...`, so it never starts a container of its own. When no agent is up (after an idle stop, before the first start), git gets a one-off `container run --rm --network none`, as Podman does. The git environment is the same whole environment as D-034, never the agent's allow-list.
+  - **No `keep-id`.** Apple container has no user-namespace mapping. The bind-mounted 0700 folders are writable by uid 10001 (checked in RESULTS 2026-11-07), so no mode is loosened.
+  - **Never inspect.** `container inspect` and `container list --format json` print environment values. The runner uses only `container list --quiet` and `run`/`exec`/`stop`.
+  - **Progress.** Every `run` passes `--progress none`, so progress text never reaches the stream the gateway reads.
+- **Reason:** The owner chose `container exec` for git on 2026-11-07. Measured on this Mac (RESULTS 2026-11-07): 0.21 s per git call through `exec`, against 1.12 s for `run --rm`, and warm starts of about 1.2 s. Memory is lighter than the Podman VM for a few projects (734 MiB plus about 35 MiB per idle container, against 2.8 GB for the Podman VM with the same containers), but that is idle `sleep` only; real Bob memory is measured in step 3.
+- **Not decided here:** whether the Apple runner becomes the Mac default (after the live run and the benchmark); the Podman 126 retry is not applied to Apple (no equivalent failure seen).
+- **Known gap:** a timed-out `container exec` may leave the git process running inside the agent container, because killing the CLI does not signal the process inside. Git runs with a 5 s limit; the fix is to find and kill the process by name (to be tested in step 3).
+
+## D-080 Apple runner: timeout cleanup inside the container, `runner.dns`, and the benchmark result
+- **Date:** 2026-11-07
+- **Decision:** Completes D-079 in migration step 3.
+  - **Timeout cleanup.** A git call that times out or exceeds the output cap is killed inside the agent container, not only as the CLI. Each exec'd git carries a random `AGMENTE_EXEC=<id>` in its environment. The gateway runs a `sh` script in the container that finds processes whose environment holds that marker (through `/proc`, which procps does not need) and kills them. The cleanup runs at the moment of the kill, before the output is drained: a process the CLI kill does not reach keeps the output pipe open, and cleaning up after the pipe closes would wait for it. `runCapped` takes optional kill hooks for this; the Podman and host callers pass none.
+  - **`runner.dns`** (optional IP address, Apple runner only). It is passed as `--dns`. Without it, on the Mac tested, the container's default resolver (192.168.64.1) did not answer, so Bob could not reach its service (Bob's own log: `fetch failed`). With `1.1.1.1` both the lookup and the HTTPS call worked. A set value sends lookups to that server unencrypted; the owner chooses it.
+  - **Image name.** Apple `container` resolves a short image name as a Docker Hub name. The Apple runner needs the full name the image is stored under, for example `localhost/agmente-bob:2.0.9`, in `runner.image`.
+  - **Result, not "lighter" for Bob.** See RESULTS 2026-11-07 (step 3): with real Bob, Apple's cold start is slower than Podman's by about 0.7 s, and one idle Bob container adds about 830 MiB of host memory on Apple, against about 31 MiB on top of Podman's shared VM. Podman's VM holds about 2.8 GB before any container starts. The migration's premise, that Apple is lighter, holds only for a few projects and only for the idle baseline. Decision for the owner: whether to keep Podman as the Mac default until the per-container memory is reduced (the VM's memory limit, the image size and Bob's footprint are candidates), or to switch anyway. Not decided here; the Apple runner is opt-in through config.
+- **Reason:** The timeout gap would leave a git process running in the agent container after a timeout, and the test for it failed until the cleanup ran at kill time. The DNS problem stopped Bob on the Mac, so it is a required setting there. The benchmark numbers are the reason the premise changed.
+
+## D-081 Apple runner DNS: the Mac's own resolver, not a public one
+- **Date:** 2026-11-07
+- **Decision:** Supersedes the DNS choice in D-080 (`1.1.1.1`). `runner.dns` is set to the Mac's own IPv4 resolver, the address `scutil --dns` lists first (on the Mac tested, the home router, `192.168.86.1`). Tested from inside the container: the resolver answers, and the HTTPS call to Bob's API returns HTTP 400 from the endpoint (reachable, unauthenticated request). The vmnet default (`192.168.64.1`) did not answer, and the Mac's IPv6 resolver did not either. The live harness (`gateway/scripts/live-bob.mjs --runner apple`) takes this default when `--dns` is not given. The address is specific to a network: a deployment sets its own `runner.dns`.
+- **Reason:** A public resolver receives every lookup from the containers in clear text. The Mac's own resolver is already the one the Mac trusts, so no new party sees Bob's hostnames. The value is not hard-coded in the config example, because it differs between networks: the example carries a placeholder (D-082).
+
+## D-082 Mac config: a separate example file for the apple runner
+- **Date:** 2026-11-07
+- **Decision:** `gateway/config.mac.example.json` is the example for a Mac on the `apple` runner. `gateway/config.example.json` stays the Linux example on `podman`. Both have the same shape, so a deployment copies one file and changes the paths, the token and the runner block. The Mac example uses `localhost/agmente-bob:2.0.9` (the full image name), `runner.container` set to `/opt/homebrew/bin/container`, and a placeholder `runner.dns` (`192.168.1.1`) that must be replaced with the Mac's own resolver (D-081). The setup steps are in `docs/MAC-SETUP.md`.
+- **Reason:** One example per runner keeps each file valid as written (`--dry-run` passes on the Mac example with the paths changed to a temporary folder). A single file with both runners would make the user delete half of it, and a wrong runner in the config would only show at start.
+
+## D-083 NFR-15 accepted as a miss under the Apple runner at concurrency
+- **Date:** 2026-11-07
+- **Decision:** The owner accepts that NFR-15 (cold start at most 3 s p95) is not met when several projects start at once on the Apple runner. Measured: single project about 2.4 s median; 8 concurrent projects about 9.2 s median (RESULTS 2026-11-07, concurrency entry). The single-project case meets the target. No further work on start cost is planned for now.
+- **Reason:** The Apple runner was chosen because Podman's fixed VM was at its memory limit (D-079). Reducing concurrent start cost is a separate investigation that the owner has not asked for.
+
+## D-084 MCP servers: the phone owns HTTP and stdio entries; `mcp.json` only gets `disabled`
+- **Date:** 2026-11-07
+- **Decision:** The app keeps its own list of MCP servers (FR-40) and sends it in `session/new` and `session/resume`. Entries may be HTTP or stdio (owner decision 5). The gateway never writes an HTTP server into `mcp.json`. FR-41 (`_agmente/mcp/set`) only sets `disabled` on a server that already exists in `mcp.json`, and refuses `alwaysAllow` (D-086). MCP headers travel only inside `session/new` or `session/resume`, are held in gateway memory for the life of the session, and are never written to disk or logged (P2: Bob does not persist them at debug level).
+- **Reason:** One owner for each server avoids two sources that disagree. Writing HTTP entries into a git-tracked `.bob/mcp.json` would show in `git/status`. P1 and P3 showed that a session entry overrides `disabled` on disk and that repo and session entries merge by name.
+
+## D-085 Bob's config and skill files: written from the host, never through exec
+- **Date:** 2026-11-07
+- **Decision:** The gateway reads and writes `<project>/.bob/mcp.json`, `<home>/.bob/settings/mcp.json` and `<project>/.bob/skills/<name>/SKILL.md` directly on the host, through the project folder and the home (the bind mounts). It never runs `container exec` or any repo code for these files. Each path passes the D-063 rules: realpath inside the project or home, no symlink in any component, and a size cap. Writes are atomic (temp file in the same folder, `O_EXCL`, fsync, rename). The mode is 0600.
+- **Reason:** P4 showed that host writes show inside a running container within about 1 s on Apple and about 5 s on Podman (atomic replace), and that the container user can read and write the files. A write needs no container start.
+
+## D-086 `alwaysAllow` is refused; stdio entries from the phone are allowed with a warning
+- **Date:** 2026-11-07
+- **Decision:** Two parts, from the owner's answers on 2026-11-07.
+  1. Stdio entries from the phone are allowed (owner decision 5, changed). The app shows a warning that the server must be configured. The command runs inside the project container as the project user, never on the host. The gateway never logs a stdio entry's arguments or env values, and passes its env only to that container.
+  2. `alwaysAllow` is refused by the gateway, in both the phone's list and `_agmente/mcp/set`. This keeps D-009. The owner asked to allow `alwaysAllow` because the environment is sandboxed. That would have the gateway approve tool calls in advance, which D-009 forbids. Not built until the owner confirms the override in writing; a new decision supersedes this entry if they do.
+- **Reason:** P3: `alwaysAllow` in either `mcp.json` skips the permission prompt for those tools. The phone's approval is the last control before a shell.
+
+## D-087 Skill files: name rule, size cap and scope
+- **Date:** 2026-11-07
+- **Decision:** Skills are project-scoped only (owner decision 6). The name is lowercase kebab-case, at most 64 characters (`^[a-z0-9]+(-[a-z0-9]+)*$`, the rule Bob applies to the directory name, P6). The content cap is 64 KiB, the gateway's own rule (owner decision 8); Bob has no size limit (P6). Frontmatter `name` is not used; the directory name is the name. Audit events `skill_put` and `skill_deleted` carry the name, project and byte count only.
+
+## D-088 The gateway keeps each live session's MCP list and uses it on its own load
+- **Date:** 2026-11-07
+- **Decision:** The gateway keeps, per live session, the `mcpServers` list the phone last sent, in memory. When it sends its own `session/load` (after an idle reload or an agent restart, D-032 and D-029), it sends that list, not `[]`. Changes the gateway's own load, which currently sends an empty `mcpServers` (`supervisor.go`, the load call). An empty list would drop HTTP servers (F-23). D-029 and D-032 are otherwise unchanged.
+- **Reason:** The gateway's idle stop would otherwise silently remove the phone's servers.
+
+## D-085a Amendment: file modes for Bob's config and skill files
+- **Date:** 2026-11-07
+- **Decision:** D-085 said mode 0600 for every atomic write. Amended: `mcp.json` files keep 0600 (they hold server URLs and flags, never header values). Skill files (`SKILL.md`) use 0644, because they hold no secrets and Bob, which runs as the container user, must be able to read them under every runner (P4). Folders are 0700 for `.bob` in the home and 0755 for skill folders.
+- **Reason:** The skill agent found that 0600 on a host file owned by the owner's uid may not be readable by the container user under every runner; the probe did not test that case directly. 0644 is the conservative choice for non-secret content.
+
+## D-088a Reconciliation: the kept MCP list lives until the session is closed or the gateway stops
+- **Date:** 2026-11-07
+- **Decision:** D-088 said the gateway keeps the list for each live session. As built (6A.1): the list is kept until the phone closes or deletes the session, or the gateway stops. It is not dropped when the agent process exits, because restart and idle-stop reloads need it. It is never written to disk (D-084). A phone `session/resume` updates the kept list; Bob sees the change on the next reload or `session/new` (F3).
+- **Also as built:** the phone's entries are validated strictly. Unknown keys are refused; an entry without `type` is stdio; `http` is allowed only to loopback (D-019). `alwaysAllow` is refused (D-086).
+- **Reason:** The restart path needs the list to survive the agent process. The strict validation keeps the new surface small.
+
+## D-089 Owner override of D-009 for MCP `alwaysAllow` from the phone (option c)
+- **Date:** 2026-11-07
+- **Decision:** The owner chose option (c) of the decision-4 brief in writing: "Lets go with (c)". This supersedes D-009 for one case only: the phone may send `alwaysAllow` for an MCP server's tools, in the session's `mcpServers` list and through `_agmente/mcp/set`, so those tools run without the phone's approval prompt. The gateway passes the list through after validation. It still never approves a tool call on its own, and the approval queue (FR-22, D-031) is unchanged for every other request. This supersedes the refusal in D-086 (part 2). CLAUDE.md's rule "The gateway must never approve a tool call" is amended to name this exception.
+- **Known effect, recorded by the owner's choice:** a tool named in `alwaysAllow` runs with no prompt. Probe P3 showed this from a project file, a home file and the session list (verify the session list). Any writer of those files can grant it: the phone, the owner by hand, a git clone that tracks `.bob/mcp.json` (verify), and Bob itself, since the container user can write both (P4). The sandbox (one container per project, its own folder and home mounted, allow-listed environment only) limits the damage to that project. It does not stop writes to the project or network access from inside the container.
+- **Reason:** the owner judged the environment sandboxed and accepted the risk after the brief (decision4-brief.md, options a to c).
+- **Revisit:** if a cloned repo is ever run on this gateway, or a non-owner device is added (FR-25), this decision must be reopened first.
+
+## D-086a Superseded in part by D-089
+- **Date:** 2026-11-07
+- **Decision:** D-086 part 2 (refusal of `alwaysAllow` from the phone) is superseded by D-089. Part 1 (stdio entries allowed with a warning) stands.
+
+## D-090 Elicitation: the gateway relays the agent's form to the phone and never answers it
+- **Date:** 2026-11-07
+- **Decision:** The gateway advertises `clientCapabilities.elicitation.form` to Bob (the `{}` rule in D-026 changes for this one capability; `url` is not advertised). An agent `elicitation/create` in form mode is relayed to the subscribers of its session as `_agmente/event` with a gateway id `agmente-elic-<hex>`. The phone answers with `_agmente/elicitation/answer {elicitationId, action, content?}`; the first answer goes to the agent under the agent's own id, a later answer gets -32001 "answered elsewhere" (the approvals rule, D-031). On timeout (the approval timeout, D-031) the gateway sends `{action: "decline"}`, never accept and never content. An open elicitation keeps the agent running for idle purposes (D-020 rule). Content is forwarded only with `accept`; its values must be string, number, boolean or arrays of strings. Audit records the action only.
+- **Reason:** FR-44 needs Bob's licence and elicitation forms in the app. The gateway must not answer them itself (D-009 spirit) and a timeout must refuse, not agree.
+- **Unverified:** the request shape comes from the ACP SDK copy in the npx cache, not the repo's pinned spec (verify). No live Bob elicitation has been seen (T-45 is blocked on a non-internal account).
+- **Known gaps:** only subscribed sockets receive the request; `session/cancel` does not answer an open elicitation; the session index does not show awaiting_approval for elicitations; non-form modes are refused.
+
+## D-091 Folder creation from the phone: `createFolder` on `projects/create`, a roots list, and the folder rules
+- **Date:** 2026-11-07
+- **Decision:** Owner decision A: the phone makes a new project folder inside a configured root (`projects.roots`). Picking an existing folder is unchanged (D-024, D-030).
+  - **Request.** `_agmente/projects/create` takes an optional `createFolder` (a JSON boolean; anything else is `-32602`). Absent or `false` is the path-based call, unchanged. `true` makes `<path>/<name>` and registers it. In folder mode `path` is the parent folder and `name` is both the new folder's name and the project's name. Chosen over a separate method so the request keeps its shape and the registration, duplicate check, HOME, trust entry and audit event are the same code (`registerProject`).
+  - **Roots.** New read-only method `_agmente/projects/roots` returns `{roots}`: the configured roots that exist, as realpaths. The phone needs it to know where a folder may go. It is not added to `extensions`; an older gateway answers `-32601`, which the app shows as the error text.
+  - **Name rules.** 1 to 64 bytes, ASCII letters, digits, space, dot, hyphen and underscore only. Not starting with a dot. Not starting or ending with a space (a refinement the owner did not list; trimming is refused rather than done). The name is used exactly as sent. A slash or backslash is not in the set, so a valid name is one path component. ASCII only, so two spellings that differ by Unicode normalisation cannot name two folders on macOS.
+  - **Parent rules.** Absolute, and clean: no trailing slash, `.` or `..`. Its realpath must equal the path sent, so a symbolic link anywhere in it is refused, including a root configured through one (roots are resolved at start; configure them as real paths). The realpath must be a directory, and a root or inside one.
+  - **Name must not exist.** Checked with `lstat`, so a file, a folder, a symbolic link, even a dangling one, counts. A project already registered at the target path is refused before anything is created (a folder deleted from disk is not made again).
+  - **Creation.** `mkdir` then an explicit `chmod 0755`, so the umask cannot change the mode. The created path is checked again after creation (realpath equal, inside a root); a failed check removes the new folder. If registration fails, the folder this call made is removed (an empty folder only).
+  - **Registration and audit.** The same as for an existing folder. The audit event is `project_created` with `folderCreated: true`; a path-based create has no such field.
+  - **Errors.** All `-32602`, with the text in `projects_folder.go`. A refusal changes nothing.
+  - **App.** A New Project sheet from a toolbar button on the gateway home (`GatewayNewProjectModel`, `GatewayNewProjectSheet`). The name is checked with the same rules as it is typed; nothing is sent until Create. After success the home refreshes and selects the new project; the New Session sheet starts on the selected project. The selection is held in memory only.
+- **Reason:** SPEC 2 and FR-17 allow the owner to register projects from the phone within roots. The rules keep the created folder inside the configured root, under a name the owner can read, and never through a link. Creating it inside the registration path means a folder the phone made is handled exactly as one the owner picked.
+- **Limits.** The folder is created on the gateway's host by the gateway user, not in a container. A check and the `mkdir` are two steps, so a process that can already write the parent could swap a component between them; this is the same residual as D-063 and is not closed. The gateway never deletes a project or its folder; that is not built.

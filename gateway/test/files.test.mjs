@@ -123,10 +123,10 @@ test('a signed URL serves the file with its type and the security headers (T-37)
     assert.equal(got.headers['set-cookie'], undefined, 'no cookies');
     assert.equal(got.headers['content-security-policy'], undefined, 'CSP is for HTML only');
 
-    const issued = ctx.gw.audit.find((a) => a.event === 'file_url_issued');
+    const issued = await ctx.gw.waitForAudit((a) => a.event === 'file_url_issued');
     assert.equal(issued.project, ctx.projectId);
     assert.equal(issued.path, 'pixel.png');
-    assert.equal(ctx.gw.audit.find((a) => a.event === 'file_served').path, 'pixel.png');
+    assert.equal((await ctx.gw.waitForAudit((a) => a.event === 'file_served')).path, 'pixel.png');
   } finally {
     await stopAll(ctx);
   }
@@ -146,7 +146,7 @@ test('HEAD works and returns the same headers with no body; POST is refused (T-3
     const post = await http(ctx.gw, pathOf(url), { method: 'POST', headers: { 'Content-Length': '0' } });
     assert.equal(post.status, 405);
     assert.equal(post.headers.allow, 'GET, HEAD');
-    assert.ok(fileEvents(ctx.gw).some((a) => a.event === 'file_refused' && a.reason === 'method'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'method'));
   } finally {
     await stopAll(ctx);
   }
@@ -159,7 +159,7 @@ test('the files host never reaches the ACP socket and the file handler answers o
     assert.equal(await upgradeStatus(ctx.gw, HOST), 403, 'an upgrade on the files host is refused');
     assert.equal(await upgradeStatus(ctx.gw, `${HOST}:8443`), 403, 'the port is ignored in the comparison');
     assert.equal(await upgradeStatus(ctx.gw, 'ws.test'), 101, 'the ACP host still upgrades');
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'reject' && a.reason === 'files_host'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'reject' && a.reason === 'files_host'));
 
     const before = fileEvents(ctx.gw).length;
     const wrong = await http(ctx.gw, pathOf(url), { host: 'other.test' });
@@ -201,7 +201,7 @@ test('paths outside the project or syntactically wrong are refused at signing (T
       assert.ok(res.error, `${JSON.stringify(path)} should be refused`);
       assert.equal(res.error.code, -32602, JSON.stringify(path));
       assert.ok(
-        ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === reason && a.project === ctx.projectId),
+        await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === reason && a.project === ctx.projectId),
         `${JSON.stringify(path)} audited as ${reason}`,
       );
     }
@@ -213,7 +213,7 @@ test('paths outside the project or syntactically wrong are refused at signing (T
     symlinkSync(join(ctx.dir, 'notes.txt'), join(ctx.dir, 'cfg', '.env'));
     const named = await sign(ctx, 'cfg/.env');
     assert.equal(named.error?.code, -32602, 'a link named .env is a secret path');
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'secret' && a.path === 'cfg/.env'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'secret' && a.path === 'cfg/.env'));
     assert.equal((await sign(ctx, 'nope')).error.code, -32602);
     assert.equal((await rpc(ctx.ws, '_agmente/files/url', { projectId: 'nosuchproject', path: 'notes.txt' })).error.code, -32602);
     assert.equal((await rpc(ctx.ws, '_agmente/files/url', { projectId: ctx.projectId, path: 7 })).error.code, -32602);
@@ -234,7 +234,7 @@ test('a symlink that is swapped after signing is refused at serve time (T-37, TO
     const got = await http(ctx.gw, pathOf(signed.result.url));
     assert.equal(got.status, 403);
     assert.equal(got.body.includes(SECRET), false, 'the outside file is never read');
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'outside_root' && a.path === 'swap.txt'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'outside_root' && a.path === 'swap.txt'));
 
     // Swapped to a secret file inside the project: refused as a secret.
     unlinkSync(join(ctx.dir, 'swap.txt'));
@@ -242,7 +242,7 @@ test('a symlink that is swapped after signing is refused at serve time (T-37, TO
     const again = await http(ctx.gw, pathOf(signed.result.url));
     assert.equal(again.status, 403);
     assert.equal(again.body.includes(SECRET), false);
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'secret' && a.path === 'swap.txt'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'secret' && a.path === 'swap.txt'));
 
     // Swapped back to a regular file: the same URL serves it again, because the path is still good.
     unlinkSync(join(ctx.dir, 'swap.txt'));
@@ -283,7 +283,7 @@ test('a tampered token and a token for another path are refused (T-37)', async (
     // Garbage, and a token with no signature.
     assert.equal((await http(ctx.gw, '/f/abc')).status, 403);
     assert.equal((await http(ctx.gw, `/f/${ta.slice(0, dotA)}`)).status, 403);
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'token'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'token'));
     // The untouched token still works.
     assert.equal((await http(ctx.gw, pathOf(a))).status, 200);
   } finally {
@@ -300,7 +300,7 @@ test('an expired URL is refused (T-37, NFR-12)', async () => {
     await sleep(2100);
     const late = await http(ctx.gw, pathOf(url));
     assert.equal(late.status, 403);
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'expired' && a.path === 'notes.txt'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'expired' && a.path === 'notes.txt'));
   } finally {
     await stopAll(ctx);
   }
@@ -321,7 +321,7 @@ test('a file over the size cap is refused at signing and at serving (T-37)', asy
   try {
     writeFileSync(join(ctx.dir, 'big.txt'), 'x'.repeat(2048));
     assert.equal((await sign(ctx, 'big.txt')).error?.code, -32602);
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'too_large'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'too_large'));
 
     writeFileSync(join(ctx.dir, 'grow.txt'), 'x'.repeat(100));
     const signed = await sign(ctx, 'grow.txt');
@@ -369,9 +369,9 @@ test('audit lines carry project and path, and never the token (FR-9)', async () 
     for (const a of fileEvents(ctx.gw)) {
       if (a.path !== undefined) assert.equal(a.path.startsWith('/'), false, 'paths are relative');
     }
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_url_issued'));
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_served'));
-    assert.ok(ctx.gw.audit.some((a) => a.event === 'file_refused' && a.reason === 'token'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_url_issued'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_served'));
+    assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'token'));
   } finally {
     await stopAll(ctx);
   }

@@ -24,3 +24,6 @@ Agmente/Config/Signing.local.xcconfig
 
 # Client CA, device keys and .p12 files (PLAN 1.10)
 secrets/
+
+# macOS Finder metadata
+.DS_Store

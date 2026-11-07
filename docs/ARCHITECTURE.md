@@ -9,12 +9,12 @@ Read with [SPEC.md](SPEC.md). Decision IDs (D-n) refer to [DECISIONS.md](DECISIO
 | Edge | Caddy | Terminate TLS. Require a client certificate (mutual TLS). Forward to loopback. | `deploy/Caddyfile` |
 | Gateway: admission | `server.go`, `auth.go` | Reject before upgrade: Origin, rate limit, token, capacity. | `gateway/internal/server/` |
 | Gateway: protocol guard | `guard.go`, `jsonv` | One JSON object per message; `cwd` inside roots; size caps; re-serialized as one line. | `gateway/internal/` |
-| Gateway: agent control | `agent.go`, `runner.go`, `supervisor.go`, `client.go` | One agent per project (host or podman runner, project lock), id remapping, routing by cwd and sessionId, per-socket send queues. | `gateway/internal/server/` |
+| Gateway: agent control | `agent.go`, `runner.go`, `supervisor.go`, `client.go` | One agent per project (host, podman or apple runner, project lock), id remapping, routing by cwd and sessionId, per-socket send queues. | `gateway/internal/server/` |
 | Gateway: config and audit | `config`, `audit` | Validate the config file; one JSON audit line per event on stderr. | `gateway/internal/` |
 | Gateway: sessions (phase 3) | `projects.go`, `store`, `subscribe.go`; approvals and idle close planned | Project registry, event log, subscribe and replay (D-028), approval queue, idle close. | `gateway/internal/server/`, `gateway/internal/store/` |
 | Gateway: project data (phases 3, 5, 6) | `git.go`, `gitexec.go`, `snapshot.go`, `watch.go`; planned `files/`, `mcp/`, `skills/` | Read-only git (D-034, D-035); later signed file URLs, MCP and skill config. | `gateway/internal/server/` |
 | Gateway: notify (phase 3) | `push/`, `push_deliver.go` | APNs payloads (D-038), token-based auth, HTTP/2 send, cleanup and retry (D-053); triggers and suppression (D-054). | `gateway/internal/push/`, `gateway/internal/server/` |
-| Project runtime | One container per project | Run `bob acp` and git as the project user. | `deploy/` (planned) |
+| Project runtime | One container per project | Run `bob acp` and git as the project user. Podman on Linux, Apple `container` on a Mac (D-079). | `deploy/` (planned); Mac: `docs/MAC-SETUP.md` |
 | App: transport | `AgmenteTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `AgmenteTransport/`, upstream folders |
 | App: security | Keychain store | Tokens, client identity, MCP headers. | `Agmente/Security/` (new) |
 | App: features | Home, Git, Preview, MCP, Skills screens | UI for the gateway features. | `Agmente/Fork/` (new) |
@@ -99,6 +99,21 @@ Phone WKWebView / image loader ─▶ files host (Host header) ─▶ verify MAC
 ```
 
 The preview host is a different hostname from the ACP endpoint. Only a request whose Host is the files host reaches the file handler, and an upgrade there gets 403, so a hostile page cannot reach the ACP socket or its cookies. The check is repeated at each serve, so a symlink changed after signing is refused.
+
+### 2.6 MCP and skill files (phase 6)
+
+```
+Phone ─mcp/list, mcp/set, skills/*─▶ Gateway: D-063 path rules (realpath inside project or home, no link, size cap)
+                                       ─▶ read or atomic write on the host: <project>/.bob/mcp.json,
+                                          <home>/.bob/settings/mcp.json, <project>/.bob/skills/<name>/SKILL.md (no exec)
+Phone ─session/new, session/resume (mcpServers)─▶ Gateway: list kept in memory per live session (D-088, D-088a)
+```
+
+- **Host-path rule (D-085, D-085a).** The gateway reads and writes Bob's config and skill files directly on the host, through the project folder and the home (bind mounts). It never runs `container exec` for them, and a write needs no container start. Modes: 0600 for `mcp.json`, 0644 for `SKILL.md`.
+- **Phone-owned list (D-084).** The phone owns the MCP server list and sends it in `session/new` and `session/resume`. The gateway never writes an HTTP server into a file. `_agmente/mcp/set` only changes `disabled`, and `alwaysAllow` per D-089, on servers already in a file.
+- **Kept per session (D-088, D-088a).** The gateway keeps the list the phone last sent for each live session, in memory only, and sends it on its own load after an idle stop or restart. It is dropped when the phone closes or deletes the session, or the gateway stops. A changed list reaches a live session only on a new session or reload (RESULTS 2026-11-07, Phase 6A).
+- **Container reachability.** An HTTP MCP server for a container-run agent must listen on an address the container can reach, not loopback on the Mac. The Apple container check (RESULTS 2026-11-07) used the Mac's LAN address. See [MAC-SETUP.md](MAC-SETUP.md) section 9.
+- **URL rule (`mcp_guard.go`).** https to any host; http to a loopback host only.
 
 ## 3. Trust boundaries
 

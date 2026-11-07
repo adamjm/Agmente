@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live run of the gateway with real IBM Bob (PLAN 4, RESULTS 2026-11-07).
 // BOB_API_KEY must be in the environment (e.g. `set -a; . ./.env; set +a`); this script never prints it.
-//   node gateway/scripts/live-bob.mjs --runner host|podman [--image agmente-bob:2.0.9] [--serve] [--no-key]
+//   node gateway/scripts/live-bob.mjs --runner host|podman|apple [--image localhost/agmente-bob:2.0.9] [--dns IP, default the Mac's resolver] [--serve] [--no-key]
 // Scenarios use a scratch git project under ~/.agmente-live/ (a place Podman's VM can mount), real Bob,
 // and short prompts. The gateway never approves; this test client answers: allow only for the one
 // scratch-file edit, reject for everything else (D-009).
@@ -19,12 +19,21 @@ const { values } = parseArgs({
   options: {
     runner: { type: 'string', default: 'host' },
     image: { type: 'string', default: 'localhost/agmente-bob:2.0.9' },
+    dns: { type: 'string', default: '' },
     serve: { type: 'boolean', default: false },
     'no-key': { type: 'boolean', default: false },
     'idle-seconds': { type: 'string', default: '8' },
   },
 });
-const podman = values.runner === 'podman';
+const apple = values.runner === 'apple';
+// Apple containers: the Mac's own IPv4 resolver (scutil) answers from inside the VM; the vmnet default did not (D-081).
+const macResolver = () => {
+  const m = execFileSync('/usr/sbin/scutil', ['--dns'], { encoding: 'utf8' }).match(/nameserver\[\d+\] : (\d+\.\d+\.\d+\.\d+)/);
+  return m ? m[1] : '';
+};
+if (apple && !values.dns) values.dns = macResolver();
+if (apple && !values.dns) { console.error('no IPv4 resolver found; pass --dns'); process.exit(2); }
+const podman = values.runner === 'podman' || apple; // a container runner: the image's entrypoint is bob
 const log = (...a) => console.log(...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
@@ -62,7 +71,9 @@ const config = {
     : { command: [execFileSync('/usr/bin/which', ['bob'], { encoding: 'utf8' }).trim(), ...bobArgs], envPassthrough: ['PATH', 'LANG', 'BOB_API_KEY'] },
   projects: { roots: [root] },
   stateDir: join(base, 'state'),
-  runner: podman ? { kind: 'podman', image: values.image } : { kind: 'host', allowHost: true },
+  runner: apple
+    ? { kind: 'apple', image: values.image, container: '/opt/homebrew/bin/container', ...(values.dns ? { dns: values.dns } : {}) }
+    : podman ? { kind: 'podman', image: values.image } : { kind: 'host', allowHost: true },
   limits: { idleSeconds: Number(values['idle-seconds']) },
 };
 log(`runner: ${values.runner}; project: ${project}; key present: ${!!env.BOB_API_KEY}`);

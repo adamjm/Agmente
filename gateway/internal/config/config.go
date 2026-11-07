@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -48,6 +49,12 @@ type Runner struct {
 	Kind   string `json:"kind"`
 	Image  string `json:"image,omitempty"`
 	Podman string `json:"podman,omitempty"`
+	// Container is the Apple `container` CLI for kind "apple" (D-079). Absolute when set.
+	Container string `json:"container,omitempty"`
+	// DNS is the nameserver the Apple runner gives its containers (--dns), an IP address. Empty
+	// means the default: on the Mac tested (D-079), that resolver did not answer, so Bob could not
+	// reach its service. A set value sends lookups from the containers to that server unencrypted.
+	DNS string `json:"dns,omitempty"`
 	// ContainerUID and ContainerGID are the user inside the project image (D-051). The podman
 	// runner maps the gateway's own user onto it (`--userns=keep-id`), so the container user owns
 	// the project home, the snapshot folder and the project folder as the gateway user does. Zero
@@ -85,6 +92,14 @@ type Config struct {
 	StateDir       string
 	Limits         Limits
 	Files          *Files // signed file URLs (PLAN 5.3); nil when off
+	// SecretsFile is the absolute path of agent.secretsFile, "" when absent (PLAN 4.2). It holds
+	// NAME=value lines; the gateway reads it at each agent start and never stores the values.
+	SecretsFile string
+	// SecretNames are the names in the file that the agent may receive (listed in envPassthrough).
+	SecretNames []string
+	// SecretsIgnored are names in the file that envPassthrough does not list. They are ignored and
+	// logged by name only.
+	SecretsIgnored []string
 }
 
 // limitKeys in the order of DEFAULT_LIMITS (SPEC NFR-3, NFR-4, NFR-5).
@@ -220,6 +235,8 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		}
 		envPassthrough = names
 	}
+	secretsFile, secretNames, secretsIgnored, secretErrs := validateSecrets(agent.Get("secretsFile"), envPassthrough)
+	errs = append(errs, secretErrs...)
 
 	var roots []string
 	r := raw.Get("projects").Get("roots")
@@ -254,20 +271,42 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			add("runner.kind \"host\" runs agents without a container; it needs runner.allowHost: true and is for tests and development only (D-008)")
 		}
 		runner = Runner{Kind: "host"}
-	case "podman":
+	case "podman", "apple":
 		image, ok := rv.Get("image").StringValue()
 		if !ok || image == "" || strings.HasPrefix(image, "-") {
 			add("runner.image must name the project image, for example \"agmente-bob:2.0.9\"")
 		}
-		podman := "podman"
-		if p := rv.Get("podman"); !p.IsNull() {
+		podman, cli := "podman", "container"
+		if kind == "apple" {
+			cli = "container"
+			if p := rv.Get("container"); !p.IsNull() {
+				s, ok := p.StringValue()
+				if !ok || !filepath.IsAbs(s) {
+					add("runner.container must be an absolute path to the Apple container binary")
+				}
+				cli = s
+			}
+		} else if p := rv.Get("podman"); !p.IsNull() {
 			s, ok := p.StringValue()
 			if !ok || !filepath.IsAbs(s) {
 				add("runner.podman must be an absolute path to the podman binary")
 			}
 			podman = s
 		}
-		runner = Runner{Kind: "podman", Image: image, Podman: podman}
+		runner = Runner{Kind: kind, Image: image, Podman: podman, Container: cli}
+		if kind == "apple" {
+			runner.Podman = ""
+			if d := rv.Get("dns"); !d.IsNull() {
+				s, ok := d.StringValue()
+				if !ok || net.ParseIP(s) == nil {
+					add("runner.dns must be an IP address of a nameserver, for example \"1.1.1.1\"")
+				} else {
+					runner.DNS = s
+				}
+			}
+		} else {
+			runner.Container = ""
+		}
 		for _, id := range []struct {
 			key string
 			dst *int
@@ -284,7 +323,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			*id.dst = int(n)
 		}
 	default:
-		add("runner.kind must be \"podman\" or \"host\"")
+		add("runner.kind must be \"podman\", \"apple\" or \"host\"")
 	}
 
 	limits := map[string]int64{}
@@ -340,6 +379,9 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		Tokens:         tokens,
 		AgentCommand:   command,
 		EnvPassthrough: envPassthrough,
+		SecretsFile:    secretsFile,
+		SecretNames:    secretNames,
+		SecretsIgnored: secretsIgnored,
 		Roots:          roots,
 		StateDir:       filepath.Clean(stateDir),
 		Limits: Limits{

@@ -26,5 +26,7 @@
         <string>Agmente needs access to your photo library to attach images to messages.</string>
         <key>NSLocalNetworkUsageDescription</key>
         <string>Agmente needs access to your local network to reach ACP agents running on your computer.</string>
+        <key>NSFaceIDUsageDescription</key>
+        <string>Agmente uses Face ID to confirm you before it saves a skill to your project.</string>
 </dict>
 </plist>
