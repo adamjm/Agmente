@@ -21,6 +21,7 @@ import (
 
 	"agmente/gateway/internal/audit"
 	"agmente/gateway/internal/config"
+	"agmente/gateway/internal/connector"
 	"agmente/gateway/internal/jsonv"
 	"agmente/gateway/internal/store"
 )
@@ -46,6 +47,8 @@ type Server struct {
 	roots   []string
 	http    *http.Server
 	conns   atomic.Int64
+	// connector is the remote connector's listener (D-095). Disabled by default: no listener starts.
+	connector *connector.Connector
 
 	mu          sync.Mutex
 	perIdentity map[string]int64 // open sockets per identity
@@ -94,6 +97,18 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 		caps:        defaultInitialize,
 	}
 	s.initApprovals()
+	s.connector = connector.New(connector.Options{
+		Config: cfg.Connector, StateDir: cfg.StateDir, Version: Version, Audit: logger,
+		Projects: func(ctx context.Context) ([]string, error) {
+			ps, err := db.Projects(ctx)
+			ids := make([]string, 0, len(ps))
+			for _, p := range ps {
+				ids = append(ids, p.ID)
+			}
+			return ids, err
+		},
+		SessionProject: db.SessionProject,
+	})
 	s.pushCtx, s.pushCancel = context.WithCancel(context.Background())
 	if data, err := os.ReadFile(s.capsPath()); err == nil {
 		if v, err := jsonv.Parse(data); err == nil && v.Kind == jsonv.Object {
@@ -114,15 +129,27 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 
 // Listen binds the configured loopback address.
 func (s *Server) Listen() (net.Listener, error) {
-	return net.Listen("tcp", net.JoinHostPort(s.cfg.ListenHost, strconv.Itoa(s.cfg.ListenPort)))
+	ln, err := net.Listen("tcp", net.JoinHostPort(s.cfg.ListenHost, strconv.Itoa(s.cfg.ListenPort)))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.connector.Listen(); err != nil { // the connector listener, when enabled (D-095)
+		_ = ln.Close()
+		return nil, err
+	}
+	return ln, nil
 }
 
-func (s *Server) Serve(ln net.Listener) error { return s.http.Serve(ln) }
+func (s *Server) Serve(ln net.Listener) error {
+	s.connector.Start() // no-op unless the connector is enabled
+	return s.http.Serve(ln)
+}
 
 // Shutdown stops accepting, drops every socket, and stops every agent and waits for it to exit
 // (up to the kill grace), so no agent outlives the gateway by more than that.
 func (s *Server) Shutdown() {
 	s.pushCancel()
+	s.connector.Close()
 	_ = s.http.Close()
 	s.mu.Lock()
 	clients := make([]*client, 0, len(s.clients))
@@ -486,6 +513,17 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 		s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: method}))
 		if method == "_agmente/sessions/subscribe" && !id.IsNull() {
 			s.subscribe(c, id, msg.Get("params"))
+			return
+		}
+		if strings.HasPrefix(method, "_agmente/connector/") { // the phone's pairing and grant methods (C5, D-095)
+			if !id.IsNull() {
+				result, cerr := s.connector.Phone(ctx, who, method, msg.Get("params"))
+				if cerr != nil {
+					reply(id, nil, &rpcError{Code: cerr.Code, Message: cerr.Message})
+				} else {
+					reply(id, result, nil)
+				}
+			}
 			return
 		}
 		if strings.HasPrefix(method, "_agmente/git/") {

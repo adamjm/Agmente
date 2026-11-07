@@ -100,6 +100,8 @@ type Config struct {
 	// SecretsIgnored are names in the file that envPassthrough does not list. They are ignored and
 	// logged by name only.
 	SecretsIgnored []string
+	// Connector is the remote connector block (D-095). Enabled is false unless the block says so.
+	Connector Connector
 }
 
 // limitKeys in the order of DEFAULT_LIMITS (SPEC NFR-3, NFR-4, NFR-5).
@@ -366,6 +368,9 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 	filesCfg, filesErrs := validateFiles(raw.Get("files"))
 	errs = append(errs, filesErrs...)
 
+	connectorCfg, connectorErrs := validateConnector(raw.Get("connector"))
+	errs = append(errs, connectorErrs...)
+
 	if len(errs) > 0 {
 		return nil, &Error{errs}
 	}
@@ -382,6 +387,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		SecretsFile:    secretsFile,
 		SecretNames:    secretNames,
 		SecretsIgnored: secretsIgnored,
+		Connector:      connectorCfg,
 		Roots:          roots,
 		StateDir:       filepath.Clean(stateDir),
 		Limits: Limits{
@@ -466,6 +472,153 @@ func validatePush(v *jsonv.Value, add func(string, ...any)) *Push {
 		return nil
 	}
 	return p
+}
+
+// Connector is the remote connector block (D-095, contract C6). The public listener is separate
+// from the phone's: it binds 127.0.0.1:Port and Caddy forwards to it without a client certificate.
+type Connector struct {
+	Enabled               bool
+	Port                  int
+	PublicOrigin          string   // https origin the client reaches through Caddy, no path
+	AllowedOrigins        []string // Origin values a browser may send; a request with no Origin is always allowed
+	PairingTimeoutSeconds int64
+	Limits                ConnectorLimits
+}
+
+// ConnectorLimits are the connector's per-grant and per-gateway limits (C6).
+type ConnectorLimits struct {
+	MaxConcurrentTurns    int64
+	PromptsPerHour        int64
+	MaxPromptBytes        int64
+	MaxResultChars        int64
+	SendPromptWaitSeconds int64
+}
+
+// DefaultConnectorPort is the connector listener's port when the block does not name one.
+const DefaultConnectorPort = 8789
+
+var connectorKeys = map[string]bool{"enabled": true, "port": true, "publicOrigin": true, "allowedOrigins": true, "pairingTimeoutSeconds": true, "limits": true}
+
+// connectorLimitRanges are the accepted values of each connector limit (C6). The defaults are set in
+// validateConnector.
+var connectorLimitRanges = []struct {
+	key      string
+	min, max int64
+}{
+	{"maxConcurrentTurns", 1, 16},
+	{"promptsPerHour", 1, 1000},
+	{"maxPromptBytes", 1, 65536},
+	{"maxResultChars", 1000, 200000},
+	{"sendPromptWaitSeconds", 1, 600},
+}
+
+const maxConnectorOrigins = 20
+
+// validateConnector checks the connector block. A missing or null block is the default: off.
+func validateConnector(v *jsonv.Value) (Connector, []string) {
+	c := Connector{Port: DefaultConnectorPort, PairingTimeoutSeconds: 300}
+	c.Limits = ConnectorLimits{MaxConcurrentTurns: 1, PromptsPerHour: 20, MaxPromptBytes: 8192, MaxResultChars: 20000, SendPromptWaitSeconds: 200}
+	if v.IsNull() {
+		return c, nil
+	}
+	if v.Kind != jsonv.Object {
+		return c, []string{"connector must be an object (or left out to turn the connector off)"}
+	}
+	var errs []string
+	for _, k := range v.Keys {
+		if !connectorKeys[k] {
+			errs = append(errs, fmt.Sprintf("connector.%s is not a known key", k))
+		}
+	}
+
+	if e := v.Get("enabled"); !e.IsNull() {
+		if e.Kind != jsonv.Bool {
+			errs = append(errs, "connector.enabled must be true or false")
+		} else {
+			c.Enabled = e.B
+		}
+	}
+	if p := v.Get("port"); !p.IsNull() {
+		n, ok := p.Int()
+		if !ok || n < 1 || n > 65535 {
+			errs = append(errs, "connector.port must be an integer from 1 to 65535")
+		} else {
+			c.Port = int(n)
+		}
+	}
+	if o := v.Get("publicOrigin"); !o.IsNull() {
+		s, ok := o.StringValue()
+		if !ok || !validHTTPSBase(s) {
+			errs = append(errs, "connector.publicOrigin must be an https origin with a host and no path, for example https://name.example")
+		} else {
+			c.PublicOrigin = s
+		}
+	}
+	if c.Enabled && c.PublicOrigin == "" {
+		errs = append(errs, "connector.publicOrigin must be set when connector.enabled is true (the https address Claude reaches, D-095)")
+	}
+	if ao := v.Get("allowedOrigins"); !ao.IsNull() {
+		if ao.Kind != jsonv.Array || len(ao.Arr) > maxConnectorOrigins {
+			errs = append(errs, fmt.Sprintf("connector.allowedOrigins must be an array of at most %d https origins", maxConnectorOrigins))
+		} else {
+			for i, item := range ao.Arr {
+				s, ok := item.StringValue()
+				if !ok || !validHTTPSBase(s) {
+					errs = append(errs, fmt.Sprintf("connector.allowedOrigins[%d] must be an https origin with a host and no path", i))
+					continue
+				}
+				c.AllowedOrigins = append(c.AllowedOrigins, s)
+			}
+		}
+	}
+	if t := v.Get("pairingTimeoutSeconds"); !t.IsNull() {
+		n, ok := t.Int()
+		if !ok || n < 1 || n > 3600 {
+			errs = append(errs, "connector.pairingTimeoutSeconds must be an integer from 1 to 3600")
+		} else {
+			c.PairingTimeoutSeconds = n
+		}
+	}
+
+	lim := v.Get("limits")
+	if !lim.IsNull() && lim.Kind != jsonv.Object {
+		errs = append(errs, "connector.limits must be an object")
+		lim = nil
+	}
+	if lim != nil {
+		known := map[string]bool{}
+		for _, r := range connectorLimitRanges {
+			known[r.key] = true
+		}
+		for _, k := range lim.Keys {
+			if !known[k] {
+				errs = append(errs, fmt.Sprintf("connector.limits.%s is not a known limit", k))
+			}
+		}
+	}
+	values := map[string]*int64{
+		"maxConcurrentTurns":    &c.Limits.MaxConcurrentTurns,
+		"promptsPerHour":        &c.Limits.PromptsPerHour,
+		"maxPromptBytes":        &c.Limits.MaxPromptBytes,
+		"maxResultChars":        &c.Limits.MaxResultChars,
+		"sendPromptWaitSeconds": &c.Limits.SendPromptWaitSeconds,
+	}
+	for _, r := range connectorLimitRanges {
+		if lim == nil {
+			break
+		}
+		v := lim.Get(r.key)
+		if v.IsNull() {
+			continue
+		}
+		n, ok := v.Int()
+		if !ok || n < r.min || n > r.max {
+			errs = append(errs, fmt.Sprintf("connector.limits.%s must be an integer from %d to %d", r.key, r.min, r.max))
+			continue
+		}
+		*values[r.key] = n
+	}
+	return c, errs
 }
 
 func validHTTPSBase(s string) bool {
