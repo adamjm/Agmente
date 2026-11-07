@@ -33,7 +33,7 @@ struct GitBranchChip: View {
             .accessibilityLabel(GitChipText.accessibilityLabel(status: status))
             .accessibilityIdentifier("gitBranchChip")
             if let action {
-                Button(action: action) { content }.buttonStyle(.plain)
+                Button(action: action) { content.contentShape(Rectangle().inset(by: -12)) }.buttonStyle(.plain)
             } else {
                 content
             }
