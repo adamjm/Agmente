@@ -7,7 +7,7 @@ AppServerClient/.build
 ACPClient/.build
 *.env
 *.env.*
-.agmente.paths
+.acpcode.paths
 **/xcuserdata/
 **/*.xcbkptlist
 **/*.xcuserstate
@@ -20,7 +20,7 @@ ACPClient/.build
 website/
 Scenarios/apple-store-reivew.md
 Scenarios/apple-store-review.md
-Agmente/Config/Signing.local.xcconfig
+ACPCode/Config/Signing.local.xcconfig
 
 # Client CA, device keys and .p12 files (PLAN 1.10)
 secrets/

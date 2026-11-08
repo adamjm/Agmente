@@ -1,0 +1,1917 @@
+import SwiftUI
+import ACPClient
+
+private let healthyGreen = Color(.sRGB, red: 73/255, green: 210/255, blue: 123/255, opacity: 1)
+
+struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var model = AppViewModel()
+    @State private var addServerSheet: AddServerSheet?
+    @State private var showingSettings = false
+    @State private var showingMCPServers = false // gateway MCP list (FR-40), opened from the More menu
+    @State private var navigationPath: [NavigationDestination] = []
+    @State private var splitSelection: NavigationDestination?
+    @State private var serverToDelete: ACPServerConfiguration?
+    @State private var serverToEdit: ACPServerConfiguration?
+    @State private var previousServerId: UUID?
+    @State private var deepLinkNotice: String?
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Opens the session a link or a tapped notification names. A link only navigates (D-041): it never
+    /// sends a prompt, answers an approval or changes a setting.
+    private func handleDeepLink(_ url: URL) {
+        switch model.resolveDeepLink(url) {
+        case .open(let sessionId):
+            openLinkedSession(sessionId)
+        case .unknownServer:
+            deepLinkNotice = "That link is for a server this device does not have."
+        case .invalid:
+            deepLinkNotice = "That link could not be read."
+        }
+    }
+
+    private func openLinkedSession(_ sessionId: String) {
+#if os(macOS)
+        splitSelection = .session(sessionId)
+#else
+        let preserved = navigationPath.filter { destination in
+            switch destination {
+            case .developerLogs, .folderSessions: return true
+            default: return false
+            }
+        }
+        navigationPath = preserved + [.session(sessionId)]
+#endif
+    }
+
+    private func startupLog(_ message: String) {
+        print("[APP][STARTUP] \(message)")
+    }
+
+    @ViewBuilder
+    private var containerView: some View {
+#if os(macOS)
+        NavigationSplitView {
+            rootContent
+                .navigationTitle("")
+                .navigationSplitViewColumnWidth(min: 350, ideal: 350)
+                .toolbar { toolbarContent }
+        } detail: {
+            macDetailContent
+        }
+#else
+        NavigationStack(path: $navigationPath) {
+            rootContent
+                .navigationTitle("")
+#if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+#endif
+                .toolbar { toolbarContent }
+                .navigationDestination(for: NavigationDestination.self, destination: destinationView)
+        }
+#endif
+    }
+
+    var body: some View {
+        containerView
+        .sheet(item: $addServerSheet, content: addServerSheet)
+        .sheet(item: $serverToEdit, content: editServerSheet)
+        .background(ElicitationSheetHost(inbox: model.gatewayElicitations)) // FR-44, PLAN 6C.3
+        .sheet(isPresented: $showingSettings, content: settingsSheet)
+        .sheet(isPresented: $showingMCPServers) {
+            if let serverId = model.selectedServerId {
+                GatewayMCPServersSheet(serverId: serverId)
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            startupLog("scenePhase changed to \(String(describing: newPhase))")
+            if newPhase == .active {
+                model.resumeConnectionIfNeeded()
+            }
+        }
+        .onChange(of: model.selectedServerId) { oldServerId, newServerId in
+            // Track server changes to prevent auto-navigation on server switch.
+            // We skip one session ID change after a server switch to avoid
+            // navigating to a pre-existing session on the new server.
+            if oldServerId != newServerId {
+                previousServerId = oldServerId
+            }
+        }
+        .onChange(of: model.serverSessionId) { oldValue, newValue in
+#if os(macOS)
+            if newValue.isEmpty {
+                splitSelection = nil
+            } else {
+                splitSelection = .session(newValue)
+            }
+#else
+            // Skip auto-navigation only if:
+            // 1. We just switched servers (previousServerId differs from current)
+            // 2. AND the new server already had a session (oldValue was empty, newValue is pre-existing)
+            //
+            // DO navigate when:
+            // - Creating a NEW session (regardless of server switch state)
+            // - Initial app launch
+            if previousServerId != nil && previousServerId != model.selectedServerId {
+                // We just switched servers. Check if this is a pre-existing session
+                // vs a newly created one. For newly created sessions, oldValue would
+                // have been "" (empty) just before the session was created.
+                // For pre-existing sessions on server switch, both old and new
+                // could be the previously stored session ID.
+                previousServerId = model.selectedServerId
+                
+                // If oldValue was empty and newValue is non-empty, this is a new session
+                // creation that happened right after server switch - we should navigate.
+                // Otherwise, it's the server switch revealing an existing session - skip.
+                if !oldValue.isEmpty {
+                    return
+                }
+            }
+
+            let preserved = navigationPath.filter { destination in
+                switch destination {
+                case .developerLogs, .folderSessions: return true
+                default: return false
+                }
+            }
+
+            if newValue.isEmpty {
+                navigationPath = preserved
+            } else if navigationPath.last != .session(newValue) {
+                navigationPath = preserved + [.session(newValue)]
+            }
+#endif
+        }
+        .onAppear {
+            startupLog(
+                "ContentView.onAppear selectedServerId=\(model.selectedServerId?.uuidString ?? "nil") sessionId=\(model.serverSessionId)"
+            )
+#if os(macOS)
+            let sessionId = model.serverSessionId
+            if !sessionId.isEmpty {
+                splitSelection = .session(sessionId)
+            }
+#else
+            // Auto-navigate to last session on app launch (previousServerId is nil initially)
+            let sessionId = model.serverSessionId
+            if !sessionId.isEmpty {
+                let preserved = navigationPath.filter { destination in
+                    switch destination {
+                    case .developerLogs, .folderSessions: return true
+                    default: return false
+                    }
+                }
+                navigationPath = preserved + [.session(sessionId)]
+            }
+#endif
+        }
+        .onOpenURL { handleDeepLink($0) }
+#if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: .acpcodeOpenDeepLink)) { note in
+            if let sessionId = note.userInfo?["sessionId"] as? String { openLinkedSession(sessionId) }
+        }
+#endif
+        .alert("Link not opened", isPresented: .init(
+            get: { deepLinkNotice != nil },
+            set: { if !$0 { deepLinkNotice = nil } }
+        )) {
+            Button("OK", role: .cancel) { deepLinkNotice = nil }
+        } message: {
+            Text(deepLinkNotice ?? "")
+        }
+        .alert("Session not created", isPresented: .init(
+            get: { model.selectedServerViewModel?.sessionCreateError != nil },
+            set: { if !$0 { model.selectedServerViewModel?.dismissSessionCreateError() } }
+        )) {
+            Button("OK", role: .cancel) { model.selectedServerViewModel?.dismissSessionCreateError() }
+        } message: {
+            Text(model.selectedServerViewModel?.sessionCreateError ?? "")
+        }
+        .alert("Delete Server", isPresented: .init(
+            get: { serverToDelete != nil },
+            set: { if !$0 { serverToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) {
+                serverToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let server = serverToDelete {
+                    model.deleteServer(server.id)
+                    serverToDelete = nil
+                }
+            }
+        } message: {
+            if let server = serverToDelete {
+                Text("Are you sure you want to delete \"\(server.name)\"? This will remove all cached sessions for this server.")
+            }
+        }
+    }
+}
+
+private extension ContentView {
+    func sessionTitle(for sessionId: String) -> String {
+        model.serverSessionSummaries.first(where: { $0.id == sessionId })?.title ?? "Session"
+    }
+
+    @ViewBuilder
+    var rootContent: some View {
+        if model.selectedServerId == nil {
+            SessionPlaceholderView(onAddServer: { addServerSheet = .acp })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+                .background(Color(.systemGroupedBackground))
+                .ignoresSafeArea()
+        } else {
+            SessionListPage(
+                model: model,
+                navigationPath: $navigationPath,
+                splitSelection: $splitSelection,
+                onOpenSettings: { showingSettings = true }
+            )
+            .readableColumn()
+        }
+    }
+
+    @ViewBuilder
+    var macDetailContent: some View {
+        if let selection = splitSelection {
+            destinationView(selection)
+        } else {
+            SessionPlaceholderView(onAddServer: { addServerSheet = .acp })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+                .background(Color(.systemGroupedBackground))
+        }
+    }
+
+    @ViewBuilder
+    func destinationView(_ destination: NavigationDestination) -> some View {
+        switch destination {
+        case .session(let sessionId):
+            let title = sessionTitle(for: sessionId)
+            // Phase 1: Open session in .task to avoid side effects in view body,
+            // then conditionally render SessionDetailView with the current session's view model.
+            // Use .id() to force re-render when session state changes.
+            Group {
+                if let serverViewModel = model.selectedServerViewModel,
+                   serverViewModel.selectedSessionId == sessionId,
+                   let sessionViewModel = serverViewModel.currentSessionViewModel {
+                    // ACP server
+                    SessionDetailView(
+                        model: model,
+                        serverViewModel: serverViewModel,
+                        sessionViewModel: sessionViewModel
+                    )
+                } else if let codexViewModel = model.selectedCodexServerViewModel,
+                          codexViewModel.selectedSessionId == sessionId,
+                          let sessionViewModel = codexViewModel.currentSessionViewModel {
+                    // Codex server
+                    CodexSessionDetailView(
+                        model: model,
+                        serverViewModel: codexViewModel,
+                        sessionViewModel: sessionViewModel
+                    )
+                } else {
+                    // Fallback while session is loading
+                    ProgressView("Loading session...")
+                }
+            }
+            .navigationTitle(title)
+            // Force view re-evaluation when session state changes
+            .id(model.serverSessionId)
+            .task(id: sessionId) {
+                model.openSession(sessionId)
+            }
+        case .developerLogs:
+            DeveloperLogsView(model: model)
+#if DEBUG && canImport(UIKit)
+        case .testTranscript:
+            ChatComponentGalleryView()
+                .navigationTitle("Test Transcript")
+#endif
+        case .folderSessions(let path, let displayName):
+            FolderSessionsView(
+                model: model,
+                folderPath: path,
+                folderDisplayName: displayName,
+                splitSelection: $splitSelection
+            )
+        }
+    }
+
+    func addServerSheet(_ sheet: AddServerSheet) -> some View {
+        AddServerView(
+            initialServerType: sheet.serverType,
+            onValidate: { name, scheme, host, token, cfAccessClientId, cfAccessClientSecret, workingDirectory, serverType, security in
+                await model.validateServerConfiguration(
+                    name: name,
+                    scheme: scheme,
+                    host: host,
+                    token: token,
+                    cfAccessClientId: cfAccessClientId,
+                    cfAccessClientSecret: cfAccessClientSecret,
+                    workingDirectory: workingDirectory,
+                    serverType: serverType,
+                    security: security
+                )
+            },
+            onInsert: { validated in
+                model.addValidatedServer(validated)
+            }
+        )
+    }
+
+    func editServerSheet(_ server: ACPServerConfiguration) -> some View {
+        AddServerView(
+            editingServer: server,
+            onValidate: { name, scheme, host, token, cfAccessClientId, cfAccessClientSecret, workingDirectory, serverType, security in
+                await model.validateServerConfiguration(
+                    name: name,
+                    scheme: scheme,
+                    host: host,
+                    token: token,
+                    cfAccessClientId: cfAccessClientId,
+                    cfAccessClientSecret: cfAccessClientSecret,
+                    workingDirectory: workingDirectory,
+                    serverType: serverType,
+                    security: security
+                )
+            },
+            onInsert: { validated in
+                model.updateServer(server.id, with: validated)
+            }
+        )
+    }
+
+    func settingsSheet() -> some View {
+        SettingsView(
+            devModeEnabled: $model.devModeEnabled,
+            codexSessionLoggingEnabled: $model.codexSessionLoggingEnabled,
+            sessionLogger: model.codexSessionLoggerForExport
+        )
+    }
+
+    @ToolbarContentBuilder
+    var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            Menu {
+                ForEach(model.servers) { server in
+                    Button {
+                        model.selectServer(server.id)
+                    } label: {
+                        HStack {
+                            Text(server.name)
+                            Spacer()
+                            if server.id == model.selectedServerId {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button {
+                    addServerSheet = .acp
+                } label: {
+                    Label("Add ACP Server", systemImage: "plus")
+                }
+                .accessibilityIdentifier("addACPServerMenuAction")
+
+                Button {
+                    addServerSheet = .codexAppServer
+                } label: {
+                    Label("Add Codex App Server", systemImage: "plus")
+                }
+                .accessibilityIdentifier("addCodexServerMenuAction")
+            } label: {
+                if #available(iOS 26.0, macOS 26.0, *) {
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(model.connectionState == .connected ? Color.green : Color.orange)
+                            .frame(width: 9, height: 9)
+                        Text(model.currentServerName)
+                            .font(.headline.weight(.semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .glassEffect()
+                } else {
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(model.connectionState == .connected ? Color.green : Color.orange)
+                            .frame(width: 9, height: 9)
+                        Text(model.currentServerName)
+                            .font(.headline.weight(.semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        
+        let trailingPlacement: ToolbarItemPlacement = {
+#if os(macOS)
+            .primaryAction
+#else
+            .navigationBarTrailing
+#endif
+        }()
+        ToolbarItem(placement: trailingPlacement) {
+            Menu {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
+
+                Button {
+                    Task { await model.refreshSessions() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+
+                #if DEBUG && canImport(UIKit)
+                if model.devModeEnabled {
+                    Button {
+                        #if os(macOS)
+                        splitSelection = .testTranscript
+                        #else
+                        navigationPath.append(.testTranscript)
+                        #endif
+                    } label: {
+                        Label("Test Transcript", systemImage: "rectangle.on.rectangle.angled")
+                    }
+                }
+                #endif
+
+                Button(action: model.disconnect) {
+                    Label("Disconnect", systemImage: "bolt.slash")
+                }
+                .disabled(model.connectionState == .disconnected)
+
+                if MCPEntryPoint.showsServersRow(isGateway: model.selectedServerViewModel?.isGatewayServer ?? false) {
+                    Button {
+                        showingMCPServers = true
+                    } label: {
+                        Label("MCP Servers", systemImage: "puzzlepiece.extension")
+                    }
+                    .accessibilityIdentifier("gatewayMCPServers")
+                }
+
+                if let current = model.servers.first(where: { $0.id == model.selectedServerId }) {
+                    Button {
+                        serverToEdit = current
+                    } label: {
+                        Label("Edit Server", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive) {
+                        serverToDelete = current
+                    } label: {
+                        Label("Delete \"\(current.name)\"", systemImage: "trash")
+                    }
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis")
+            }
+            .accessibilityIdentifier("moreMenuButton")
+        }
+    }
+}
+
+private enum AddServerSheet: String, Identifiable {
+    case acp
+    case codexAppServer
+
+    var id: String { rawValue }
+
+    var serverType: ServerType {
+        switch self {
+        case .acp:
+            return .acp
+        case .codexAppServer:
+            return .codexAppServer
+        }
+    }
+}
+
+private struct SessionListPage: View {
+    @ObservedObject var model: AppViewModel
+    @Binding var navigationPath: [NavigationDestination]
+    @Binding var splitSelection: NavigationDestination?
+    /// Opens the Settings sheet from the sidebar's avatar button.
+    let onOpenSettings: () -> Void
+    /// Reveals the search field from the header's search button.
+    @State private var searchPresented: Bool = false
+    @State private var showingProjects: Bool = false
+    @State private var pendingProjectScroll: String?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
+    @State private var sessionSearchText: String = ""
+    @State private var showingNewSessionSheet: Bool = false
+    @State private var customWorkingDirectory: String = ""
+    /// Owned by the app model, so `_acpcode/project/state` reaches it (D-102).
+    private var gatewayHome: GatewayHomeModel { model.gatewayHome }
+    @State private var showingApprovals: Bool = false
+    @State private var showingNewProjectSheet: Bool = false // D-091: New project on a gateway server
+    @AppStorage("summaryCardCollapsed") private var summaryCardCollapsed: Bool = false
+    @AppStorage("sessionGroupingMode") private var groupingMode: SessionGroupingMode = .byTime
+    private static let lastConnectedFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.doesRelativeDateFormatting = true
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private func startupLog(_ message: String) {
+        print("[APP][STARTUP] \(message)")
+    }
+
+    private var activeSessions: [SessionSummary] {
+        // Only show as active if the session is actually streaming (agent is responding)
+        guard model.serverIsStreaming,
+              !model.serverSessionId.isEmpty else { return [] }
+        let sessionId = model.serverSessionId
+        let sessions = model.serverSessionSummaries.filter { $0.id == sessionId }
+        return filterSessions(sessions)
+    }
+
+    private var idleSessions: [SessionSummary] {
+        // All sessions except the one that's actively streaming
+        let activeIds = activeSessions.map { $0.id }
+        let sessions = model.serverSessionSummaries.filter { !activeIds.contains($0.id) }
+        return filterSessions(sessions)
+    }
+
+    private var groupedSessions: [(group: SessionTimeGroup, sessions: [SessionDisplay])] {
+        var buckets: [SessionTimeGroup: [SessionDisplay]] = [:]
+        let filtered = filterSessions(model.serverSessionSummaries)
+        let activeId = model.serverIsStreaming ? model.serverSessionId : nil
+
+        for summary in filtered {
+            let group = SessionTimeGroup.group(for: summary.updatedAt)
+            let display = SessionDisplay(summary: summary, isActive: summary.id == activeId)
+            buckets[group, default: []].append(display)
+        }
+
+        return SessionTimeGroup.displayOrder.compactMap { group in
+            guard let sessions = buckets[group] else { return nil }
+            let sorted = sessions.sorted { lhs, rhs in
+                switch (lhs.summary.updatedAt, rhs.summary.updatedAt) {
+                case let (lhsDate?, rhsDate?):
+                    if lhsDate != rhsDate { return lhsDate > rhsDate }
+                    return lhs.summary.id < rhs.summary.id
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                case (nil, nil):
+                    return lhs.summary.id < rhs.summary.id
+                }
+            }
+            return (group, sorted)
+        }
+    }
+
+    private static let maxSessionsPerFolder = 5
+
+    private var groupedByFolder: [(group: SessionFolderGroup, sessions: [SessionDisplay], hasMore: Bool)] {
+        var buckets: [String: [SessionDisplay]] = [:]
+        let filtered = filterSessions(model.serverSessionSummaries)
+        let activeId = model.serverIsStreaming ? model.serverSessionId : nil
+        let defaultCwd = model.defaultWorkingDirectory
+
+        for summary in filtered {
+            let folderGroup = SessionFolderGroup.make(from: summary.cwd, defaultCwd: defaultCwd)
+            let display = SessionDisplay(summary: summary, isActive: summary.id == activeId)
+            buckets[folderGroup.path, default: []].append(display)
+        }
+
+        return buckets.map { path, sessions in
+            let group = SessionFolderGroup.make(
+                from: path.isEmpty ? nil : path,
+                defaultCwd: nil
+            )
+            let sorted = sessions.sorted { lhs, rhs in
+                switch (lhs.summary.updatedAt, rhs.summary.updatedAt) {
+                case let (l?, r?):
+                    if l != r { return l > r }
+                    return lhs.summary.id < rhs.summary.id
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil): return lhs.summary.id < rhs.summary.id
+                }
+            }
+            let hasMore = sorted.count > Self.maxSessionsPerFolder
+            let truncated = hasMore ? Array(sorted.prefix(Self.maxSessionsPerFolder)) : sorted
+            return (group, truncated, hasMore)
+        }
+        .sorted { lhs, rhs in
+            let lhsDate = lhs.sessions.first?.summary.updatedAt ?? .distantPast
+            let rhsDate = rhs.sessions.first?.summary.updatedAt ?? .distantPast
+            return lhsDate > rhsDate
+        }
+    }
+
+    private func navigate(to destination: NavigationDestination) {
+#if os(macOS)
+        splitSelection = destination
+#else
+        navigationPath.append(destination)
+#endif
+    }
+
+    #if os(macOS)
+    private func sessionWindowKey(for sessionId: String) -> String {
+        let serverId = model.selectedServerId?.uuidString ?? "unknown-server"
+        return "\(serverId)::\(sessionId)"
+    }
+
+    private func openSessionInNewWindow(_ sessionId: String) {
+        model.openSession(sessionId)
+
+        if let serverViewModel = model.selectedServerViewModel,
+           serverViewModel.selectedSessionId == sessionId,
+           let sessionViewModel = serverViewModel.currentSessionViewModel {
+            let title = model.serverSessionSummaries.first(where: { $0.id == sessionId })?.title ?? "Session"
+            let payload = SessionWindowPayload(
+                model: model,
+                sessionId: sessionId,
+                title: title,
+                acpServerViewModel: serverViewModel,
+                codexServerViewModel: nil,
+                sessionViewModel: sessionViewModel
+            )
+            let key = SessionWindowStore.shared.store(payload, for: sessionWindowKey(for: sessionId))
+            openWindow(id: SessionWindowStore.windowId, value: key)
+            return
+        }
+
+        if let codexViewModel = model.selectedCodexServerViewModel,
+           codexViewModel.selectedSessionId == sessionId,
+           let sessionViewModel = codexViewModel.currentSessionViewModel {
+            let title = model.serverSessionSummaries.first(where: { $0.id == sessionId })?.title ?? "Session"
+            let payload = SessionWindowPayload(
+                model: model,
+                sessionId: sessionId,
+                title: title,
+                acpServerViewModel: nil,
+                codexServerViewModel: codexViewModel,
+                sessionViewModel: sessionViewModel
+            )
+            let key = SessionWindowStore.shared.store(payload, for: sessionWindowKey(for: sessionId))
+            openWindow(id: SessionWindowStore.windowId, value: key)
+        }
+    }
+    #endif
+
+    @ViewBuilder
+    private func destinationTrigger<Label: View>(
+        _ destination: NavigationDestination,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+#if os(macOS)
+        Button {
+            navigate(to: destination)
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
+#else
+        NavigationLink(value: destination) {
+            label()
+        }
+        .buttonStyle(.plain)
+#endif
+    }
+
+    @ViewBuilder
+    private func sessionDestinationTrigger(
+        _ summary: SessionSummary,
+        displayCwd: String?,
+        isActive: Bool,
+        showCwd: Bool = true
+    ) -> some View {
+        let destination = NavigationDestination.session(summary.id)
+        destinationTrigger(destination) {
+            SessionRow(
+                title: summary.title ?? "New Chat",
+                lastMessage: model.selectedServerId.flatMap {
+                    model.getLastMessagePreview(for: $0, sessionId: summary.id)
+                },
+                cwd: displayCwd,
+                isActive: isActive,
+                showCwd: showCwd
+            )
+        }
+#if os(macOS)
+        .contextMenu {
+            if model.canArchiveSessions {
+                Button("Archive Session") {
+                    model.archiveSession(summary.id)
+                }
+            }
+
+            Button("Open in New Window") {
+                openSessionInNewWindow(summary.id)
+            }
+        }
+#endif
+    }
+
+    private var newProjectPlacement: ToolbarItemPlacement {
+#if os(macOS)
+        .automatic
+#else
+        .navigationBarTrailing
+#endif
+    }
+
+    private var searchPlacement: SearchFieldPlacement {
+#if os(macOS)
+        return .toolbar
+#else
+        return .navigationBarDrawer(displayMode: .automatic)
+#endif
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        SidebarTitleBar(title: "ACP Code")
+
+                        summaryCard
+
+                        if model.selectedServerIsGatewayHome {
+                            ApprovalsBanner(inbox: model.gatewayApprovals) { showingApprovals = true }
+
+                            if !gatewayHome.projects.isEmpty {
+                                SidebarNavRow(
+                                    title: "Projects",
+                                    systemImage: "folder",
+                                    count: gatewayHome.projects.count,
+                                    identifier: "sidebarProjectsRow"
+                                ) {
+                                    showingProjects = true
+                                }
+                            }
+                        }
+
+                        if model.selectedServerIsGatewayHome {
+                            if !gatewayHome.projects.isEmpty {
+                                SidebarSectionHeader(title: "Recents")
+                            }
+                            SidebarGatewaySections(home: gatewayHome, search: sessionSearchText, git: model.gitStore) { sessionId in
+                                navigate(to: .session(sessionId))
+                            }
+                            .gitHomeTabSheet(store: model.gitStore)
+                        } else if model.serverSessionSummaries.isEmpty {
+                            VStack(spacing: 8) {
+                                Text("Start a new session to chat with your agent")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+
+                                Link(destination: URL(string: "https://agmente.halliharp.com/docs/guides/local-agent")!) {
+                                    Label("Setup guide", systemImage: "book")
+                                        .font(.footnote)
+                                }
+                            }
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 4)
+                        } else {
+                            SidebarSectionHeader(title: "Recents")
+                            switch groupingMode {
+                            case .byTime:
+                                ForEach(groupedSessions, id: \.group) { group, sessions in
+                                    sessionSection(title: group.title, sessions: sessions)
+                                }
+                            case .byFolder:
+                                ForEach(groupedByFolder, id: \.group) { group, sessions, hasMore in
+                                    folderSection(group: group, sessions: sessions, hasMore: hasMore)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                }
+                .refreshable {
+                    if model.selectedServerIsGatewayHome {
+                        async let home: Void = gatewayHome.refresh()
+                        async let approvals: Void = model.gatewayApprovals.refresh()
+                        _ = await (home, approvals)
+                    } else {
+                        await model.refreshSessions()
+                    }
+                }
+                .sheet(isPresented: $showingProjects, onDismiss: {
+                    // The sheet closes first, then the home scrolls to the chosen project's group.
+                    guard let projectId = pendingProjectScroll else { return }
+                    pendingProjectScroll = nil
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(SidebarScroll.project(projectId), anchor: .top)
+                    }
+                }) {
+                    SidebarProjectsSheet(
+                        home: gatewayHome,
+                        onPick: { projectId in
+                            pendingProjectScroll = projectId
+                            showingProjects = false
+                        },
+                        onClose: { showingProjects = false }
+                    )
+                }
+            }
+
+            SidebarBottomBar(
+                initials: SidebarPresentation.initials(for: model.currentServerName),
+                isConnected: model.connectionState == .connected,
+                onSettings: onOpenSettings,
+                onNewSession: startNewSession,
+                onCustomDirectory: openCustomDirectorySheet
+            )
+        }
+        .searchable(
+            text: $sessionSearchText,
+            isPresented: $searchPresented,
+            placement: searchPlacement,
+            prompt: "Search sessions"
+        )
+#if os(iOS)
+        .textInputAutocapitalization(.never)
+#endif
+        .disableAutocorrection(true)
+        .sheet(isPresented: $showingNewProjectSheet) {
+            // D-091: the gateway makes <root>/<name> and registers it; the new project is then selected.
+            GatewayNewProjectSheet(
+                clientProvider: { [weak model] in model?.selectedGatewayClient() },
+                onCreated: { project in
+                    await gatewayHome.refresh()
+                    gatewayHome.select(projectId: project.id)
+                },
+                onClose: { showingNewProjectSheet = false }
+            )
+        }
+        .sheet(isPresented: $showingApprovals) {
+            ApprovalsInboxView(
+                inbox: model.gatewayApprovals,
+                projects: gatewayHome.projects,
+                sessions: gatewayHome.sessions,
+                onClose: { showingApprovals = false }
+            )
+        }
+        .sheet(isPresented: $showingNewSessionSheet) {
+            if model.selectedServerIsGatewayHome {
+                // A gateway server picks a project, not a path (FR-26).
+                GatewayNewSessionSheet(
+                    projects: gatewayHome.projects,
+                    initialSelection: gatewayHome.selectedProjectId,
+                    onCancel: { showingNewSessionSheet = false },
+                    onCreate: { project in
+                        if let cwd = gatewayNewSessionCwd(selectedProjectPath: project.path) {
+                            model.sendNewSession(workingDirectory: cwd)
+                        }
+                        showingNewSessionSheet = false
+                    }
+                )
+            } else {
+                NewSessionSheet(
+                    workingDirectory: $customWorkingDirectory,
+                    usedWorkingDirectories: model.usedWorkingDirectoryHistory,
+                    onCancel: { showingNewSessionSheet = false },
+                    onCreate: {
+                        model.sendNewSession(workingDirectory: customWorkingDirectory)
+                        showingNewSessionSheet = false
+                    }
+                )
+            }
+        }
+        .toolbar {
+            if model.selectedServerIsGatewayHome {
+                // D-091: a new project is made inside a configured root on the gateway.
+                ToolbarItem(placement: newProjectPlacement) {
+                    Button {
+                        showingNewProjectSheet = true
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                    }
+                    .accessibilityLabel("New project")
+                    .accessibilityIdentifier("gatewayNewProject")
+                }
+                // D-097: approve or deny client pairings, and manage the connected clients.
+                ToolbarItem(placement: newProjectPlacement) { GatewayConnectionsButton(clientProvider: { [weak model] in model?.selectedGatewayClient() }) }
+            }
+            if !model.serverSessionSummaries.isEmpty {
+                let leadingPlacement: ToolbarItemPlacement = {
+#if os(macOS)
+                    .automatic
+#else
+                    .navigationBarLeading
+#endif
+                }()
+                ToolbarItem(placement: leadingPlacement) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            groupingMode = groupingMode.toggled
+                        }
+                    } label: {
+                        Image(systemName: groupingMode.systemImage)
+                    }
+                    .accessibilityLabel(groupingMode == .byTime ? "Group by folder" : "Group by time")
+                    .accessibilityIdentifier("sessionGroupingToggle")
+                }
+            }
+
+        }
+        .task(id: gatewayRefreshKey) {
+            // The gateway answers the projects, sessions and approvals from its own database. While the home
+            // is on screen they refresh every 15 s; a leave or a server change ends the loop.
+            guard model.selectedServerIsGatewayHome else {
+                gatewayHome.configure(serverId: model.selectedServerId, clientProvider: nil)
+                model.gatewayApprovals.configure(clientProvider: nil)
+                return
+            }
+            let provider: () -> GatewayClient? = { [weak model] in model?.selectedGatewayClient() }
+            gatewayHome.configure(serverId: model.selectedServerId, clientProvider: provider)
+            model.gatewayApprovals.configure(clientProvider: provider)
+            while !Task.isCancelled {
+                async let home: Void = gatewayHome.refresh()
+                async let approvals: Void = model.gatewayApprovals.refresh()
+                _ = await (home, approvals)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+            }
+        }
+        .onAppear {
+            startupLog(
+                "SessionListPage.onAppear connectionState=\(model.connectionState) isConnecting=\(model.isConnecting) selectedServerId=\(model.selectedServerId?.uuidString ?? "nil") isInitialAppLaunch=\(model.isInitialAppLaunch)"
+            )
+            // AppViewModel init already schedules the initial cold-launch connection.
+            // Skip the view-level auto-connect on first appearance to avoid opening
+            // a second socket before the startup task marks the manager as connecting.
+            if !model.isInitialAppLaunch,
+               model.connectionState == .disconnected,
+               !model.isConnecting {
+                model.connect()
+            }
+        }
+    }
+
+    /// Changes when the gateway loop must restart: another server, or the same one connected again.
+    private var gatewayRefreshKey: String {
+        "\(model.selectedServerId?.uuidString ?? "-")|\(model.selectedServerIsGatewayHome)|\(model.connectionState)"
+    }
+
+    private var summaryCard: some View {
+        // A gateway server counts its own sessions by their status; others count the streaming one.
+        let active = model.selectedServerIsGatewayHome ? gatewayHome.activeCount : activeSessions.count
+        let idle = model.selectedServerIsGatewayHome ? gatewayHome.idleCount : idleSessions.count
+        // Use serverAgentInfo (reads from @Published ServerViewModel.agentInfo) instead of
+        // currentAgentInfo (reads from non-@Published agentInfoCache) to ensure view updates
+        let agentDisplayName = model.serverAgentInfo?.displayNameWithVersion
+        let agentCapabilities = model.serverAgentInfo?.capabilities
+        let capabilityVerifications = model.serverAgentInfo?.verifications ?? []
+        let lastConnectedLabel = model.lastConnectedAt.map { Self.lastConnectedFormatter.string(from: $0) } ?? "—"
+        // Only show ACP capability warnings for true ACP servers.
+        // On app restore there can be brief model-switch windows; treat either explicit Codex config
+        // or an active Codex view model as Codex to avoid ACP-specific warnings.
+        let isCodexServer = model.selectedServer?.serverType == .codexAppServer
+            || model.selectedCodexServerViewModel != nil
+        let isACPServer = !isCodexServer
+        // Only ACP servers have expandable content (capabilities); Codex app-server protocol doesn't provide modes/capabilities
+        let hasExpandableContent = isACPServer
+
+        return VStack(alignment: .leading, spacing: 12) {
+                // Header row with agent name and collapse toggle
+                HStack(alignment: .top) {
+                    // Agent name (or server name fallback for Codex)
+                    if let agentName = agentDisplayName, !agentName.isEmpty {
+                        Text(agentName)
+                            .font(.headline)
+                    } else if let serverName = model.selectedServer?.name {
+                        Text(serverName)
+                            .font(.headline)
+                    }
+                    
+                    Spacer()
+                    
+                    // Collapse/expand toggle - only show if there's expandable content (ACP servers only)
+                    if hasExpandableContent {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                summaryCardCollapsed.toggle()
+                            }
+                        } label: {
+                            Image(systemName: summaryCardCollapsed ? "chevron.down" : "chevron.up")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 28)
+                                .background(Color(.systemGray5).opacity(0.6))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Collapsible content - ACP servers only (Codex app-server doesn't provide capabilities)
+                if !summaryCardCollapsed && hasExpandableContent {
+                    if let capabilities = agentCapabilities {
+                        AgentCapabilitiesSummary(
+                            capabilities: capabilities,
+                            verifications: capabilityVerifications
+                        )
+                    }
+                }
+
+                // Active/idle stats (always visible)
+                HStack(spacing: 8) {
+                    // Always show Codex badge for Codex servers
+                    if !isACPServer {
+                        HStack(spacing: 4) {
+                            Image(systemName: "server.rack")
+                                .font(.caption2)
+                            Text("Codex")
+                                .font(.caption2.weight(.medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(Color.green.opacity(0.15))
+                        )
+                        .foregroundStyle(.green)
+                    }
+                    
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(healthyGreen)
+                            .frame(width: 8, height: 8)
+                        Text("\(active) active")
+                            .font(.caption.weight(.medium))
+                    }
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color(.systemGray4))
+                            .frame(width: 8, height: 8)
+                        Text("\(idle) idle")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    // Show logs button when collapsed and dev mode enabled
+                    if summaryCardCollapsed && model.devModeEnabled {
+                        Spacer()
+
+                        HStack(spacing: 10) {
+                            Button {
+                                navigate(to: .developerLogs)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.text")
+                                        .font(.caption2)
+                                    Text("Logs")
+                                        .font(.caption.weight(.medium))
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            #if DEBUG && canImport(UIKit)
+                            Button {
+                                navigate(to: .testTranscript)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "rectangle.on.rectangle.angled")
+                                        .font(.caption2)
+                                    Text("Transcript")
+                                        .font(.caption.weight(.medium))
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            #endif
+                        }
+                    }
+                }
+
+                // Dev mode status (always visible when enabled)
+                if model.devModeEnabled {
+                    HStack(alignment: .center, spacing: 8) {
+                        HStack (spacing: 2) {
+                            Image(systemName: model.connectionState == .connected ? "bolt.fill" : "bolt.slash.fill")
+                                .font(.caption2)
+                            Text(model.stateLabel(model.connectionState))
+                                .font(.caption.weight(.medium))
+                        }
+
+                        Text(lastConnectedLabel)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .foregroundStyle(model.connectionState == .connected ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                }
+            }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SidebarStyle.rowHorizontalPadding)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard model.devModeEnabled && !summaryCardCollapsed else { return }
+            navigate(to: .developerLogs)
+        }
+    }
+
+    /// New session, as the old footer and toolbar ran it. A gateway picks a project first (FR-26).
+    private func startNewSession() {
+        guard model.connectionState == .connected else { return }
+        if model.selectedServerIsGatewayHome {
+            showingNewSessionSheet = true
+        } else {
+            model.sendNewSession()
+        }
+    }
+
+    /// The custom working directory option of the New session menu.
+    private func openCustomDirectorySheet() {
+        guard model.connectionState == .connected else { return }
+        customWorkingDirectory = model.workingDirectory
+        showingNewSessionSheet = true
+    }
+
+    private func filterSessions(_ sessions: [SessionSummary]) -> [SessionSummary] {
+        let query = sessionSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return sessions }
+        let lower = query.lowercased()
+        return sessions.filter {
+            ($0.title?.lowercased().contains(lower) ?? false) || $0.id.lowercased().contains(lower)
+        }
+    }
+
+    private func sessionSection(title: String, sessions: [SessionDisplay]) -> some View {
+        let defaultCwd = model.defaultWorkingDirectory
+
+        return VStack(alignment: .leading, spacing: 2) {
+            SidebarSectionHeader(title: title)
+
+            ForEach(sessions, id: \.id) { session in
+                let summary = session.summary
+                let displayCwd = summary.cwd ?? defaultCwd
+                sessionDestinationTrigger(
+                    summary,
+                    displayCwd: displayCwd,
+                    isActive: session.isActive
+                )
+            }
+        }
+    }
+
+    private func folderSection(
+        group: SessionFolderGroup,
+        sessions: [SessionDisplay],
+        hasMore: Bool
+    ) -> some View {
+        let defaultCwd = model.defaultWorkingDirectory
+        let folderWorkingDirectory = group.path.isEmpty ? nil : group.path
+
+        return VStack(alignment: .leading, spacing: 2) {
+            FolderHeaderCard(
+                displayName: group.displayName,
+                path: group.path,
+                onAddSession: {
+                    model.sendNewSession(workingDirectory: folderWorkingDirectory)
+                }
+            )
+
+            ForEach(sessions, id: \.id) { session in
+                let summary = session.summary
+                let displayCwd = summary.cwd ?? defaultCwd
+                sessionDestinationTrigger(
+                    summary,
+                    displayCwd: displayCwd,
+                    isActive: session.isActive,
+                    showCwd: false
+                )
+            }
+
+            if hasMore {
+                destinationTrigger(.folderSessions(
+                    path: group.path,
+                    displayName: group.displayName
+                )) {
+                    HStack {
+                        Text("Show More Sessions")
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, SidebarStyle.rowHorizontalPadding)
+                    .padding(.vertical, SidebarStyle.rowVerticalPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("showMoreFolder_\(group.path)")
+            }
+        }
+    }
+}
+
+private struct SessionDisplay: Identifiable {
+    let summary: SessionSummary
+    let isActive: Bool
+
+    var id: String { summary.id }
+}
+
+private enum SessionGroupingMode: String, CaseIterable {
+    case byTime
+    case byFolder
+
+    var label: String {
+        switch self {
+        case .byTime: return "Time"
+        case .byFolder: return "Folder"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .byTime: return "clock"
+        case .byFolder: return "folder"
+        }
+    }
+
+    var toggled: SessionGroupingMode {
+        switch self {
+        case .byTime: return .byFolder
+        case .byFolder: return .byTime
+        }
+    }
+}
+
+private enum SessionTimeGroup: CaseIterable, Hashable {
+    case today
+    case yesterday
+    case thisWeek
+    case lastWeek
+    case thisMonth
+    case lastMonth
+    case earlier
+    case unknown
+
+    var title: String {
+        switch self {
+        case .today:
+            return "Today"
+        case .yesterday:
+            return "Yesterday"
+        case .thisWeek:
+            return "This week"
+        case .lastWeek:
+            return "Last week"
+        case .thisMonth:
+            return "This month"
+        case .lastMonth:
+            return "Last month"
+        case .earlier:
+            return "Earlier"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+
+    static var displayOrder: [SessionTimeGroup] {
+        [.today, .yesterday, .thisWeek, .lastWeek, .thisMonth, .lastMonth, .earlier, .unknown]
+    }
+
+    static func group(for date: Date?, calendar: Calendar = .current) -> SessionTimeGroup {
+        guard let date else { return .unknown }
+        let now = Date()
+
+        if calendar.isDateInToday(date) {
+            return .today
+        }
+
+        if calendar.isDateInYesterday(date) {
+            return .yesterday
+        }
+
+        if let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now), currentWeek.contains(date) {
+            return .thisWeek
+        }
+
+        if let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now),
+           let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: currentWeek.start),
+           let lastWeek = calendar.dateInterval(of: .weekOfYear, for: lastWeekStart),
+           lastWeek.contains(date) {
+            return .lastWeek
+        }
+
+        if let currentMonth = calendar.dateInterval(of: .month, for: now), currentMonth.contains(date) {
+            return .thisMonth
+        }
+
+        if let currentMonth = calendar.dateInterval(of: .month, for: now),
+           let lastMonthStart = calendar.date(byAdding: .month, value: -1, to: currentMonth.start),
+           let lastMonth = calendar.dateInterval(of: .month, for: lastMonthStart),
+           lastMonth.contains(date) {
+            return .lastMonth
+        }
+
+        return .earlier
+    }
+}
+
+private struct SessionFolderGroup: Hashable, Identifiable {
+    let path: String
+    let displayName: String
+
+    var id: String { path }
+
+    static func make(from cwd: String?, defaultCwd: String?) -> SessionFolderGroup {
+        let raw = cwd ?? defaultCwd ?? ""
+        let normalized = raw.hasSuffix("/") && raw.count > 1
+            ? String(raw.dropLast())
+            : raw
+        guard !normalized.isEmpty else {
+            return SessionFolderGroup(path: "", displayName: "No Folder")
+        }
+        let last = (normalized as NSString).lastPathComponent
+        let display = last.isEmpty ? normalized : last
+        return SessionFolderGroup(path: normalized, displayName: display)
+    }
+}
+
+private struct FolderHeaderCard: View {
+    let displayName: String
+    let path: String
+    var onAddSession: (() -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var shouldShowPath: Bool {
+        !path.isEmpty && displayName != path
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder")
+                    .foregroundStyle(Color.secondary)
+                Text(displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let onAddSession {
+                    Button(action: onAddSession) {
+                        Image(systemName: "plus")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel(path.isEmpty ? "Start new session in default folder" : "Start new session in \(displayName)")
+                    .accessibilityIdentifier(path.isEmpty ? "newSessionInFolder_default" : "newSessionInFolder_\(path)")
+                }
+            }
+        }
+        .padding(.horizontal, SidebarStyle.rowHorizontalPadding)
+        .padding(.top, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SessionRow: View {
+    let title: String
+    let lastMessage: String?
+    let cwd: String?
+    let isActive: Bool
+    var showCwd: Bool = true
+
+    private var status: ForkStatusKind { isActive ? .running : .idle }
+    private var visibleCwd: String? { showCwd ? cwd : nil }
+
+    var body: some View {
+        SidebarSessionRow(
+            title: title,
+            status: status,
+            isHighlighted: isActive,
+            accessibilityExtras: [lastMessage ?? "", visibleCwd ?? ""]
+        )
+    }
+}
+
+private struct SessionCardStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(.secondarySystemBackground) : Color.white)
+            )
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0 : 0.05), radius: 10, y: 6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color(.systemGray5).opacity(colorScheme == .dark ? 0.4 : 1), lineWidth: colorScheme == .dark ? 0.5 : 1)
+            )
+    }
+}
+
+private struct NewSessionSheet: View {
+    @Binding var workingDirectory: String
+    let usedWorkingDirectories: [String]
+    let onCancel: () -> Void
+    let onCreate: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    private var contentForm: some View {
+#if os(macOS)
+        ScrollView {
+            Form {
+                formSections
+            }
+            .formStyle(.grouped)
+            .frame(maxWidth: 680)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+#else
+        Form {
+            formSections
+        }
+#endif
+    }
+
+    @ViewBuilder
+    private var formSections: some View {
+        Section {
+            TextField("Working directory", text: $workingDirectory)
+#if os(iOS)
+                .textInputAutocapitalization(.never)
+#endif
+                .disableAutocorrection(true)
+                .font(.system(.body, design: .monospaced))
+        } header: {
+            Text("Working Directory")
+        } footer: {
+            Text("The directory where the agent will operate for this session.")
+        }
+
+        let trimmedCurrent = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let history = usedWorkingDirectories.filter { $0 != trimmedCurrent }
+        if !history.isEmpty {
+            Section {
+                ForEach(history, id: \.self) { directory in
+                    Button {
+                        workingDirectory = directory
+                    } label: {
+                        HStack {
+                            Image(systemName: "folder")
+                                .foregroundStyle(.secondary)
+                            Text(directory)
+                                .font(.system(.body, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("Previously Used")
+            } footer: {
+                Text("Tap to fill the working directory.")
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            contentForm
+            .navigationTitle("New Session")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create", action: onCreate)
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+#if os(macOS)
+        .frame(minWidth: 700, idealWidth: 760, minHeight: 430, idealHeight: 520)
+#else
+        .presentationDetents([.medium])
+#endif
+    }
+}
+
+private struct DeveloperLogsView: View {
+    @ObservedObject var model: AppViewModel
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                if model.updates.isEmpty {
+                    ContentUnavailableView(
+                        "No Logs",
+                        systemImage: "doc.plaintext",
+                        description: Text("Requests and responses will appear here while you interact with the agent.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(model.updates) { update in
+                            DeveloperLogRow(log: update)
+                                .id(update.id)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .onChange(of: model.updates) { _, newValue in
+                guard let last = newValue.last else { return }
+                withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+            }
+            .onAppear {
+                if let last = model.updates.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+            }
+        }
+        .navigationTitle("Server Logs")
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+#endif
+        .background(Color(.systemGroupedBackground))
+    }
+}
+
+private struct DeveloperLogRow: View {
+    let log: LogLine
+    @State private var isExpanded = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var expandedDetails: String? {
+        log.prettyDetails ?? log.details
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            if let details = expandedDetails {
+                ScrollView([.vertical, .horizontal], showsIndicators: true) {
+                    Text(details)
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+            } else {
+                Text(log.message)
+                    .font(.footnote.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(log.title.isEmpty ? "Log Entry" : log.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let details = log.details {
+                        Text(details)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                Text(log.timestampLabel)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(colorScheme == .dark ? Color(.secondarySystemBackground) : Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(.systemGray5).opacity(colorScheme == .dark ? 0.4 : 1), lineWidth: colorScheme == .dark ? 0.5 : 1)
+        )
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0 : 0.04), radius: 8, y: 4)
+    }
+}
+
+private struct FolderSessionsView: View {
+    @ObservedObject var model: AppViewModel
+    let folderPath: String
+    let folderDisplayName: String
+    @Binding var splitSelection: NavigationDestination?
+    @State private var searchText: String = ""
+    @Environment(\.openWindow) private var openWindow
+
+    private var sessionsInFolder: [SessionDisplay] {
+        let activeId = model.serverIsStreaming ? model.serverSessionId : nil
+        let defaultCwd = model.defaultWorkingDirectory
+        return model.serverSessionSummaries
+            .filter { session in
+                let sessionCwd: String
+                if let cwd = session.cwd {
+                    sessionCwd = cwd.hasSuffix("/") && cwd.count > 1
+                        ? String(cwd.dropLast()) : cwd
+                } else {
+                    sessionCwd = defaultCwd
+                }
+                return folderPath.isEmpty
+                    ? sessionCwd.isEmpty
+                    : sessionCwd == folderPath
+            }
+            .filter { session in
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                guard !query.isEmpty else { return true }
+                return (session.title?.lowercased().contains(query) ?? false)
+                    || session.id.lowercased().contains(query)
+            }
+            .sorted { lhs, rhs in
+                switch (lhs.updatedAt, rhs.updatedAt) {
+                case let (l?, r?):
+                    if l != r { return l > r }
+                    return lhs.id < rhs.id
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil): return lhs.id < rhs.id
+                }
+            }
+            .map { SessionDisplay(summary: $0, isActive: $0.id == activeId) }
+    }
+
+    private var groupedSessionsInFolder: [(group: SessionTimeGroup, sessions: [SessionDisplay])] {
+        var buckets: [SessionTimeGroup: [SessionDisplay]] = [:]
+
+        for session in sessionsInFolder {
+            let group = SessionTimeGroup.group(for: session.summary.updatedAt)
+            buckets[group, default: []].append(session)
+        }
+
+        return SessionTimeGroup.displayOrder.compactMap { group in
+            guard let sessions = buckets[group] else { return nil }
+            let sorted = sessions.sorted { lhs, rhs in
+                switch (lhs.summary.updatedAt, rhs.summary.updatedAt) {
+                case let (l?, r?):
+                    if l != r { return l > r }
+                    return lhs.summary.id < rhs.summary.id
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil): return lhs.summary.id < rhs.summary.id
+                }
+            }
+            return (group, sorted)
+        }
+    }
+
+    private func navigate(to destination: NavigationDestination) {
+#if os(macOS)
+        splitSelection = destination
+#endif
+    }
+
+    #if os(macOS)
+    private func sessionWindowKey(for sessionId: String) -> String {
+        let serverId = model.selectedServerId?.uuidString ?? "unknown-server"
+        return "\(serverId)::\(sessionId)"
+    }
+
+    private func openSessionInNewWindow(_ sessionId: String) {
+        model.openSession(sessionId)
+
+        if let serverViewModel = model.selectedServerViewModel,
+           serverViewModel.selectedSessionId == sessionId,
+           let sessionViewModel = serverViewModel.currentSessionViewModel {
+            let title = model.serverSessionSummaries.first(where: { $0.id == sessionId })?.title ?? "Session"
+            let payload = SessionWindowPayload(
+                model: model,
+                sessionId: sessionId,
+                title: title,
+                acpServerViewModel: serverViewModel,
+                codexServerViewModel: nil,
+                sessionViewModel: sessionViewModel
+            )
+            let key = SessionWindowStore.shared.store(payload, for: sessionWindowKey(for: sessionId))
+            openWindow(id: SessionWindowStore.windowId, value: key)
+            return
+        }
+
+        if let codexViewModel = model.selectedCodexServerViewModel,
+           codexViewModel.selectedSessionId == sessionId,
+           let sessionViewModel = codexViewModel.currentSessionViewModel {
+            let title = model.serverSessionSummaries.first(where: { $0.id == sessionId })?.title ?? "Session"
+            let payload = SessionWindowPayload(
+                model: model,
+                sessionId: sessionId,
+                title: title,
+                acpServerViewModel: nil,
+                codexServerViewModel: codexViewModel,
+                sessionViewModel: sessionViewModel
+            )
+            let key = SessionWindowStore.shared.store(payload, for: sessionWindowKey(for: sessionId))
+            openWindow(id: SessionWindowStore.windowId, value: key)
+        }
+    }
+    #endif
+
+    @ViewBuilder
+    private func destinationTrigger<Label: View>(
+        _ destination: NavigationDestination,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+#if os(macOS)
+        Button {
+            navigate(to: destination)
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
+#else
+        NavigationLink(value: destination) {
+            label()
+        }
+        .buttonStyle(.plain)
+#endif
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                FolderHeaderCard(displayName: folderDisplayName, path: folderPath)
+                .padding(.horizontal, 16)
+
+                folderSessionsContent
+            }
+            .padding(.vertical, 8)
+        }
+        .navigationTitle(folderDisplayName)
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+#endif
+        .searchable(text: $searchText, prompt: "Search sessions")
+#if os(iOS)
+        .textInputAutocapitalization(.never)
+#endif
+        .disableAutocorrection(true)
+    }
+
+    @ViewBuilder
+    private var folderSessionsContent: some View {
+        let grouped = groupedSessionsInFolder
+        if grouped.isEmpty {
+            ContentUnavailableView(
+                "No Sessions",
+                systemImage: "tray",
+                description: Text("No sessions found in this folder.")
+            )
+            .padding(.horizontal, 16)
+        } else {
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach(grouped, id: \.group) { entry in
+                    folderTimeSection(group: entry.group, sessions: entry.sessions)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func folderTimeSection(group: SessionTimeGroup, sessions: [SessionDisplay]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(group.title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            VStack(spacing: 12) {
+                ForEach(sessions, id: \.id) { session in
+                    folderSessionRow(session)
+                }
+            }
+        }
+    }
+
+    private func folderSessionRow(_ session: SessionDisplay) -> some View {
+        let summary = session.summary
+        return destinationTrigger(.session(summary.id)) {
+            SessionRow(
+                title: summary.title ?? "New Chat",
+                lastMessage: model.selectedServerId.flatMap {
+                    model.getLastMessagePreview(for: $0, sessionId: summary.id)
+                },
+                cwd: summary.cwd,
+                isActive: session.isActive,
+                showCwd: false
+            )
+        }
+#if os(macOS)
+        .contextMenu {
+            if model.canArchiveSessions {
+                Button("Archive Session") {
+                    model.archiveSession(summary.id)
+                }
+            }
+
+            Button("Open in New Window") {
+                openSessionInNewWindow(summary.id)
+            }
+        }
+#endif
+    }
+}
+
+private enum NavigationDestination: Hashable {
+    case session(String)
+    case developerLogs
+#if DEBUG && canImport(UIKit)
+    case testTranscript
+#endif
+    case folderSessions(path: String, displayName: String)
+}
+
+extension View {
+    func sessionCardStyle() -> some View {
+        self.modifier(SessionCardStyle())
+    }
+}
+
+/// A simple flow layout that wraps items horizontally.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+    
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        for (index, frame) in result.frames.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: .init(frame.size))
+        }
+    }
+    
+    private func arrangeSubviews(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        let maxWidth = proposal.width ?? .infinity
+        var frames: [CGRect] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+        
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            
+            if currentX + size.width > maxWidth && currentX > 0 {
+                currentX = 0
+                currentY += lineHeight + spacing
+                lineHeight = 0
+            }
+            
+            frames.append(CGRect(x: currentX, y: currentY, width: size.width, height: size.height))
+            lineHeight = max(lineHeight, size.height)
+            currentX += size.width + spacing
+            totalWidth = max(totalWidth, currentX - spacing)
+        }
+        
+        return (CGSize(width: totalWidth, height: currentY + lineHeight), frames)
+    }
+}
+
+#Preview {
+    ContentView()
+}

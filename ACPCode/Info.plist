@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.acpcode.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>acpcode</string>
+			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSAppTransportSecurity</key>
+        <dict>
+                <key>NSAllowsArbitraryLoads</key>
+                <false/>
+                <key>NSAllowsLocalNetworking</key>
+                <true/>
+        </dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+        <string>ACP Code needs access to your photo library to attach images to messages.</string>
+        <key>NSLocalNetworkUsageDescription</key>
+        <string>ACP Code needs access to your local network to reach ACP agents running on your computer.</string>
+        <key>NSFaceIDUsageDescription</key>
+        <string>ACP Code uses Face ID to confirm you before it saves a skill to your project.</string>
+</dict>
+</plist>
