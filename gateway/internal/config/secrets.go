@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // Secret is one NAME=value entry of the secrets file.

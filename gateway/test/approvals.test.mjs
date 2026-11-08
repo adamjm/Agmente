@@ -26,7 +26,7 @@ function query(stateDir, sql, ...args) {
 }
 const approvalRow = (gw, id) => query(gw.config.stateDir, 'SELECT * FROM approvals WHERE id = ?', id)[0];
 const agentAnswers = async (ws) => (await rpc(ws, '_test/permissions', {})).result.answers;
-const answer = (ws, params) => rpc(ws, '_agmente/approvals/answer', params);
+const answer = (ws, params) => rpc(ws, '_acpcode/approvals/answer', params);
 const ALLOW_KINDS = new Set(['allow_once', 'allow_always']);
 
 /** Start a [permission] turn on `ws` and wait until `seen` has the request. Returns { turn, req }. */
@@ -62,8 +62,8 @@ test('T-22: two devices answer one request: the first answer goes to the agent, 
     ({ turn, req } = await askPermission(a, seenA, sessionId));
     assert.deepEqual((await answer(b, { approvalId: req.id, cancelled: true })).result, {});
     a.send(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { outcome: { outcome: 'selected', optionId: 'proceed_once' } } }));
-    await until(() => seenA.some((m) => m.method === '_agmente/notice' && m.params.approvalId === req.id), 'the notice on A');
-    assert.deepEqual(seenA.find((m) => m.method === '_agmente/notice').params, { approvalId: req.id, message: 'answered elsewhere' });
+    await until(() => seenA.some((m) => m.method === '_acpcode/notice' && m.params.approvalId === req.id), 'the notice on A');
+    assert.deepEqual(seenA.find((m) => m.method === '_acpcode/notice').params, { approvalId: req.id, message: 'answered elsewhere' });
     await turn;
     answers = await agentAnswers(a);
     assert.equal(answers.length, 2);
@@ -94,7 +94,7 @@ test('T-23: with no answer past the timeout the agent gets a reject option, or c
     const a = (await connect(gw.url, auth())).ws;
     const { sessionId } = await useProject(gw, a);
     const seen = collect(a);
-    await rpc(a, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+    await rpc(a, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
 
     // A reject option lets the turn go on without the tool; a cancelled outcome cancels the turn (ACP).
     for (const [text, want, stopReason] of [
@@ -103,8 +103,8 @@ test('T-23: with no answer past the timeout the agent gets a reject option, or c
     ]) {
       const t0 = Date.now();
       const turn = rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text }] });
-      await until(() => seen.some((m) => m.method === '_agmente/event' && m.params.message.method === 'session/request_permission' && !seen.handled?.has(m.params.seq)), 'the request');
-      const ev = seen.filter((m) => m.method === '_agmente/event' && m.params.message.method === 'session/request_permission').at(-1);
+      await until(() => seen.some((m) => m.method === '_acpcode/event' && m.params.message.method === 'session/request_permission' && !seen.handled?.has(m.params.seq)), 'the request');
+      const ev = seen.filter((m) => m.method === '_acpcode/event' && m.params.message.method === 'session/request_permission').at(-1);
       const req = ev.params.message;
       seen.handled = new Set([...(seen.handled ?? []), ev.params.seq]);
       assert.deepEqual((await turn).result, { stopReason }, 'the turn completes after the timeout');
@@ -117,15 +117,15 @@ test('T-23: with no answer past the timeout the agent gets a reject option, or c
       assert.equal(picked === undefined || !ALLOW_KINDS.has(picked.kind), true, 'never an allow option');
       assert.equal(approvalRow(gw, req.id).answered_by, 'timeout');
       assert.deepEqual(JSON.parse(approvalRow(gw, req.id).outcome), want);
-      await until(() => seen.some((m) => m.params?.message?.method === '_agmente/approval_answered' && m.params.message.params.approvalId === req.id), 'approval_answered');
-      const closed = seen.find((m) => m.params?.message?.params?.approvalId === req.id && m.params.message.method === '_agmente/approval_answered').params.message.params;
+      await until(() => seen.some((m) => m.params?.message?.method === '_acpcode/approval_answered' && m.params.message.params.approvalId === req.id), 'approval_answered');
+      const closed = seen.find((m) => m.params?.message?.params?.approvalId === req.id && m.params.message.method === '_acpcode/approval_answered').params.message.params;
       assert.deepEqual(closed, { sessionId, approvalId: req.id, answeredBy: 'timeout', outcome: want });
 
       // A late answer changes nothing.
       assert.deepEqual((await answer(a, { approvalId: req.id, optionId: 'proceed_once' })).error, { code: -32001, message: 'timed out' });
       a.send(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { outcome: { outcome: 'selected', optionId: 'proceed_once' } } }));
-      await until(() => seen.some((m) => m.method === '_agmente/notice' && m.params.approvalId === req.id), 'the notice');
-      assert.equal(seen.find((m) => m.method === '_agmente/notice' && m.params.approvalId === req.id).params.message, 'timed out');
+      await until(() => seen.some((m) => m.method === '_acpcode/notice' && m.params.approvalId === req.id), 'the notice');
+      assert.equal(seen.find((m) => m.method === '_acpcode/notice' && m.params.approvalId === req.id).params.message, 'timed out');
     }
     await sleep(100);
     const all = await agentAnswers(a);
@@ -143,9 +143,9 @@ test('pending lists open approvals; the answer method checks its params', async 
     const a = (await connect(gw.url, auth())).ws;
     const { project, sessionId } = await useProject(gw, a);
     const seen = collect(a);
-    assert.deepEqual((await rpc(a, '_agmente/approvals/pending', {})).result, { approvals: [] });
+    assert.deepEqual((await rpc(a, '_acpcode/approvals/pending', {})).result, { approvals: [] });
     const { turn, req } = await askPermission(a, seen, sessionId);
-    const pending = (await rpc(a, '_agmente/approvals/pending', {})).result.approvals;
+    const pending = (await rpc(a, '_acpcode/approvals/pending', {})).result.approvals;
     assert.equal(pending.length, 1);
     assert.deepEqual({ ...pending[0], since: 'x' }, {
       approvalId: req.id, sessionId, projectId: project.id, toolCall: req.params.toolCall, options: req.params.options, since: 'x',
@@ -158,15 +158,15 @@ test('pending lists open approvals; the answer method checks its params', async 
       [{ approvalId: req.id, optionId: 'cancel', cancelled: true }, -32602, 'give exactly one of optionId and cancelled: true'],
       [{ approvalId: req.id, cancelled: false }, -32602, 'give exactly one of optionId and cancelled: true'],
       [{ approvalId: req.id, optionId: 'rm -rf' }, -32602, "optionId is not one of the request's options"],
-      [{ approvalId: 'agmente-perm-999', optionId: 'cancel' }, -32602, 'unknown approval'],
+      [{ approvalId: 'acpcode-perm-999', optionId: 'cancel' }, -32602, 'unknown approval'],
     ];
     for (const [params, code, message] of bad) {
       assert.deepEqual((await answer(a, params)).error, { code, message }, JSON.stringify(params));
     }
-    assert.equal((await rpc(a, '_agmente/approvals/pending', {})).result.approvals.length, 1, 'a refused answer leaves it open');
+    assert.equal((await rpc(a, '_acpcode/approvals/pending', {})).result.approvals.length, 1, 'a refused answer leaves it open');
     assert.deepEqual((await answer(a, { approvalId: req.id, optionId: 'proceed_once' })).result, {});
     await turn;
-    assert.deepEqual((await rpc(a, '_agmente/approvals/pending', {})).result, { approvals: [] });
+    assert.deepEqual((await rpc(a, '_acpcode/approvals/pending', {})).result, { approvals: [] });
     a.close();
   } finally {
     await gw.stop();
@@ -187,13 +187,13 @@ test('session/cancel answers the open approval with cancelled; an agent exit clo
     const responses = (await rpc(a, '_test/responses', {})).result.responses;
     assert.ok(responses.some((r) => r.result?.outcome?.outcome === 'cancelled'), 'the agent received cancelled');
     assert.equal(responses.some((r) => r.result?.outcome?.outcome === 'selected'), false);
-    assert.deepEqual((await rpc(a, '_agmente/approvals/pending', {})).result, { approvals: [] });
+    assert.deepEqual((await rpc(a, '_acpcode/approvals/pending', {})).result, { approvals: [] });
 
     ({ turn, req } = await askPermission(a, seen, sessionId));
     await rpc(a, '_test/exit', {});
     assert.equal((await turn).error.code, -32000);
     await until(() => approvalRow(gw, req.id).answered_by === 'agent_exit', 'closed by the exit');
-    assert.deepEqual((await rpc(a, '_agmente/approvals/pending', {})).result, { approvals: [] });
+    assert.deepEqual((await rpc(a, '_acpcode/approvals/pending', {})).result, { approvals: [] });
     assert.deepEqual((await answer(a, { approvalId: req.id, optionId: 'proceed_once' })).error, { code: -32001, message: 'the agent exited' });
     a.close();
   } finally {

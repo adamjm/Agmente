@@ -5,9 +5,9 @@ package server
 import (
 	"context"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 type sessionJSON struct {
@@ -67,7 +67,7 @@ func (s *Server) liveStatus() (running, awaiting map[string]bool) {
 	return running, awaiting
 }
 
-// sessionIndex answers `_agmente/sessions/index {projectId?}`. It starts no agent.
+// sessionIndex answers `_acpcode/sessions/index {projectId?}`. It starts no agent.
 func (s *Server) sessionIndex(ctx context.Context, who audit.Who, params *jsonv.Value) (any, *rpcError) {
 	projectID := ""
 	if v := params.Get("projectId"); !v.IsNull() {
@@ -107,7 +107,7 @@ func (s *Server) sessionIndex(ctx context.Context, who audit.Who, params *jsonv.
 	return map[string]any{"sessions": out}, nil
 }
 
-// markRead answers `_agmente/sessions/read {sessionId, seq}`: every device of the identity has now
+// markRead answers `_acpcode/sessions/read {sessionId, seq}`: every device of the identity has now
 // seen the session up to seq (FR-25). The marker never moves back and stops at the head.
 func (s *Server) markRead(ctx context.Context, who audit.Who, params *jsonv.Value) (any, *rpcError) {
 	sid, _ := params.Get("sessionId").StringValue()

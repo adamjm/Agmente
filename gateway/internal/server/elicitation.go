@@ -1,8 +1,8 @@
 package server
 
 // Elicitation relay (FR-44, PLAN 6C.2, D-026, D-031). An agent's elicitation/create asks for a form.
-// The gateway sends it to the session's subscribers under a gateway id (agmente-elic-<hex>), as a
-// `_agmente/event`. A phone answers with `_agmente/elicitation/answer`. The first answer goes to the
+// The gateway sends it to the session's subscribers under a gateway id (acpcode-elic-<hex>), as a
+// `_acpcode/event`. A phone answers with `_acpcode/elicitation/answer`. The first answer goes to the
 // agent under the agent's own id; a later one gets -32001. With no answer within
 // limits.approvalTimeoutSeconds, the gateway sends {action: "decline"}, never accept and never
 // content. The gateway never answers an elicitation on its own otherwise.
@@ -16,11 +16,11 @@ import (
 	"encoding/hex"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
 )
 
-const elicitationPrefix = "agmente-elic-"
+const elicitationPrefix = "acpcode-elic-"
 
 type elicitation struct {
 	id       string
@@ -83,7 +83,7 @@ func (s *Server) resolveElicitation(e *elicitation, action string, content *json
 	}
 	fields := map[string]*jsonv.Value{"elicitationId": jsonv.Str(e.id), "answeredBy": jsonv.Str(by), "action": jsonv.Str(action)}
 	s.emit(e.agent.id, e.session, "elicitation_answered",
-		gatewayNotification("_agmente/elicitation_answered", e.session, fields, "elicitationId", "answeredBy", "action"), nil)
+		gatewayNotification("_acpcode/elicitation_answered", e.session, fields, "elicitationId", "answeredBy", "action"), nil)
 }
 
 func (s *Server) timeoutElicitation(id string) {
@@ -111,7 +111,7 @@ func (s *Server) dropElicitations(proc *agentProcess) {
 		fields := map[string]*jsonv.Value{"elicitationId": jsonv.Str(e.id), "answeredBy": jsonv.Str("agent_exit"), "action": orNull(nil)}
 		if e.session != "" {
 			s.emit(e.agent.id, e.session, "elicitation_answered",
-				gatewayNotification("_agmente/elicitation_answered", e.session, fields, "elicitationId", "answeredBy", "action"), nil)
+				gatewayNotification("_acpcode/elicitation_answered", e.session, fields, "elicitationId", "answeredBy", "action"), nil)
 		}
 	}
 }
@@ -151,7 +151,7 @@ func (a *projectAgent) elicitationRequest(proc *agentProcess, msg *jsonv.Value, 
 	a.s.emit(a.id, sid, "elicitation_request", msg.Marshal(), nil)
 }
 
-// parseElicitationAnswer checks `_agmente/elicitation/answer {action, content?}`. The action must be
+// parseElicitationAnswer checks `_acpcode/elicitation/answer {action, content?}`. The action must be
 // accept, decline or cancel. content, when present, must be an object whose values are strings,
 // numbers, booleans or arrays of strings. Content is returned only for accept.
 func parseElicitationAnswer(params *jsonv.Value) (string, *jsonv.Value, *rpcError) {
@@ -197,7 +197,7 @@ func validElicitationValue(v *jsonv.Value) bool {
 	return false
 }
 
-// answerElicitation handles `_agmente/elicitation/answer`.
+// answerElicitation handles `_acpcode/elicitation/answer`.
 func (s *Server) answerElicitation(ctx context.Context, who audit.Who, params *jsonv.Value) (any, *rpcError) {
 	id, _ := params.Get("elicitationId").StringValue()
 	if id == "" {
@@ -221,7 +221,7 @@ func (s *Server) answerElicitation(ctx context.Context, who audit.Who, params *j
 		}
 		return nil, &rpcError{Code: rpcAnsweredElsewhere, Message: elicitationClosedReason(by)}
 	}
-	s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: "_agmente/elicitation/answer", Project: e.agent.id}))
+	s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: "_acpcode/elicitation/answer", Project: e.agent.id}))
 	s.resolveElicitation(e, action, content, answeredBy(who))
 	return map[string]any{}, nil
 }

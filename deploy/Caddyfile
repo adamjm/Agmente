@@ -1,4 +1,4 @@
-# Edge proxy for the Agmente gateway (ARCHITECTURE 2.1).
+# Edge proxy for the ACPCode gateway (ARCHITECTURE 2.1).
 # Status: example. Mark each directive verified in docs/RESULTS.md after PLAN task 1.11.
 #
 # - The phone listener is on :8443 and forwards to the gateway on 127.0.0.1:8788. Port 8787 is not
@@ -30,7 +30,7 @@ agent.example.com:8443 {
 	tls {
 		client_auth {
 			mode require_and_verify
-			trust_pool file /etc/caddy/agmente-client-ca.pem
+			trust_pool file /etc/caddy/acpcode-client-ca.pem
 		}
 	}
 

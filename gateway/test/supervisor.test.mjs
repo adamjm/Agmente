@@ -136,7 +136,7 @@ test('the gateway answers initialize itself, with the captured agent capabilitie
     const { ws } = await connect(gw.url, auth());
     const before = await rpc(ws, 'initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true } } });
     assert.equal(before.result.agentInfo.version, '2.0.9', 'the Bob 2.0.9 fixture before any agent ran');
-    assert.deepEqual(before.result._meta['agmente/gateway'], { version: '0.3.0-dev', extensions: ['projects', 'sessions', 'approvals', 'git', 'push', 'files'] });
+    assert.deepEqual(before.result._meta['acpcode/gateway'], { version: '0.3.0-dev', extensions: ['projects', 'sessions', 'approvals', 'git', 'push', 'files'] });
     await gw.settle();
     assert.equal(gw.spawned(), 0, 'initialize starts no agent');
     await useProject(gw, ws);
@@ -165,7 +165,7 @@ test('a permission request goes to every socket attached to the session; the fir
     const reqA = await waitFor(seenA, (m) => m.method === 'session/request_permission');
     const reqB = await waitFor(seenB, (m) => m.method === 'session/request_permission');
     assert.equal(reqA.id, reqB.id);
-    assert.match(reqA.id, /^agmente-perm-\d+$/, 'a gateway id, not the agent id');
+    assert.match(reqA.id, /^acpcode-perm-\d+$/, 'a gateway id, not the agent id');
     b.send(JSON.stringify({ jsonrpc: '2.0', id: reqB.id, result: { outcome: { outcome: 'selected', optionId: 'cancel' } } }));
     // The two sockets are read independently, so send a's answer only once b's has reached the agent.
     for (const t0 = Date.now(); (await rpc(a, '_test/permissions', {})).result.answers.length === 0; await sleep(10)) {
@@ -197,7 +197,7 @@ test('routing: unknown sessions, unregistered folders and a socket with no proje
     // A session cannot be moved to another project by sending another cwd.
     const other = join(gw.dirs.root, 'other');
     await (await import('node:fs/promises')).mkdir(other);
-    await rpc(ws, '_agmente/projects/create', { name: 'other', path: other });
+    await rpc(ws, '_acpcode/projects/create', { name: 'other', path: other });
     assert.deepEqual((await rpc(ws, 'session/load', { sessionId, cwd: other, mcpServers: [] })).error, { code: -32602, message: 'the session belongs to another project' });
     await gw.settle();
     assert.equal(gw.spawned(), 1, 'no refused request started an agent');

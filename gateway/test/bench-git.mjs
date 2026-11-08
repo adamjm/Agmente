@@ -1,8 +1,8 @@
-// T-30 / NFR-8: `_agmente/git/status` on a generated 10,000-file repository, 20 runs, p95 <= 1 s.
+// T-30 / NFR-8: `_acpcode/git/status` on a generated 10,000-file repository, 20 runs, p95 <= 1 s.
 //   node test/bench-git.mjs                       host runner (git in the project folder)
 //   node test/bench-git.mjs --podman IMAGE        podman runner: each call is a container (D-034)
 //   options: --files 10000 --runs 20
-// Same gateway binary as the wire tests (AGMENTE_GATEWAY_CMD). Prints one JSON line.
+// Same gateway binary as the wire tests (ACPCODE_GATEWAY_CMD). Prints one JSON line.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,7 +19,7 @@ const gw = await startGateway({}, {
 try {
   const ws = (await connect(gw.url, auth())).ws;
   // Register the project only: no session, so no agent starts (git needs none, D-034).
-  const project = (await rpc(ws, '_agmente/projects/create', { name: 'bench', path: gw.dirs.project })).result.project;
+  const project = (await rpc(ws, '_acpcode/projects/create', { name: 'bench', path: gw.dirs.project })).result.project;
   const dir = gw.dirs.project;
   const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, stdio: 'pipe' });
   git('init', '-q', '-b', 'main');
@@ -35,7 +35,7 @@ try {
   const times = [];
   for (let i = 0; i < runs + 1; i += 1) { // the first run warms caches and is not counted
     const t0 = performance.now();
-    const res = await rpc(ws, '_agmente/git/status', { projectId: project.id });
+    const res = await rpc(ws, '_acpcode/git/status', { projectId: project.id });
     const ms = performance.now() - t0;
     if (!res.result || res.result.files.length !== 11) throw new Error(`bad status: ${JSON.stringify(res).slice(0, 200)}`);
     if (i > 0) times.push(ms);

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Live run of the gateway with real IBM Bob (PLAN 4, RESULTS 2026-11-07).
 // BOB_API_KEY must be in the environment (e.g. `set -a; . ./.env; set +a`); this script never prints it.
-//   node gateway/scripts/live-bob.mjs --runner host|podman|apple [--image localhost/agmente-bob:2.0.9] [--dns IP, default the Mac's resolver] [--serve] [--no-key]
-// Scenarios use a scratch git project under ~/.agmente-live/ (a place Podman's VM can mount), real Bob,
+//   node gateway/scripts/live-bob.mjs --runner host|podman|apple [--image localhost/acpcode-bob:2.0.9] [--dns IP, default the Mac's resolver] [--serve] [--no-key]
+// Scenarios use a scratch git project under ~/.acpcode-live/ (a place Podman's VM can mount), real Bob,
 // and short prompts. The gateway never approves; this test client answers: allow only for the one
 // scratch-file edit, reject for everything else (D-009).
 import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -18,7 +18,7 @@ import { hashToken, spawnGateway } from '../test/helpers.mjs';
 const { values } = parseArgs({
   options: {
     runner: { type: 'string', default: 'host' },
-    image: { type: 'string', default: 'localhost/agmente-bob:2.0.9' },
+    image: { type: 'string', default: 'localhost/acpcode-bob:2.0.9' },
     dns: { type: 'string', default: '' },
     serve: { type: 'boolean', default: false },
     'no-key': { type: 'boolean', default: false },
@@ -50,7 +50,7 @@ const env = { ...process.env };
 if (values['no-key']) delete env.BOB_API_KEY;
 
 // --- scratch project --------------------------------------------------------
-const base = join(homedir(), '.agmente-live', `${values.runner}-${Date.now()}`);
+const base = join(homedir(), '.acpcode-live', `${values.runner}-${Date.now()}`);
 await mkdir(join(base, 'root', 'proj'), { recursive: true });
 const root = await realpath(join(base, 'root'));
 const project = join(root, 'proj');
@@ -91,7 +91,7 @@ function client() {
     if (msg.id !== undefined && msg.method === undefined && c.pending.has(msg.id)) {
       c.pending.get(msg.id)(msg);
       c.pending.delete(msg.id);
-    } else if (msg.method === '_agmente/event') {
+    } else if (msg.method === '_acpcode/event') {
       c.events.push(msg.params);
       c.onEvent?.(msg.params);
     } else if (msg.method) {
@@ -126,7 +126,7 @@ function autoAnswer(c, allowIf) {
     const pick = allow ?? reject;
     seen.push({ title: tool.title, kind: tool.kind, chose: pick?.kind ?? 'cancelled' });
     await sleep(300); // let `pending` and the index show the open request
-    const res = await c.rpc('_agmente/approvals/answer', pick ? { approvalId: m.id, optionId: pick.optionId } : { approvalId: m.id, cancelled: true });
+    const res = await c.rpc('_acpcode/approvals/answer', pick ? { approvalId: m.id, optionId: pick.optionId } : { approvalId: m.id, cancelled: true });
     if (res.error) seen.push({ answerError: res.error });
   };
   return seen;
@@ -135,7 +135,7 @@ function autoAnswer(c, allowIf) {
 try {
   const a = client();
   await a.ready;
-  const created = await a.rpc('_agmente/projects/create', { name: 'live', path: project });
+  const created = await a.rpc('_acpcode/projects/create', { name: 'live', path: project });
   const projectId = created.result?.project?.id;
   check('project registered', !!projectId);
 
@@ -146,7 +146,7 @@ try {
   }
 
   const init = await a.rpc('initialize', { protocolVersion: 1, clientCapabilities: {} });
-  const gwMeta = init.result?._meta?.['agmente/gateway'];
+  const gwMeta = init.result?._meta?.['acpcode/gateway'];
   check('initialize carries gateway extensions', gwMeta?.extensions?.includes('git') && gwMeta.extensions.includes('push'), JSON.stringify(gwMeta?.extensions));
 
   // --- T-35: no key -----------------------------------------------------------
@@ -167,7 +167,7 @@ try {
   const sid = newRes.result?.sessionId;
   check('session/new on real Bob', !!sid, newRes.error ? JSON.stringify(newRes.error) : `modes ${JSON.stringify(newRes.result?.modes?.availableModes?.map((m) => m.id))}`);
   if (!sid) throw new Error('no session');
-  const sub = await a.rpc('_agmente/sessions/subscribe', { sessionId: sid, afterSeq: 0 });
+  const sub = await a.rpc('_acpcode/sessions/subscribe', { sessionId: sid, afterSeq: 0 });
   check('subscribe on a new session', sub.result?.headSeq === 0 || sub.result?.headSeq >= 0);
   autoAnswer(a, null);
   const t0 = Date.now();
@@ -175,17 +175,17 @@ try {
   check('turn 1 ends end_turn', p1.result?.stopReason === 'end_turn', `${Date.now() - t0} ms ${p1.error ? JSON.stringify(p1.error) : ''}`);
   await sleep(500);
   const k1 = kinds(a, sid);
-  check('event log has turn_started, updates, turn_ended in order', k1.indexOf('_agmente/turn_started') >= 0 && k1.indexOf('_agmente/turn_started') < k1.indexOf('agent_message_chunk') && k1.at(-1) === '_agmente/turn_ended' && k1.includes('agent_message_chunk'), k1.join(','));
+  check('event log has turn_started, updates, turn_ended in order', k1.indexOf('_acpcode/turn_started') >= 0 && k1.indexOf('_acpcode/turn_started') < k1.indexOf('agent_message_chunk') && k1.at(-1) === '_acpcode/turn_ended' && k1.includes('agent_message_chunk'), k1.join(','));
   check('seq contiguous from 1', contiguous(a, sid));
   check('agent said pong', /pong/i.test(text(a, sid)), text(a, sid).slice(0, 60));
-  const idx = await a.rpc('_agmente/sessions/index', {});
+  const idx = await a.rpc('_acpcode/sessions/index', {});
   const row = idx.result?.sessions?.find((s) => s.sessionId === sid);
   check('index: idle, one unread turn', row?.status === 'idle' && row.unread === 1, JSON.stringify({ status: row?.status, unread: row?.unread, title: row?.title }));
 
   // --- T-18: disconnect mid-turn, resubscribe ---------------------------------
   const b = client();
   await b.ready;
-  await b.rpc('_agmente/sessions/subscribe', { sessionId: sid, afterSeq: 0 });
+  await b.rpc('_acpcode/sessions/subscribe', { sessionId: sid, afterSeq: 0 });
   const long = b.rpc('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: 'Without any tools, write the numbers from 1 to 120 as English words, one per line.' }] });
   const startLen = b.events.length;
   for (let i = 0; i < 600 && b.events.length < startLen + 4; i++) await sleep(100);
@@ -194,10 +194,10 @@ try {
   await sleep(2000);
   const c = client();
   await c.ready;
-  const sub2 = await c.rpc('_agmente/sessions/subscribe', { sessionId: sid, afterSeq: lastSeq });
-  for (let i = 0; i < 1800 && !kinds(c, sid).includes('_agmente/turn_ended'); i++) await sleep(100);
+  const sub2 = await c.rpc('_acpcode/sessions/subscribe', { sessionId: sid, afterSeq: lastSeq });
+  for (let i = 0; i < 1800 && !kinds(c, sid).includes('_acpcode/turn_ended'); i++) await sleep(100);
   const seqs = c.events.map((e) => e.seq);
-  check('T-18: resubscribe after a drop gets the rest with no gap', kinds(c, sid).at(-1) === '_agmente/turn_ended' && seqs[0] === lastSeq + 1 && seqs.every((s, i) => i === 0 || s === seqs[i - 1] + 1),
+  check('T-18: resubscribe after a drop gets the rest with no gap', kinds(c, sid).at(-1) === '_acpcode/turn_ended' && seqs[0] === lastSeq + 1 && seqs.every((s, i) => i === 0 || s === seqs[i - 1] + 1),
     `dropped after seq ${lastSeq}, head ${sub2.result?.headSeq}, got ${seqs[0]}..${seqs.at(-1)}`);
   void long;
 
@@ -215,17 +215,17 @@ try {
 
   // --- approvals + file edit + git + turn diff --------------------------------
   const perms = autoAnswer(a, (tool) => /hello\.txt/.test(JSON.stringify(tool)));
-  const turnsBefore = a.events.filter((e) => e.message?.method === '_agmente/turn_started').length;
+  const turnsBefore = a.events.filter((e) => e.message?.method === '_acpcode/turn_started').length;
   const p2 = a.rpc('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: 'Create a file named hello.txt in the current directory containing the single line: hi. Use your file editing tool. Then say done.' }] });
   let sawPending = null;
   for (let i = 0; i < 1200; i++) {
-    const pend = await a.rpc('_agmente/approvals/pending', {}, 5000);
+    const pend = await a.rpc('_acpcode/approvals/pending', {}, 5000);
     if (pend.result?.approvals?.length) {
-      const idx2 = await a.rpc('_agmente/sessions/index', {}, 5000);
+      const idx2 = await a.rpc('_acpcode/sessions/index', {}, 5000);
       sawPending = { title: pend.result.approvals[0].toolCall?.title, status: idx2.result?.sessions?.find((s) => s.sessionId === sid)?.status };
       break;
     }
-    if (a.events.some((e) => e.message?.method === '_agmente/turn_ended' && e.seq > (a.events.find((x) => x.message?.method === '_agmente/turn_started' && x.seq > 0)?.seq ?? 0)) && i > 50 && a.pending.size === 1) { /* keep waiting for p2 below */ }
+    if (a.events.some((e) => e.message?.method === '_acpcode/turn_ended' && e.seq > (a.events.find((x) => x.message?.method === '_acpcode/turn_started' && x.seq > 0)?.seq ?? 0)) && i > 50 && a.pending.size === 1) { /* keep waiting for p2 below */ }
     const done = await Promise.race([p2.then(() => true), sleep(250).then(() => false)]);
     if (done) break;
   }
@@ -237,12 +237,12 @@ try {
   const made = existsSync(join(project, 'hello.txt'));
   check('hello.txt exists on the host', made);
   await sleep(1500); // end snapshot
-  const st = await a.rpc('_agmente/git/status', { projectId });
+  const st = await a.rpc('_acpcode/git/status', { projectId });
   check('git/status lists hello.txt', st.result?.files?.some((f) => f.path === 'hello.txt'), st.error ? JSON.stringify(st.error) : `${st.result?.files?.length} files, branch ${st.result?.branch}`);
   const turnNo = turnsBefore + 1;
-  const td = await a.rpc('_agmente/git/turnDiff', { sessionId: sid, turn: turnNo });
+  const td = await a.rpc('_acpcode/git/turnDiff', { sessionId: sid, turn: turnNo });
   check(`turn diff for turn ${turnNo} shows hello.txt`, /hello\.txt/.test(td.result?.diff ?? ''), td.error ? JSON.stringify(td.error) : '');
-  const td1 = await a.rpc('_agmente/git/turnDiff', { sessionId: sid, turn: 1 });
+  const td1 = await a.rpc('_acpcode/git/turnDiff', { sessionId: sid, turn: 1 });
   check('turn diff for the text-only turn is empty', td1.result && (td1.result.diff ?? '') === '', td1.error ? JSON.stringify(td1.error) : `${(td1.result?.diff ?? '').length} chars`);
 
   // --- reject path ------------------------------------------------------------
@@ -259,7 +259,7 @@ try {
     () => check('idle stop fired after the idle time', true), () => check('idle stop fired after the idle time', false));
   const e = client();
   await e.ready;
-  await e.rpc('_agmente/sessions/subscribe', { sessionId: sid, afterSeq: 9999 });
+  await e.rpc('_acpcode/sessions/subscribe', { sessionId: sid, afterSeq: 9999 });
   const beforeReload = audit.length;
   const p4 = await e.rpc('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text: 'What was the first word I asked you to reply with? Answer with just that word. No tools.' }] });
   await sleep(800);
@@ -276,7 +276,7 @@ try {
   log(`audit events: ${[...new Set(names)].join(', ')}`);
   const bad = audit.filter((r) => ['panic', 'store_error', 'snapshot_failed', 'agent_error', 'protocol_violation'].includes(r.event));
   if (bad.length) log(`NOTABLE audit lines: ${JSON.stringify(bad).slice(0, 800)}`);
-  if (podman) { try { execFileSync('podman', ['ps', '-a', '--format', '{{.Names}}'], { encoding: 'utf8' }).split('\n').filter((n) => n.startsWith('agmente-')).forEach((n) => log(`LEFTOVER container ${n}`)); } catch {} }
+  if (podman) { try { execFileSync('podman', ['ps', '-a', '--format', '{{.Names}}'], { encoding: 'utf8' }).split('\n').filter((n) => n.startsWith('acpcode-')).forEach((n) => log(`LEFTOVER container ${n}`)); } catch {} }
   const failed = results.filter((r) => !r.ok);
   log(`SUMMARY ${values.runner}: ${results.length - failed.length}/${results.length} passed${failed.length ? `; failed: ${failed.map((f) => f.name).join(' | ')}` : ''}`);
   if (!values.serve) await rm(base, { recursive: true, force: true }).catch(() => {});

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/jsonv"
 )
 
 const testSecretValue = "unit-test-value-7f3a"
@@ -104,7 +104,7 @@ func minimalConfig(t *testing.T, agent map[string]any) string {
 		"tokens":   []any{map[string]any{"id": "phone", "identity": "owner", "sha256": sum}},
 		"agent":    agent,
 		"projects": map[string]any{"roots": []string{"/srv/projects"}},
-		"stateDir": "/var/lib/agmente",
+		"stateDir": "/var/lib/acpcode",
 		"runner":   map[string]any{"kind": "host", "allowHost": true},
 	}
 	b, err := json.Marshal(cfg)

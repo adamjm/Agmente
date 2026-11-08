@@ -18,7 +18,7 @@ public struct ACPAuthMethod: Equatable, Sendable {
     }
 }
 
-/// What the Agmente gateway says about itself in `initialize` (`_meta["agmente/gateway"]`, D-026).
+/// What the ACP Code gateway says about itself in `initialize` (`_meta["acpcode/gateway"]`, D-026).
 /// A server that is not the gateway has none.
 public struct GatewayInfo: Equatable, Sendable {
     public let version: String
@@ -93,7 +93,7 @@ public enum ACPInitializeParser {
         }
 
         var gateway: GatewayInfo?
-        if let meta = result["_meta"]?.objectValue?["agmente/gateway"]?.objectValue,
+        if let meta = result["_meta"]?.objectValue?["acpcode/gateway"]?.objectValue,
            let version = meta["version"]?.stringValue {
             let names = meta["extensions"]?.arrayValue?.compactMap { $0.stringValue } ?? []
             gateway = GatewayInfo(version: version, extensions: names)

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent template for Caddy, the public edge for the phone listener and the connector (D-098,
+  D-100). Status: template, not installed. Replace every /Users/you path and the host name.
+
+  It is a LaunchAgent, not a LaunchDaemon. Caddy runs as your own user, so it has no root. Both sites
+  listen on TCP 8443 (the phone's mutual-TLS site and the connector). Caddy tells them apart by host
+  name. Certificate state goes to XDG_DATA_HOME and XDG_CONFIG_HOME under your folder.
+
+  The connector's certificate uses the DNS-01 challenge (D-100). The DNS provider's API token is in
+  the secrets file, not in this plist. The command loads that file, as the gateway's plist does.
+  The file holds NAME=value lines, has mode 600, and lives outside the repo: /Users/you/acpcode/secrets.env.
+  It must contain CADDY_DNS_API_TOKEN=... (docs/MAC-SETUP.md, section 13).
+
+  Install:
+    mkdir -p /Users/you/acpcode/caddy/data /Users/you/acpcode/caddy/config /Users/you/acpcode/state/logs
+    cp deploy/launchd/dev.acpcode.caddy.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.acpcode.caddy.plist
+
+  Stop and remove:
+    launchctl bootout gui/$(id -u)/dev.acpcode.caddy
+
+  Stop any manually started Caddy first, or port 8443 is already taken and this agent fails to start.
+  Changing the Caddyfile later: `caddy validate` it, then `caddy reload` (the admin API on localhost),
+  which does not drop open connections.
+
+  CONNECTOR_HOST is the public host name of the connector (docs/MAC-SETUP.md, section 13). The
+  Caddyfile reads it as {$CONNECTOR_HOST}. Caddy must be built with the DNS provider module, with
+  xcaddy. The stock Homebrew build does not include it, so point ProgramArguments at that build.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.acpcode.caddy</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>set -a; . /Users/you/acpcode/secrets.env; set +a; exec /Users/you/acpcode/caddy/bin/caddy run --config /Users/you/acpcode/caddy/Caddyfile --adapter caddyfile</string>
+	</array>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>CONNECTOR_HOST</key>
+		<string>connector.your-domain.example</string>
+		<key>XDG_DATA_HOME</key>
+		<string>/Users/you/acpcode/caddy/data</string>
+		<key>XDG_CONFIG_HOME</key>
+		<string>/Users/you/acpcode/caddy/config</string>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+
+	<key>StandardOutPath</key>
+	<string>/Users/you/acpcode/state/logs/caddy.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/you/acpcode/state/logs/caddy.err.log</string>
+</dict>
+</plist>

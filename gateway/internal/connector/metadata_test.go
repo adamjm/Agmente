@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
 )
 
 // The protected-resource metadata is served at the root and at the path-suffixed form for /mcp (MCP

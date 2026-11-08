@@ -14,11 +14,11 @@ const HTTP = { type: 'http', name: 'marker', url: 'http://127.0.0.1:8941/mcp', h
 
 /** A gateway whose fake agent writes the params of its session calls into a fresh folder. */
 async function startRecording(overrides = {}) {
-  const recordDir = await mkdtemp(join(tmpdir(), 'agmente-mcp-rec-'));
+  const recordDir = await mkdtemp(join(tmpdir(), 'acpcode-mcp-rec-'));
   const gw = await startGateway({
-    agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'AGMENTE_TEST_RECORD_DIR'] },
+    agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'ACPCODE_TEST_RECORD_DIR'] },
     ...overrides,
-  }, { env: { AGMENTE_TEST_RECORD_DIR: recordDir } });
+  }, { env: { ACPCODE_TEST_RECORD_DIR: recordDir } });
   const stop = gw.stop;
   gw.stop = async () => {
     await stop();
@@ -33,7 +33,7 @@ const recorded = (recordDir, name) => {
 };
 
 async function createProject(gw, ws) {
-  const res = await rpc(ws, '_agmente/projects/create', { name: 'test', path: gw.dirs.project });
+  const res = await rpc(ws, '_acpcode/projects/create', { name: 'test', path: gw.dirs.project });
   assert.ok(res.result?.project, JSON.stringify(res));
 }
 

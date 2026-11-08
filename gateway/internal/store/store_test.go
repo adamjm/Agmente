@@ -119,8 +119,8 @@ func TestTenThousandEventsWriteAndReplay(t *testing.T) {
 // A committed event survives SIGKILL of the writing process (NFR-7, store level; T-20 is the
 // gateway-level check in task 3.5). The child prints each seq after AppendEvent returns.
 func TestCommittedEventsSurviveSIGKILL(t *testing.T) {
-	if os.Getenv("AGMENTE_STORE_CHILD") != "" {
-		s, err := Open(os.Getenv("AGMENTE_STORE_CHILD"))
+	if os.Getenv("ACPCODE_STORE_CHILD") != "" {
+		s, err := Open(os.Getenv("ACPCODE_STORE_CHILD"))
 		if err != nil {
 			fmt.Println("ERR", err)
 			os.Exit(1)
@@ -136,7 +136,7 @@ func TestCommittedEventsSurviveSIGKILL(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "gateway.db")
 	cmd := exec.Command(os.Args[0], "-test.run=^TestCommittedEventsSurviveSIGKILL$")
-	cmd.Env = append(os.Environ(), "AGMENTE_STORE_CHILD="+path)
+	cmd.Env = append(os.Environ(), "ACPCODE_STORE_CHILD="+path)
 	out, _ := cmd.StdoutPipe()
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

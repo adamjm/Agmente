@@ -1,12 +1,12 @@
 package server
 
-// The project agent state the phone sees (C2, D-092): `_agmente/project/state {projectId, agent,
+// The project agent state the phone sees (C2, D-092): `_acpcode/project/state {projectId, agent,
 // since}`. It is a gateway notification, never an agent message and never in the event log.
 //
 // It is change-only: a transition to the state already sent is not sent again. At most one is sent
 // per project every projectStateGap (so at most two a second). When transitions come faster, the
 // newest state is sent when the gap ends, so the phone always ends on the true state. Only sockets
-// that listed the project (_agmente/sessions/index, or _agmente/projects/list) get it. A listing also
+// that listed the project (_acpcode/sessions/index, or _acpcode/projects/list) get it. A listing also
 // sends its socket one snapshot of each listed project's current state (sendSnapshot, G2, D-104). The
 // snapshot is not rate limited, not audited and does not change the change-only state above.
 
@@ -14,8 +14,8 @@ import (
 	"context"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // projectStateGap is the least time between two state notifications for one project.
@@ -164,7 +164,7 @@ func (a *projectAgent) sendSnapshot(c *client) {
 	c.send(a.stateMessage(agent, since))
 }
 
-// stateMessage is the `_agmente/project/state` notification (C2) for one agent state. It must be called
+// stateMessage is the `_acpcode/project/state` notification (C2) for one agent state. It must be called
 // with stateMu held.
 func (a *projectAgent) stateMessage(agent string, since time.Time) []byte {
 	params := jsonv.Obj()
@@ -173,7 +173,7 @@ func (a *projectAgent) stateMessage(agent string, since time.Time) []byte {
 	params.Set("since", jsonv.Str(since.UTC().Format(projectStateTime)))
 	msg := jsonv.Obj()
 	msg.Set("jsonrpc", jsonv.Str("2.0"))
-	msg.Set("method", jsonv.Str("_agmente/project/state"))
+	msg.Set("method", jsonv.Str("_acpcode/project/state"))
 	msg.Set("params", params)
 	return msg.Marshal()
 }

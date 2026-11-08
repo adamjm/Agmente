@@ -75,7 +75,7 @@ public struct GatewayGitStatus: Codable, Equatable, Sendable {
     public let ahead: Int
     public let behind: Int
     public let files: [GatewayGitFile]
-    /// The value `_agmente/git/changed` carries when the status changes.
+    /// The value `_acpcode/git/changed` carries when the status changes.
     public let hash: String
     /// True when git's output was cut at the gateway's size cap: the list may be incomplete.
     public let truncated: Bool
@@ -170,9 +170,9 @@ public struct GatewayGitLog: Codable, Equatable, Sendable {
     }
 }
 
-/// `_agmente/git/changed {projectId, hash}`: the status of a project the socket asked about changed (D-037).
+/// `_acpcode/git/changed {projectId, hash}`: the status of a project the socket asked about changed (D-037).
 public struct GatewayGitChanged: Equatable, Sendable {
-    public static let method = "_agmente/git/changed"
+    public static let method = "_acpcode/git/changed"
 
     public let projectId: String
     public let hash: String
@@ -205,45 +205,45 @@ public extension GatewayError {
 }
 
 public extension GatewayClient {
-    /// `_agmente/git/status`. It also makes the gateway remember the file list as the only paths a diff
+    /// `_acpcode/git/status`. It also makes the gateway remember the file list as the only paths a diff
     /// accepts for this project (FR-29), and send `git/changed` to this socket (D-037).
     func gitStatus(projectId: String) async throws -> GatewayGitStatus {
-        let result = try await call("_agmente/git/status", .object(["projectId": .string(projectId)]))
+        let result = try await call("_acpcode/git/status", .object(["projectId": .string(projectId)]))
         return try decode(GatewayGitStatus.self, from: result, what: "git status")
     }
 
-    /// `_agmente/git/diff` of one path (or the whole tree when `path` is nil). A path must be in the
+    /// `_acpcode/git/diff` of one path (or the whole tree when `path` is nil). A path must be in the
     /// last status of the project, or the gateway answers `-32602`.
     func gitDiff(projectId: String, path: String? = nil, staged: Bool = false) async throws -> GatewayGitDiff {
         var params: [String: ACP.Value] = ["projectId": .string(projectId)]
         if let path { params["path"] = .string(path) }
         if staged { params["staged"] = .bool(true) }
-        let result = try await call("_agmente/git/diff", .object(params))
+        let result = try await call("_acpcode/git/diff", .object(params))
         return try decode(GatewayGitDiff.self, from: result, what: "git diff")
     }
 
-    /// `_agmente/git/diff` between two trees (from a turn's snapshots). A `path` must be one of the
+    /// `_acpcode/git/diff` between two trees (from a turn's snapshots). A `path` must be one of the
     /// files that differ.
     func gitDiff(projectId: String, fromTree: String, toTree: String, path: String? = nil) async throws -> GatewayGitDiff {
         var params: [String: ACP.Value] = ["projectId": .string(projectId), "fromTree": .string(fromTree), "toTree": .string(toTree)]
         if let path { params["path"] = .string(path) }
-        let result = try await call("_agmente/git/diff", .object(params))
+        let result = try await call("_acpcode/git/diff", .object(params))
         return try decode(GatewayGitDiff.self, from: result, what: "git diff")
     }
 
-    /// `_agmente/git/log`, newest first. Pass the previous `nextCursor` for the next page.
+    /// `_acpcode/git/log`, newest first. Pass the previous `nextCursor` for the next page.
     func gitLog(projectId: String, limit: Int? = nil, cursor: String? = nil) async throws -> GatewayGitLog {
         var params: [String: ACP.Value] = ["projectId": .string(projectId)]
         if let limit { params["limit"] = .int(limit) }
         if let cursor { params["cursor"] = .string(cursor) }
-        let result = try await call("_agmente/git/log", .object(params))
+        let result = try await call("_acpcode/git/log", .object(params))
         return try decode(GatewayGitLog.self, from: result, what: "git log")
     }
 
-    /// `_agmente/git/turnDiff`: what one turn changed. `turn` counts from 1 per session. Errors:
+    /// `_acpcode/git/turnDiff`: what one turn changed. `turn` counts from 1 per session. Errors:
     /// `isNoSnapshot`, `isTurnRunning`.
     func gitTurnDiff(sessionId: String, turn: Int) async throws -> GatewayGitDiff {
-        let result = try await call("_agmente/git/turnDiff", .object(["sessionId": .string(sessionId), "turn": .int(turn)]))
+        let result = try await call("_acpcode/git/turnDiff", .object(["sessionId": .string(sessionId), "turn": .int(turn)]))
         return try decode(GatewayGitDiff.self, from: result, what: "turn diff")
     }
 }

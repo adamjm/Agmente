@@ -2,7 +2,7 @@ import Foundation
 import ACP
 
 // The approval queue (SPEC 6.2, DECISIONS D-031). The app never answers on its own: every answer
-// here is a person's choice, sent through `_agmente/approvals/answer`.
+// here is a person's choice, sent through `_acpcode/approvals/answer`.
 
 public struct GatewayApprovalOption: Codable, Equatable, Hashable, Sendable, Identifiable {
     public let optionId: String
@@ -64,20 +64,20 @@ public extension GatewayError {
 }
 
 public extension GatewayClient {
-    /// `_agmente/approvals/pending`: every open approval, oldest first.
+    /// `_acpcode/approvals/pending`: every open approval, oldest first.
     func pendingApprovals() async throws -> [GatewayApproval] {
-        let result = try await call("_agmente/approvals/pending", .object([:]))
+        let result = try await call("_acpcode/approvals/pending", .object([:]))
         return try decode([GatewayApproval].self, from: result["approvals"], what: "approvals")
     }
 
-    /// `_agmente/approvals/answer` with a chosen option. Throws `GatewayError.rpc(-32001, reason)` when
+    /// `_acpcode/approvals/answer` with a chosen option. Throws `GatewayError.rpc(-32001, reason)` when
     /// the approval was closed already.
     func answerApproval(approvalId: String, optionId: String) async throws {
-        _ = try await call("_agmente/approvals/answer", .object(["approvalId": .string(approvalId), "optionId": .string(optionId)]))
+        _ = try await call("_acpcode/approvals/answer", .object(["approvalId": .string(approvalId), "optionId": .string(optionId)]))
     }
 
-    /// `_agmente/approvals/answer` with `cancelled: true`: the agent is told the request was cancelled.
+    /// `_acpcode/approvals/answer` with `cancelled: true`: the agent is told the request was cancelled.
     func cancelApproval(approvalId: String) async throws {
-        _ = try await call("_agmente/approvals/answer", .object(["approvalId": .string(approvalId), "cancelled": .bool(true)]))
+        _ = try await call("_acpcode/approvals/answer", .object(["approvalId": .string(approvalId), "cancelled": .bool(true)]))
     }
 }

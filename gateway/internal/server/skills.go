@@ -1,6 +1,6 @@
 package server
 
-// Skill files (FR-43, F-17, D-085, D-087). `_agmente/skills/list`, `read`, `put` and `delete` manage
+// Skill files (FR-43, F-17, D-085, D-087). `_acpcode/skills/list`, `read`, `put` and `delete` manage
 // <project>/.bob/skills/<name>/SKILL.md. Every folder on the path is checked with Lstat, one at a
 // time: none may be a link, and each must be a folder inside the project (D-063, D-085). The write
 // is atomic. Nothing is executed, and the content is written as given.
@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const (
@@ -61,7 +61,7 @@ func checkSkillContent(content string) *rpcError {
 // serveSkills answers one skills request. handled is false for any other method.
 func (s *Server) serveSkills(ctx context.Context, who audit.Who, method string, params *jsonv.Value) (result any, rerr *rpcError, handled bool) {
 	switch method {
-	case "_agmente/skills/list", "_agmente/skills/read", "_agmente/skills/put", "_agmente/skills/delete":
+	case "_acpcode/skills/list", "_acpcode/skills/read", "_acpcode/skills/put", "_acpcode/skills/delete":
 	default:
 		return nil, nil, false
 	}
@@ -73,14 +73,14 @@ func (s *Server) serveSkills(ctx context.Context, who audit.Who, method string, 
 		return nil, invalidParams("projectId is required"), true
 	}
 	name, content := "", ""
-	if method != "_agmente/skills/list" {
+	if method != "_acpcode/skills/list" {
 		n, ok := params.Get("name").StringValue()
 		if !ok || !validSkillName(n) {
 			return nil, invalidParams("name must be lowercase kebab-case (a-z, 0-9, single hyphens), at most 64 characters"), true
 		}
 		name = n
 	}
-	if method == "_agmente/skills/put" {
+	if method == "_acpcode/skills/put" {
 		c, ok := params.Get("content").StringValue()
 		if !ok {
 			return nil, invalidParams("content is required and must be a string"), true
@@ -98,11 +98,11 @@ func (s *Server) serveSkills(ctx context.Context, who audit.Who, method string, 
 		return nil, invalidParams("unknown project"), true
 	}
 	switch method {
-	case "_agmente/skills/list":
+	case "_acpcode/skills/list":
 		result, rerr = s.skillsList(p)
-	case "_agmente/skills/read":
+	case "_acpcode/skills/read":
 		result, rerr = s.skillRead(who, p, name)
-	case "_agmente/skills/put":
+	case "_acpcode/skills/put":
 		result, rerr = s.skillPut(who, p, name, content)
 	default:
 		result, rerr = s.skillDelete(who, p, name)
@@ -186,7 +186,7 @@ func skillFile(folder string) fs.FileInfo {
 	return sf
 }
 
-// skillsList answers _agmente/skills/list. A folder whose name fails the rule, or that has no
+// skillsList answers _acpcode/skills/list. A folder whose name fails the rule, or that has no
 // regular SKILL.md, or that is a link, is skipped.
 func (s *Server) skillsList(p *store.Project) (any, *rpcError) {
 	root, rerr := projectRoot(p)
@@ -216,7 +216,7 @@ func (s *Server) skillsList(p *store.Project) (any, *rpcError) {
 	return map[string]any{"skills": out}, nil
 }
 
-// skillRead answers _agmente/skills/read. It returns the name, the content and the byte count of
+// skillRead answers _acpcode/skills/read. It returns the name, the content and the byte count of
 // SKILL.md. The path is checked as for put and delete (D-085): no link in any folder, and the file
 // is a regular file of at most 65536 bytes that is UTF-8 text. The content is never logged; the
 // audit line holds the project, the name and the byte count only.
@@ -277,7 +277,7 @@ func skillTooLarge() *rpcError {
 	return invalidParams("the skill is over 65536 bytes")
 }
 
-// skillPut answers _agmente/skills/put. The content is written as given. The audit line holds the
+// skillPut answers _acpcode/skills/put. The content is written as given. The audit line holds the
 // project, the name and the byte count only.
 func (s *Server) skillPut(who audit.Who, p *store.Project, name, content string) (any, *rpcError) {
 	root, rerr := projectRoot(p)
@@ -306,7 +306,7 @@ func (s *Server) skillPut(who audit.Who, p *store.Project, name, content string)
 	return map[string]any{"skill": skillInfo{Name: name, Bytes: int64(len(content))}}, nil
 }
 
-// skillDelete answers _agmente/skills/delete. It removes SKILL.md and the folder, and nothing else:
+// skillDelete answers _acpcode/skills/delete. It removes SKILL.md and the folder, and nothing else:
 // a folder that holds any other entry is refused and left as it is.
 func (s *Server) skillDelete(who audit.Who, p *store.Project, name string) (any, *rpcError) {
 	root, rerr := projectRoot(p)

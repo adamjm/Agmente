@@ -19,14 +19,14 @@ async function setup() {
   git(dir, 'add', '.');
   git(dir, 'commit', '-q', '-m', 'first');
   const ws = (await connect(gw.url, auth())).ws;
-  const project = (await rpc(ws, '_agmente/projects/create', { name: 'p', path: dir })).result.project;
+  const project = (await rpc(ws, '_acpcode/projects/create', { name: 'p', path: dir })).result.project;
   return { gw, dir, ws, project };
 }
 function listen(ws) {
   const seen = [];
   ws.on('message', (d) => {
     const m = JSON.parse(d.toString());
-    if (m.method === '_agmente/git/changed') seen.push({ t: Date.now(), ...m.params });
+    if (m.method === '_acpcode/git/changed') seen.push({ t: Date.now(), ...m.params });
   });
   return seen;
 }
@@ -34,7 +34,7 @@ async function until(pred, what, ms = 8000) {
   for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(25)) if (pred()) return;
   throw new Error(`timed out waiting for ${what}`);
 }
-const statusOf = (ws, projectId) => rpc(ws, '_agmente/git/status', { projectId }).then((r) => r.result);
+const statusOf = (ws, projectId) => rpc(ws, '_acpcode/git/status', { projectId }).then((r) => r.result);
 
 test('a change to a file sends one notification with the new status hash', async () => {
   const { gw, dir, ws, project } = await setup();
@@ -134,8 +134,8 @@ test('a project that is not a repository is watched without a notification or a 
   const gw = await startGateway();
   try {
     const ws = (await connect(gw.url, auth())).ws;
-    const project = (await rpc(ws, '_agmente/projects/create', { name: 'p', path: gw.dirs.project })).result.project;
-    const res = await rpc(ws, '_agmente/git/status', { projectId: project.id });
+    const project = (await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project })).result.project;
+    const res = await rpc(ws, '_acpcode/git/status', { projectId: project.id });
     assert.equal(res.error.message, 'not a git repository');
     await sleep(1200);
     assert.equal(gw.audit.filter((l) => l.event === 'git_watch_start').length, 0, 'a failed status starts no watch');

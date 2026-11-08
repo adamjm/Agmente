@@ -45,7 +45,7 @@ async function setup({ fallback, extraFake, env = 'sandbox' } = {}) {
   const gw = await startGateway({ push: pushConfig(material, fake.url, prod ? prod.url : fake.url) });
   const phone = await connect(gw.url, auth());
   const deviceToken = env === 'production' ? TOKEN_PROD : TOKEN_HEX;
-  assert.deepEqual((await rpc(phone.ws, '_agmente/push/register', { deviceToken, environment: env })).result, {});
+  assert.deepEqual((await rpc(phone.ws, '_acpcode/push/register', { deviceToken, environment: env })).result, {});
   const { sessionId } = await useProject(gw, phone.ws);
   const cleanup = async () => {
     phone.ws.close();
@@ -63,7 +63,7 @@ test('no push is made when the push block is absent (FR-23 off by default)', asy
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    await rpc(ws, '_agmente/push/register', { deviceToken: TOKEN_HEX, environment: 'sandbox' });
+    await rpc(ws, '_acpcode/push/register', { deviceToken: TOKEN_HEX, environment: 'sandbox' });
     const { sessionId } = await useProject(gw, ws);
     await rpc(ws, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] });
     await sleep(300);
@@ -135,9 +135,9 @@ test('an approval request sends "Approval needed"; a payload never carries the t
   try {
     const turn = rpc(s.phone.ws, 'session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: `${PROMPT_SECRET} [permission]` }] });
     await until(() => events(s.fake).includes('approval_needed'), 'the approval push');
-    const pending = (await rpc(s.phone.ws, '_agmente/approvals/pending', {})).result.approvals;
+    const pending = (await rpc(s.phone.ws, '_acpcode/approvals/pending', {})).result.approvals;
     assert.equal(pending.length, 1);
-    assert.deepEqual((await rpc(s.phone.ws, '_agmente/approvals/answer', { approvalId: pending[0].approvalId, cancelled: true })).result, {});
+    assert.deepEqual((await rpc(s.phone.ws, '_acpcode/approvals/answer', { approvalId: pending[0].approvalId, cancelled: true })).result, {});
     await turn;
     const req = s.fake.requests.find((r) => JSON.parse(r.body).event === 'approval_needed');
     const body = JSON.parse(req.body);
@@ -170,10 +170,10 @@ test('a device with a live subscriber on the session gets no push; once it leave
     // A second socket of the same device subscribes: the app is open on this session.
     const watcher = await connect(s.gw.url, auth());
     const seen = collect(watcher.ws);
-    assert.ok((await rpc(watcher.ws, '_agmente/sessions/subscribe', { sessionId: s.sessionId, afterSeq: 0 })).result.headSeq >= 0);
+    assert.ok((await rpc(watcher.ws, '_acpcode/sessions/subscribe', { sessionId: s.sessionId, afterSeq: 0 })).result.headSeq >= 0);
 
     await rpc(s.phone.ws, 'session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: 'x' }] });
-    await until(() => seen.some((m) => m.method === '_agmente/event' && m.params?.message?.method === '_agmente/turn_ended'), 'turn_ended on the subscriber');
+    await until(() => seen.some((m) => m.method === '_acpcode/event' && m.params?.message?.method === '_acpcode/turn_ended'), 'turn_ended on the subscriber');
     await sleep(500);
     assert.equal(s.fake.requests.length, 0, 'the foreground device gets no push');
 
@@ -194,7 +194,7 @@ test('a subscriber on another session does not suppress the push', async () => {
     const watcher = await connect(s.gw.url, auth());
     const other = await useProject(s.gw, watcher.ws, s.gw.dirs.project);
     assert.ok(other.sessionId !== s.sessionId);
-    await rpc(watcher.ws, '_agmente/sessions/subscribe', { sessionId: other.sessionId, afterSeq: 0 });
+    await rpc(watcher.ws, '_acpcode/sessions/subscribe', { sessionId: other.sessionId, afterSeq: 0 });
     await rpc(s.phone.ws, 'session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: 'x' }] });
     await until(() => s.fake.requests.length === 1, 'the push');
     watcher.ws.close();
@@ -228,7 +228,7 @@ test('BadDeviceToken and DeviceTokenNotForTopic remove the token', async () => {
     assert.equal(s.fake.requests.length, 1);
 
     // Register again, then answer DeviceTokenNotForTopic.
-    assert.deepEqual((await rpc(s.phone.ws, '_agmente/push/register', { deviceToken: TOKEN_HEX, environment: 'sandbox' })).result, {});
+    assert.deepEqual((await rpc(s.phone.ws, '_acpcode/push/register', { deviceToken: TOKEN_HEX, environment: 'sandbox' })).result, {});
     s.fake.fallback = { status: 400, reason: 'DeviceTokenNotForTopic' };
     await rpc(s.phone.ws, 'session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: 'y' }] });
     await until(() => s.gw.audit.filter((e) => e.event === 'push_token_removed').length === 2, 'removal on DeviceTokenNotForTopic');

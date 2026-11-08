@@ -17,7 +17,7 @@ private final class GitFake: GatewayCalling, @unchecked Sendable {
 final class GatewayGitTests: XCTestCase {
     func testStatusDecodesTheDocumentedShape() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/status"] = .object([
+        fake.results["_acpcode/git/status"] = .object([
             "branch": .string("main"), "upstream": .string("origin/main"), "ahead": .number(2), "behind": .number(1),
             "files": .array([
                 .object(["path": .string("a.txt"), "status": .string("modified"), "staged": .bool(true), "added": .number(3), "removed": .number(1)]),
@@ -41,7 +41,7 @@ final class GatewayGitTests: XCTestCase {
 
     func testStatusWithDetachedHeadAndNoUpstreamDecodes() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/status"] = .object(["branch": .null, "upstream": .null, "ahead": .number(0), "behind": .number(0),
+        fake.results["_acpcode/git/status"] = .object(["branch": .null, "upstream": .null, "ahead": .number(0), "behind": .number(0),
                                                        "files": .array([]), "hash": .string("h"), "truncated": .bool(false)])
         let status = try await GatewayClient(fake).gitStatus(projectId: "p1")
         XCTAssertNil(status.branch)
@@ -51,7 +51,7 @@ final class GatewayGitTests: XCTestCase {
 
     func testPathDiffSendsPathAndStagedOnlyWhenSet() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/diff"] = .object(["diff": .string("d"), "truncated": .bool(false), "hidden": .array([])])
+        fake.results["_acpcode/git/diff"] = .object(["diff": .string("d"), "truncated": .bool(false), "hidden": .array([])])
         let client = GatewayClient(fake)
         _ = try await client.gitDiff(projectId: "p1", path: "-x.txt")
         XCTAssertEqual(fake.calls.last?.params, .object(["projectId": .string("p1"), "path": .string("-x.txt")]))
@@ -63,14 +63,14 @@ final class GatewayGitTests: XCTestCase {
 
     func testTreeDiffSendsBothTrees() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/diff"] = .object(["diff": .string(""), "truncated": .bool(false), "hidden": .array([])])
+        fake.results["_acpcode/git/diff"] = .object(["diff": .string(""), "truncated": .bool(false), "hidden": .array([])])
         _ = try await GatewayClient(fake).gitDiff(projectId: "p1", fromTree: "aa", toTree: "bb", path: "f")
         XCTAssertEqual(fake.calls.last?.params, .object(["projectId": .string("p1"), "fromTree": .string("aa"), "toTree": .string("bb"), "path": .string("f")]))
     }
 
     func testDiffKeepsHiddenNamesAndToleratesMissingOptionalKeys() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/diff"] = .object(["diff": .string("secret file changed: .env (content hidden)\n"), "hidden": .array([.string(".env")])])
+        fake.results["_acpcode/git/diff"] = .object(["diff": .string("secret file changed: .env (content hidden)\n"), "hidden": .array([.string(".env")])])
         let diff = try await GatewayClient(fake).gitDiff(projectId: "p1")
         XCTAssertEqual(diff.hidden, [".env"])
         XCTAssertFalse(diff.truncated)
@@ -78,7 +78,7 @@ final class GatewayGitTests: XCTestCase {
 
     func testLogPagesWithTheCursor() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/log"] = .object([
+        fake.results["_acpcode/git/log"] = .object([
             "commits": .array([.object(["hash": .string("1234567890"), "shortHash": .string("1234567"), "author": .string("Ann"),
                                         "date": .string("2026-11-06T08:08:11+10:00"), "subject": .string("Fix")])]),
             "nextCursor": .string("50"),
@@ -89,7 +89,7 @@ final class GatewayGitTests: XCTestCase {
         XCTAssertEqual(page.nextCursor, "50")
         XCTAssertNotNil(page.commits[0].dateValue)
         XCTAssertEqual(fake.calls.last?.params, .object(["projectId": .string("p1"), "limit": .int(50), "cursor": .string("0")]))
-        fake.results["_agmente/git/log"] = .object(["commits": .array([])])
+        fake.results["_acpcode/git/log"] = .object(["commits": .array([])])
         let empty = try await client.gitLog(projectId: "p1")
         XCTAssertNil(empty.nextCursor)
         XCTAssertEqual(fake.calls.last?.params, .object(["projectId": .string("p1")]))
@@ -97,7 +97,7 @@ final class GatewayGitTests: XCTestCase {
 
     func testTurnDiffAndItsErrors() async throws {
         let fake = GitFake()
-        fake.results["_agmente/git/turnDiff"] = .object(["diff": .string("x"), "truncated": .bool(false), "hidden": .array([]),
+        fake.results["_acpcode/git/turnDiff"] = .object(["diff": .string("x"), "truncated": .bool(false), "hidden": .array([]),
                                                          "fromTree": .string("aa"), "toTree": .string("bb")])
         let client = GatewayClient(fake)
         let diff = try await client.gitTurnDiff(sessionId: "s1", turn: 3)
@@ -131,14 +131,14 @@ final class GatewayPushTests: XCTestCase {
     func testRegisterSendsTokenAndEnvironmentOnly() async throws {
         let fake = GitFake()
         try await GatewayClient(fake).registerPush(deviceToken: "ab12", environment: .sandbox)
-        XCTAssertEqual(fake.calls.last?.method, "_agmente/push/register")
+        XCTAssertEqual(fake.calls.last?.method, "_acpcode/push/register")
         XCTAssertEqual(fake.calls.last?.params, .object(["deviceToken": .string("ab12"), "environment": .string("sandbox")]))
     }
 
     func testUnregisterCallsTheMethod() async throws {
         let fake = GitFake()
         try await GatewayClient(fake).unregisterPush()
-        XCTAssertEqual(fake.calls.last?.method, "_agmente/push/unregister")
+        XCTAssertEqual(fake.calls.last?.method, "_acpcode/push/unregister")
     }
 
     func testAGatewayErrorIsThrown() async {

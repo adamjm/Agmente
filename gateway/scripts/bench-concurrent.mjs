@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 const { values } = parseArgs({
   options: {
     runner: { type: 'string', default: 'apple' },
-    image: { type: 'string', default: 'localhost/agmente-bob:2.0.9' },
+    image: { type: 'string', default: 'localhost/acpcode-bob:2.0.9' },
     counts: { type: 'string', default: '1,2,4,8' },
     dns: { type: 'string', default: '' },
   },
@@ -28,7 +28,7 @@ const BOB_ARGS = ['acp', '--accept-license', '--log-level', 'warn'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pct = (xs, p) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)]; };
 const tag = randomBytes(3).toString('hex');
-const cname = (i) => `agmente-conc-${tag}-${i}`;
+const cname = (i) => `acpcode-conc-${tag}-${i}`;
 
 /** An ACP client over one agent process's stdio. */
 function startAgent(args) {
@@ -172,7 +172,7 @@ function containerListed(name) {
   } catch { return false; }
 }
 
-const base = await realpath(await mkdtemp(join(tmpdir(), 'agmente-conc-')));
+const base = await realpath(await mkdtemp(join(tmpdir(), 'acpcode-conc-')));
 const results = [];
 try {
   if (apple) {

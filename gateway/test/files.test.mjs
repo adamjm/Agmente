@@ -77,12 +77,12 @@ async function setup(files = {}, { denyPaths = ['*.db'] } = {}) {
   symlinkSync(gw.dirs.outside, join(dir, 'outside-dir'));
   symlinkSync('.env', join(dir, 'env-link.txt'));
   execFileSync('mkfifo', [join(dir, 'pipe.txt')]);
-  const created = await rpc(ws, '_agmente/projects/create', { name: 'files', path: dir, denyPaths });
+  const created = await rpc(ws, '_acpcode/projects/create', { name: 'files', path: dir, denyPaths });
   assert.ok(created.result?.project, JSON.stringify(created.error));
   return { gw, ws, dir, projectId: created.result.project.id, outside: gw.dirs.outside };
 }
 
-const sign = (ctx, path) => rpc(ctx.ws, '_agmente/files/url', { projectId: ctx.projectId, path });
+const sign = (ctx, path) => rpc(ctx.ws, '_acpcode/files/url', { projectId: ctx.projectId, path });
 
 async function stopAll(ctx) {
   ctx.ws.close();
@@ -94,8 +94,8 @@ test('files extension is advertised and the method is refused when files is off'
   try {
     const { ws } = await connect(gw.url, auth());
     const init = await rpc(ws, 'initialize', { protocolVersion: 1, clientCapabilities: {} });
-    assert.ok(init.result._meta['agmente/gateway'].extensions.includes('files'));
-    const res = await rpc(ws, '_agmente/files/url', { projectId: 'x', path: 'a.txt' });
+    assert.ok(init.result._meta['acpcode/gateway'].extensions.includes('files'));
+    const res = await rpc(ws, '_acpcode/files/url', { projectId: 'x', path: 'a.txt' });
     assert.equal(res.error?.code, -32000, 'with no files block the feature is off');
     ws.close();
   } finally {
@@ -215,8 +215,8 @@ test('paths outside the project or syntactically wrong are refused at signing (T
     assert.equal(named.error?.code, -32602, 'a link named .env is a secret path');
     assert.ok(await ctx.gw.waitForAudit((a) => a.event === 'file_refused' && a.reason === 'secret' && a.path === 'cfg/.env'));
     assert.equal((await sign(ctx, 'nope')).error.code, -32602);
-    assert.equal((await rpc(ctx.ws, '_agmente/files/url', { projectId: 'nosuchproject', path: 'notes.txt' })).error.code, -32602);
-    assert.equal((await rpc(ctx.ws, '_agmente/files/url', { projectId: ctx.projectId, path: 7 })).error.code, -32602);
+    assert.equal((await rpc(ctx.ws, '_acpcode/files/url', { projectId: 'nosuchproject', path: 'notes.txt' })).error.code, -32602);
+    assert.equal((await rpc(ctx.ws, '_acpcode/files/url', { projectId: ctx.projectId, path: 7 })).error.code, -32602);
   } finally {
     await stopAll(ctx);
   }
@@ -378,7 +378,7 @@ test('audit lines carry project and path, and never the token (FR-9)', async () 
 });
 
 test('a key file is read for the signing key; its key is not in any response (NFR-14)', async () => {
-  const keyDir = mkdtempSync(join(tmpdir(), 'agmente-key-'));
+  const keyDir = mkdtempSync(join(tmpdir(), 'acpcode-key-'));
   const keyFile = join(keyDir, 'files.key');
   const keyValue = 'K'.repeat(40);
   writeFileSync(keyFile, keyValue);

@@ -9,21 +9,21 @@ Status 2026-11-07: the app asks for permission, gets a device token and gives it
 | Gateway wire tests | `scripts/check.sh` | "All checks passed"; `test/push.test.mjs` and `test/apns.test.mjs` are in the count |
 | Payload builder (T-24) | `(cd gateway && go test ./internal/push/...)` | ok |
 | Delivery against a fake APNs (T-48, wire part) | `node --test test/apns.test.mjs` from `gateway/` after `go build` | every test passes |
-| App tests | `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test` | TEST SUCCEEDED |
-| Register by hand | start a gateway, connect with a token, send `{"jsonrpc":"2.0","id":1,"method":"_agmente/push/register","params":{"deviceToken":"<64 hex>","environment":"sandbox"}}` | result `{}`; `sqlite3 <stateDir>/gateway.db 'select identity,device,environment from push_tokens'` shows one row |
-| Key and config rules | `gateway/bin/agmente-gateway --config <file> --dry-run` | prints the `push` block with ids and paths, never key bytes; a group-readable key is refused |
+| App tests | `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test` | TEST SUCCEEDED |
+| Register by hand | start a gateway, connect with a token, send `{"jsonrpc":"2.0","id":1,"method":"_acpcode/push/register","params":{"deviceToken":"<64 hex>","environment":"sandbox"}}` | result `{}`; `sqlite3 <stateDir>/gateway.db 'select identity,device,environment from push_tokens'` shows one row |
+| Key and config rules | `gateway/bin/acpcode-gateway --config <file> --dry-run` | prints the `push` block with ids and paths, never key bytes; a group-readable key is refused |
 
 ## Part B. What you need from Apple (owner)
 
 1. **Apple Developer Program membership** (paid). Needed for the Push capability and the key.
 2. **App ID with Push Notifications.** In Certificates, Identifiers & Profiles, open the App ID for the app's bundle id and enable Push Notifications. The project's bundle id is in the Xcode target; the placeholder `com.example.*` ids in the repo will not work. Change the bundle id to one you own first.
 3. **APNs auth key (`.p8`).** Keys, then +, tick Apple Push Notifications service (APNs). Download the `.p8` once. Note the **Key ID** (10 characters) and your **Team ID** (10 characters, top right of the membership page). One key works for both sandbox and production.
-4. **Store the key on the gateway host only**, outside the repo and the config file (NFR-14: no secrets in config). Mode 0600, for example `/etc/agmente/AuthKey_<KEYID>.p8`. Never commit it, paste it into chat or put it in the app.
+4. **Store the key on the gateway host only**, outside the repo and the config file (NFR-14: no secrets in config). Mode 0600, for example `/etc/acpcode/AuthKey_<KEYID>.p8`. Never commit it, paste it into chat or put it in the app.
 5. **A real iPhone** signed in to iCloud, with a USB cable or wireless debugging. The simulator on Apple silicon can receive pushes dragged in as `.apns` files but cannot get a real device token, so it cannot test this path.
 
 ## Part C. Make the app able to receive pushes (needs the Mac, Xcode, the account)
 
-1. In Xcode, select the Agmente target, Signing & Capabilities, choose your team, and set the unique bundle id from B2.
+1. In Xcode, select the ACP Code target, Signing & Capabilities, choose your team, and set the unique bundle id from B2.
 2. Add the **Push Notifications** capability. This creates the `aps-environment` entitlement (`development` for Debug, `production` for archive builds).
 3. Build and run on the iPhone (Debug build, so `environment` is `sandbox`).
 4. Settings, Notifications, tap **Allow notifications**, accept the system prompt. The row should read "Allowed, token held". If it shows "Registration failed" with "no valid aps-environment", step 2 did not take effect (clean build folder, re-run).
@@ -44,7 +44,7 @@ Status 2026-11-07: the app asks for permission, gets a device token and gives it
 
   ```json
   "push": {
-    "keyFile": "/etc/agmente/AuthKey_ABCDE12345.p8",
+    "keyFile": "/etc/acpcode/AuthKey_ABCDE12345.p8",
     "keyId": "ABCDE12345",
     "teamId": "TEAM123456",
     "topic": "com.example.yourapp"

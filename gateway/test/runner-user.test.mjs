@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dryRun, rawConfig } from './helpers.mjs';
 
-const podman = (extra) => rawConfig('/srv/p', { runner: { kind: 'podman', image: 'agmente-bob:2.0.9', ...extra } });
+const podman = (extra) => rawConfig('/srv/p', { runner: { kind: 'podman', image: 'acpcode-bob:2.0.9', ...extra } });
 
 test('the container user is optional and defaults to the image user', async () => {
   const run = await dryRun(podman({}));

@@ -4,7 +4,7 @@
 //   initialize response, session/load of an existing session (+ its replay), session/new response.
 // Talks ACP straight over stdio: gateway overhead is measured separately (T-12, under 1 ms).
 // Usage (BOB_API_KEY in the environment; never printed):
-//   node gateway/scripts/bench-start.mjs [--runs 5] [--image agmente-bob:2.0.9] [--skip-host] [--runner podman|apple] [--dns 1.1.1.1]
+//   node gateway/scripts/bench-start.mjs [--runs 5] [--image acpcode-bob:2.0.9] [--skip-host] [--runner podman|apple] [--dns 1.1.1.1]
 // --runner apple uses Apple's `container` CLI (D-079): bind-mounted home and project folders, the
 // container user set with -u, and the same-name lock checked with `container list`. It also prints
 // the host memory held by the runtime with one idle Bob container running (RSS of its processes).
@@ -18,7 +18,7 @@ import { randomBytes } from 'node:crypto';
 const { values } = parseArgs({
   options: {
     runs: { type: 'string', default: '5' },
-    image: { type: 'string', default: 'agmente-bob:2.0.9' },
+    image: { type: 'string', default: 'acpcode-bob:2.0.9' },
     'skip-host': { type: 'boolean', default: false },
     runner: { type: 'string', default: 'podman' },
     dns: { type: 'string', default: '' },
@@ -233,11 +233,11 @@ async function podmanContainer() {
   logMemory(memory);
 }
 if (!process.env.BOB_API_KEY) { console.error('BOB_API_KEY is not set'); process.exit(2); }
-const base = await realpath(await mkdtemp(join(tmpdir(), 'agmente-bench-')));
+const base = await realpath(await mkdtemp(join(tmpdir(), 'acpcode-bench-')));
 const tag = randomBytes(3).toString('hex');
-const volHome = `agmente-bench-home-${tag}`;
-const volWork = `agmente-bench-work-${tag}`;
-const name = `agmente-bench-${tag}`;
+const volHome = `acpcode-bench-home-${tag}`;
+const volWork = `acpcode-bench-work-${tag}`;
+const name = `acpcode-bench-${tag}`;
 try {
   // --- Host: bob on the Mac, with a disposable HOME that trusts the project.
   if (!values['skip-host']) {

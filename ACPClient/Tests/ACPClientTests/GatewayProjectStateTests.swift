@@ -10,7 +10,7 @@ final class GatewayProjectStateTests: XCTestCase {
     }
 
     func testMethodNameIsTheContractName() {
-        XCTAssertEqual(GatewayProjectState.method, "_agmente/project/state")
+        XCTAssertEqual(GatewayProjectState.method, "_acpcode/project/state")
     }
 
     func testEachOfTheFourStatesDecodes() throws {

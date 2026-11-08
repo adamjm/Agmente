@@ -1,6 +1,6 @@
 # E2E Scenarios
 
-This directory holds repository-owned end-to-end specs for Agmente.
+This directory holds repository-owned end-to-end specs for ACP Code.
 
 ## Purpose
 - Make E2E requests agent-agnostic.

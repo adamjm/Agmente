@@ -3,7 +3,7 @@ package server
 // The approval queue (FR-22, NFR-10, PLAN 3.9, D-009, D-031).
 //
 // Every session/request_permission from an agent becomes an approval with a gateway id
-// (agmente-perm-<n>). The phones answer it, with `_agmente/approvals/answer` or with a plain
+// (acpcode-perm-<n>). The phones answer it, with `_acpcode/approvals/answer` or with a plain
 // JSON-RPC response to that id. The first answer goes to the agent; later ones are told it was
 // answered elsewhere. With no answer within limits.approvalTimeoutSeconds, the gateway sends a
 // reject option, or `cancelled` when the request offers none. No path here sends an allow option
@@ -15,10 +15,10 @@ import (
 	"strconv"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/push"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/push"
+	"acpcode/gateway/internal/store"
 )
 
 const rpcAnsweredElsewhere = -32001
@@ -62,7 +62,7 @@ func (s *Server) addPermission(a *projectAgent, proc *agentProcess, agentID *jso
 	}
 	s.permMu.Lock()
 	s.permSeq++
-	p.id = "agmente-perm-" + strconv.FormatInt(s.permSeq, 10)
+	p.id = "acpcode-perm-" + strconv.FormatInt(s.permSeq, 10)
 	s.perms[p.id] = p
 	p.timer = time.AfterFunc(s.approvalTimeout(), func() { s.timeoutPermission(p.id) })
 	s.permMu.Unlock()
@@ -126,7 +126,7 @@ func (s *Server) finish(p *permission, by string, outcome *jsonv.Value) {
 	}
 	fields := map[string]*jsonv.Value{"approvalId": jsonv.Str(p.id), "answeredBy": jsonv.Str(by), "outcome": orNull(outcome)}
 	s.emit(p.agent.id, p.session, "approval_answered",
-		gatewayNotification("_agmente/approval_answered", p.session, fields, "approvalId", "answeredBy", "outcome"), nil)
+		gatewayNotification("_acpcode/approval_answered", p.session, fields, "approvalId", "answeredBy", "outcome"), nil)
 }
 
 func outcomeResponse(id string, outcome *jsonv.Value) *jsonv.Value {
@@ -242,7 +242,7 @@ func answeredBy(who audit.Who) string { return who.Identity + "/" + who.Device }
 
 // answerPermission handles a plain JSON-RPC response from a phone (the current app). The first
 // answer for an open approval goes to the agent as the phone sent it. A later one is dropped, and
-// the phone gets `_agmente/notice` saying why.
+// the phone gets `_acpcode/notice` saying why.
 func (s *Server) answerPermission(c *client, msg, id *jsonv.Value) {
 	key, _ := id.StringValue()
 	p := s.takePermission(key, answeredBy(c.who))
@@ -254,7 +254,7 @@ func (s *Server) answerPermission(c *client, msg, id *jsonv.Value) {
 			params.Set("message", jsonv.Str(reason))
 			note := jsonv.Obj()
 			note.Set("jsonrpc", jsonv.Str("2.0"))
-			note.Set("method", jsonv.Str("_agmente/notice"))
+			note.Set("method", jsonv.Str("_acpcode/notice"))
 			note.Set("params", params)
 			c.send(note.Marshal())
 		}
@@ -264,7 +264,7 @@ func (s *Server) answerPermission(c *client, msg, id *jsonv.Value) {
 	s.resolve(p, msg, answeredBy(c.who))
 }
 
-// answerApproval handles `_agmente/approvals/answer {approvalId, optionId | cancelled: true}`.
+// answerApproval handles `_acpcode/approvals/answer {approvalId, optionId | cancelled: true}`.
 func (s *Server) answerApproval(ctx context.Context, who audit.Who, params *jsonv.Value) (any, *rpcError) {
 	id, _ := params.Get("approvalId").StringValue()
 	if id == "" {
@@ -305,7 +305,7 @@ func (s *Server) answerApproval(ctx context.Context, who audit.Who, params *json
 		reason, _ := s.closedReason(ctx, id)
 		return nil, &rpcError{Code: rpcAnsweredElsewhere, Message: reason}
 	}
-	s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: "_agmente/approvals/answer", Project: p.agent.id}))
+	s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: "_acpcode/approvals/answer", Project: p.agent.id}))
 	s.resolve(p, outcomeResponse(id, outcome), answeredBy(who))
 	return map[string]any{}, nil
 }
@@ -319,7 +319,7 @@ type approvalJSON struct {
 	Since      string       `json:"since"`
 }
 
-// pendingApprovals answers `_agmente/approvals/pending`: the open approvals, oldest first.
+// pendingApprovals answers `_acpcode/approvals/pending`: the open approvals, oldest first.
 func (s *Server) pendingApprovals() (any, *rpcError) {
 	s.permMu.Lock()
 	out := make([]approvalJSON, 0, len(s.perms))

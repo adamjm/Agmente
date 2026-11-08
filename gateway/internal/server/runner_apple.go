@@ -1,7 +1,7 @@
 package server
 
 // Apple container runner (PLAN 6.x, D-079). Same contract as podmanRunner: one agent per project in
-// a container named agmente-<projectId>, which is the project lock (D-015), and git only inside a
+// a container named acpcode-<projectId>, which is the project lock (D-015), and git only inside a
 // container (D-008). Differences from Podman, from the spike in RESULTS 2026-11-07:
 //   - There is no --userns=keep-id. The container user is set with -u U:G, and the bind-mounted
 //     0700 folders are writable by it (ownership checked on the Mac).
@@ -24,8 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/store"
 )
 
 // appleAgentStartTimeout bounds how long start waits for the agent container to show up in the
@@ -73,7 +73,7 @@ func (r *appleRunner) dnsArgs() []string {
 	return []string{"--dns", r.cfg.Runner.DNS}
 }
 
-func appleAgentName(p store.Project) string { return "agmente-" + p.ID }
+func appleAgentName(p store.Project) string { return "acpcode-" + p.ID }
 
 // agentArgs is the `container run` command for the agent. Allow-listed variables are passed by
 // name only, so their values never appear on the command line.
@@ -92,8 +92,7 @@ func (r *appleRunner) agentArgs(p store.Project, home string) []string {
 			args = append(args, "-e", name)
 		}
 	}
-	args = append(args, r.cfg.Runner.Image)
-	return append(args, r.cfg.AgentCommand...)
+	return append(args, imageAndCommand(r.cfg.Runner.Image, r.cfg.AgentCommand)...)
 }
 
 // listedRunning reports whether a container with this name is in `container list`.
@@ -244,7 +243,7 @@ func (r *appleRunner) exec(ctx context.Context, p store.Project, home string, ar
 	if _, err := rand.Read(suffix[:]); err != nil {
 		return gitResult{}, err
 	}
-	name := "agmente-git-" + p.ID + "-" + hex.EncodeToString(suffix[:])
+	name := "acpcode-git-" + p.ID + "-" + hex.EncodeToString(suffix[:])
 	cmd := exec.Command(r.cli(), r.gitRunArgs(name, p, home, argv, extraEnv)...)
 	cmd.Env = os.Environ()
 	res, err := runCapped(ctx, cmd, stdin)
@@ -258,13 +257,13 @@ func (r *appleRunner) exec(ctx context.Context, p store.Project, home string, ar
 }
 
 // execMarkerPrefix names the environment variable that marks an exec'd git process.
-const execMarkerPrefix = "AGMENTE_EXEC="
+const execMarkerPrefix = "ACPCODE_EXEC="
 
 // killExec kills the exec'd git process that carries marker in its environment, inside the agent
 // container. It reads /proc only (procps is not in the image), and it is started without the
 // marker, so it never matches itself. Best effort: a process that has already exited is no error.
 func (r *appleRunner) killExec(name, marker string) {
-	script := `for p in /proc/[0-9]*; do if grep -aq "AGMENTE_EXEC=$0" "$p/environ" 2>/dev/null; then kill -KILL "${p#/proc/}" 2>/dev/null; fi; done`
+	script := `for p in /proc/[0-9]*; do if grep -aq "ACPCODE_EXEC=$0" "$p/environ" 2>/dev/null; then kill -KILL "${p#/proc/}" 2>/dev/null; fi; done`
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, r.cli(), "exec", "-u", fmt.Sprintf("%d:%d", r.uid(), r.gid()), name, "sh", "-c", script, marker)

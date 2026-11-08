@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // autoLoad lists the session methods for which the gateway opens a session that is not live.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Measure NFR-1 (T-11), NFR-2 (T-12) and NFR-6 (T-19). Prints JSON. Exit 1 if a limit is missed.
 // Usage: node test/bench.mjs [--calls 2000] [--rejects 500] [--replays 10] [--events 10000]
-// Target: the gateway in AGMENTE_GATEWAY_CMD (see helpers.mjs); default the Go binary.
+// Target: the gateway in ACPCODE_GATEWAY_CMD (see helpers.mjs); default the Go binary.
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { parseArgs } from 'node:util';
@@ -104,10 +104,10 @@ async function replayTimes(gw) {
       sub.on('message', (d) => {
         const m = JSON.parse(d.toString());
         if (m.id === 'sub') head = m.result.headSeq;
-        if (m.method === '_agmente/event' && m.params.seq === EVENTS) resolve();
+        if (m.method === '_acpcode/event' && m.params.seq === EVENTS) resolve();
       });
       sub.once('close', (code) => reject(new Error(`closed with ${code}`)));
-      sub.send(JSON.stringify({ jsonrpc: '2.0', id: 'sub', method: '_agmente/sessions/subscribe', params: { sessionId, afterSeq: 0 } }));
+      sub.send(JSON.stringify({ jsonrpc: '2.0', id: 'sub', method: '_acpcode/sessions/subscribe', params: { sessionId, afterSeq: 0 } }));
     });
     out.push(ms(process.hrtime.bigint() - t0));
     if (head !== EVENTS) throw new Error(`headSeq ${head}, expected ${EVENTS}`);

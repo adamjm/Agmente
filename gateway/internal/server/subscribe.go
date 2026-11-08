@@ -12,9 +12,9 @@ import (
 	"context"
 	"strconv"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 // replayPage is how many events the replay reads per query. The store has one connection, so a
@@ -46,10 +46,10 @@ func (sub *subscription) deliver(note []byte) {
 	}
 }
 
-// eventNotification wraps a logged message: `_agmente/event {sessionId, seq, message}`.
+// eventNotification wraps a logged message: `_acpcode/event {sessionId, seq, message}`.
 func eventNotification(sessionID string, seq int64, message []byte) []byte {
 	b := make([]byte, 0, len(message)+len(sessionID)+80)
-	b = append(b, `{"jsonrpc":"2.0","method":"_agmente/event","params":{"sessionId":`...)
+	b = append(b, `{"jsonrpc":"2.0","method":"_acpcode/event","params":{"sessionId":`...)
 	b = jsonv.AppendString(b, sessionID)
 	b = append(b, `,"seq":`...)
 	b = strconv.AppendInt(b, seq, 10)
@@ -58,7 +58,7 @@ func eventNotification(sessionID string, seq int64, message []byte) []byte {
 	return append(b, `}}`...)
 }
 
-// emit logs one session event, then delivers it: as `_agmente/event` to the session's
+// emit logs one session event, then delivers it: as `_acpcode/event` to the session's
 // subscribers, and as the plain message to each socket in raw that is not subscribed to the
 // session. The event is committed before anything is sent (D-027). If the write fails, the raw
 // sockets still get the message, but subscribers do not: the event has no seq.
@@ -91,7 +91,7 @@ func (s *Server) emit(projectID, sessionID, kind string, message []byte, raw []*
 	}
 }
 
-// subscribe handles `_agmente/sessions/subscribe {sessionId, afterSeq}`. It answers `{headSeq}`
+// subscribe handles `_acpcode/sessions/subscribe {sessionId, afterSeq}`. It answers `{headSeq}`
 // first, then replays the events after afterSeq up to headSeq, then streams live events. A second
 // subscribe from the same socket for the same session replaces the first.
 func (s *Server) subscribe(c *client, id, params *jsonv.Value) {

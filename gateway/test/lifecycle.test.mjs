@@ -13,13 +13,13 @@ import { auth, connect, FAKE_AGENT, rpc, sleep, startGateway, useProject } from 
 const FAKE_PODMAN = fileURLToPath(new URL('./fixtures/fake-podman.mjs', import.meta.url));
 const FAKE_CONTAINER = fileURLToPath(new URL('./fixtures/fake-container.mjs', import.meta.url));
 // The same cases run on the podman runner and on the Apple runner (lifecycle-apple.test.mjs sets this).
-const APPLE = process.env.AGMENTE_LIFECYCLE_RUNNER === 'apple';
+const APPLE = process.env.ACPCODE_LIFECYCLE_RUNNER === 'apple';
 
 /** A gateway on the fake podman, with its own log folder (FAKE_PODMAN_DIR reaches podman through the gateway environment). */
 async function lifecycle({ startMs = 0, exitDelayMs = 0 } = {}) {
   const { mkdtemp } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
-  const dir = await mkdtemp(join(tmpdir(), 'agmente-podman-'));
+  const dir = await mkdtemp(join(tmpdir(), 'acpcode-podman-'));
   const gw = await startGateway({ limits: { idleSeconds: 1 } }, {
     configFn: (dirs, config) => {
       config.runner = APPLE
@@ -49,8 +49,8 @@ function assertOneAtATime(log) {
   }
 }
 // The lock is the agent container's name. Git runs (turn snapshots, D-034) use their own short-lived
-// containers, named agmente-git-..., which the lifecycle does not manage.
-const agentOnly = (log) => log.filter((e) => !e.name?.startsWith('agmente-git-'));
+// containers, named acpcode-git-..., which the lifecycle does not manage.
+const agentOnly = (log) => log.filter((e) => !e.name?.startsWith('acpcode-git-'));
 const starts = (log) => agentOnly(log).filter((e) => e.event === 'start');
 const exits = (log) => agentOnly(log).filter((e) => e.event === 'exit');
 async function until(pred, what, ms = 10000) {
@@ -73,7 +73,7 @@ test('T-46: the first requests start one container, even when several arrive whi
   try {
     const a = (await connect(gw.url, auth())).ws;
     const b = (await connect(gw.url, auth())).ws;
-    await rpc(a, '_agmente/projects/create', { name: 'p', path: gw.dirs.project });
+    await rpc(a, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project });
     assert.deepEqual(starts(gw.podmanLog()), [], 'registering starts nothing');
     const [ra, rb] = await Promise.all([a, b].map((ws) => rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] })));
     assert.ok(ra.result.sessionId && rb.result.sessionId);
@@ -123,7 +123,7 @@ test('T-46: a pending approval keeps the container running past the idle time; i
     await sleep(2500);
     assert.deepEqual(exits(gw.podmanLog()), [], 'still running with the approval open');
     const req = seen.find((m) => m.method === 'session/request_permission');
-    assert.deepEqual((await rpc(a, '_agmente/approvals/answer', { approvalId: req.id, optionId: 'cancel' })).result, {});
+    assert.deepEqual((await rpc(a, '_acpcode/approvals/answer', { approvalId: req.id, optionId: 'cancel' })).result, {});
     await turn;
     await until(() => exits(gw.podmanLog()).length === 1, 'the idle stop after the answer', 6000);
     assertOneAtATime(gw.podmanLog());
@@ -141,7 +141,7 @@ test('T-46: a subscriber keeps the container running; it stops once the subscrib
     await prompt(a, sessionId, 'hi');
     a.close();
     const s = (await connect(gw.url, auth())).ws;
-    await rpc(s, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+    await rpc(s, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
     await sleep(2500);
     assert.deepEqual(exits(gw.podmanLog()), [], 'still running with a subscriber');
     const left = Date.now();

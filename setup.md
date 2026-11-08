@@ -1,10 +1,10 @@
 # Remote Agent Setup (Long Form)
 
-This guide shows how to **start a remote agent** and connect it to Agmente over a secure WebSocket. It summarizes the internal website docs without pulling in the full site.
+This guide shows how to **start a remote agent** and connect it to ACP Code over a secure WebSocket. It summarizes the internal website docs without pulling in the full site.
 
 ## 0) Choose Your Protocol
 
-Agmente supports two server types:
+ACP Code supports two server types:
 - **ACP** (most common for CLI agents).
 - **Codex app-server** (if your server already speaks the Codex protocol).
 
@@ -24,13 +24,13 @@ Agent requirements:
 
 ## 1.5) What the Flow Looks Like (At a High Level)
 
-- Agmente connects over `wss://` to your public hostname.
+- ACP Code connects over `wss://` to your public hostname.
 - A proxy or tunnel forwards traffic to `localhost:<port>` on the server.
 - The agent process speaks ACP or Codex app-server over WebSocket.
 
 ## 2) Authenticate the Agent CLI (Once)
 
-Agmente never handles OAuth or API keys. Authenticate the agent CLI on the remote host before you launch it.
+ACP Code never handles OAuth or API keys. Authenticate the agent CLI on the remote host before you launch it.
 
 Examples:
 - **Claude Code**
@@ -50,7 +50,7 @@ Most agents speak ACP over stdio. Bridge them to WebSocket with `@rebornix/stdio
 - `--grace-period 604800`: allows a 7‑day reconnect window.
 
 **Why `--persist` matters**
-If an agent does not implement `session/list` or `session/load`, Agmente stores session IDs locally. Keeping the agent process alive across reconnects preserves those sessions.
+If an agent does not implement `session/list` or `session/load`, ACP Code stores session IDs locally. Keeping the agent process alive across reconnects preserves those sessions.
 
 ### Gemini CLI
 ```bash
@@ -87,7 +87,7 @@ Example (local-style command on the server):
 npx -y @rebornix/stdio-to-ws --persist --grace-period 604800 "codex app-server" --port 9000
 ```
 
-You’ll select **Server Type = Codex App-Server** in Agmente and use port `9000` (or your chosen port).
+You’ll select **Server Type = Codex App-Server** in ACP Code and use port `9000` (or your chosen port).
 
 ## 5) Put TLS in Front of the WebSocket
 
@@ -126,8 +126,8 @@ Quick tunnels generate a new URL each run. Use a named tunnel for a stable hostn
 **Named tunnel (stable URL):**
 ```bash
 cloudflared tunnel login
-cloudflared tunnel create agmente-agent
-cloudflared tunnel route dns agmente-agent agent.example.com
+cloudflared tunnel create acpcode-agent
+cloudflared tunnel route dns acpcode-agent agent.example.com
 ```
 
 `~/.cloudflared/config.yml`:
@@ -143,7 +143,7 @@ ingress:
 
 Run the tunnel:
 ```bash
-cloudflared tunnel run agmente-agent
+cloudflared tunnel run acpcode-agent
 ```
 
 **Run as a service**
@@ -165,20 +165,20 @@ cloudflared tunnel run agmente-agent
 
 ## 6) (Optional) Add Cloudflare Access
 
-Cloudflare Access adds authentication in front of your tunnel. Agmente supports **Service Tokens**.
+Cloudflare Access adds authentication in front of your tunnel. ACP Code supports **Service Tokens**.
 
 ### Create Access + Service Token
 1. Access → Applications → **Add** → **Self-hosted**
-2. Name it (for example `Agmente Agent`) and set your tunnel domain.
+2. Name it (for example `ACPCode Agent`) and set your tunnel domain.
 3. Access → Service Auth → **Service Tokens** → Create a token.
 4. Add a policy using **Service Auth** and include the token.
 
-### Configure Agmente
+### Configure ACP Code
 Enter the token values under **Cloudflare Access**:
 - `CF-Access-Client-Id`
 - `CF-Access-Client-Secret`
 
-Agmente sends these on every request:
+ACP Code sends these on every request:
 ```
 CF-Access-Client-Id: <CLIENT_ID>
 CF-Access-Client-Secret: <CLIENT_SECRET>
@@ -191,7 +191,7 @@ curl -I https://agent.example.com \
   -H "CF-Access-Client-Secret: YOUR_CLIENT_SECRET"
 ```
 
-## 7) Add the Remote Server in Agmente
+## 7) Add the Remote Server in ACP Code
 
 1. Tap **Add Server**.
 2. Pick **ACP** or **Codex App-Server**.
@@ -234,7 +234,7 @@ If these complete, the server is healthy.
 **403 Forbidden (Cloudflare Access)**
 - Ensure the Access policy uses **Service Auth**.
 - Confirm the token is attached to the policy.
-- Re-enter the Client ID/Secret in Agmente and reconnect.
+- Re-enter the Client ID/Secret in ACP Code and reconnect.
 
 **Working directory errors**
 - The directory must exist on the agent host.

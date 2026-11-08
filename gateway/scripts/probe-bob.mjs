@@ -37,7 +37,7 @@ const log = (...a) => console.log(...a);
 
 log(`bob: ${bobPath} (${bobVersion}); BOB_API_KEY set: ${hasKey}`);
 
-const base = await realpath(await mkdtemp(join(tmpdir(), 'agmente-bob-probe-')));
+const base = await realpath(await mkdtemp(join(tmpdir(), 'acpcode-bob-probe-')));
 const root = join(base, 'root');
 const project = join(root, `untrusted-${randomBytes(4).toString('hex')}`);
 await mkdir(project, { recursive: true });
@@ -68,7 +68,7 @@ const config = {
   runner: { kind: 'host', allowHost: true },
   limits: {},
 };
-// The gateway process (from AGMENTE_GATEWAY_CMD, default the Go binary) starts Bob in the project.
+// The gateway process (from ACPCODE_GATEWAY_CMD, default the Go binary) starts Bob in the project.
 const gateway = await spawnGateway(config);
 const auditLines = gateway.audit;
 
@@ -127,8 +127,8 @@ const show = (label, res) => log(`${label} -> ${res.error ? `ERROR ${JSON.string
 const results = {};
 
 try {
-  const registered = await rpc('_agmente/projects/create', { name: 'probe', path: project });
-  show('_agmente/projects/create', registered);
+  const registered = await rpc('_acpcode/projects/create', { name: 'probe', path: project });
+  show('_acpcode/projects/create', registered);
   await setTrust(join(stateDir, 'homes', registered.result.project.id));
 
   // T-8 sanity: cwd outside roots never reaches Bob.
@@ -145,14 +145,14 @@ try {
   const strip = (r) => {
     const out = { ...r, agentInfo: { ...r.agentInfo, version: '<v>' } };
     if (out._meta) {
-      const { 'agmente/gateway': _gw, ...rest } = out._meta;
+      const { 'acpcode/gateway': _gw, ...rest } = out._meta;
       if (Object.keys(rest).length) out._meta = rest;
       else delete out._meta;
     }
     return out;
   };
   const same = JSON.stringify(strip(init.result ?? {})) === JSON.stringify(strip(fixture));
-  log(`initialize agentInfo: ${JSON.stringify(init.result?.agentInfo)}; gateway: ${JSON.stringify(init.result?._meta?.['agmente/gateway'])}`);
+  log(`initialize agentInfo: ${JSON.stringify(init.result?.agentInfo)}; gateway: ${JSON.stringify(init.result?._meta?.['acpcode/gateway'])}`);
   log(`initialize matches fixture (ignoring version and the gateway _meta): ${same}`);
   if (!same) log(`initialize result: ${JSON.stringify(init.result)}`);
   results.T32 = same;

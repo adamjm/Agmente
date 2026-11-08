@@ -1,4 +1,4 @@
-// Additive updates to a project's lists (FR-30, NFR-9, D-066): _agmente/projects/addDenyPaths and
+// Additive updates to a project's lists (FR-30, NFR-9, D-066): _acpcode/projects/addDenyPaths and
 // addWatchSkip. They use the create rules, merge case-insensitively, keep the 32-entry cap for the
 // total, and can never remove an entry. The built-in lists always apply.
 import { test } from 'node:test';
@@ -17,13 +17,13 @@ async function setup(denyPaths) {
   const ws = (await connect(gw.url, auth())).ws;
   const params = { name: 'lists', path: gw.dirs.project };
   if (denyPaths !== undefined) params.denyPaths = denyPaths;
-  const project = (await rpc(ws, '_agmente/projects/create', params)).result.project;
+  const project = (await rpc(ws, '_acpcode/projects/create', params)).result.project;
   return { gw, ws, dir: gw.dirs.project, project };
 }
 
-const addDeny = (ws, params) => rpc(ws, '_agmente/projects/addDenyPaths', params);
-const addSkip = (ws, params) => rpc(ws, '_agmente/projects/addWatchSkip', params);
-const storedDeny = async (ws, id) => (await rpc(ws, '_agmente/projects/list', {})).result.projects.find((p) => p.id === id)?.denyPaths;
+const addDeny = (ws, params) => rpc(ws, '_acpcode/projects/addDenyPaths', params);
+const addSkip = (ws, params) => rpc(ws, '_acpcode/projects/addWatchSkip', params);
+const storedDeny = async (ws, id) => (await rpc(ws, '_acpcode/projects/list', {})).result.projects.find((p) => p.id === id)?.denyPaths;
 
 test('addDenyPaths refusals change nothing', async () => {
   const { gw, ws, project } = await setup(['*.db']);
@@ -90,20 +90,20 @@ test('an addDenyPaths takes effect at once in git/diff, and the built-ins stay a
     git(dir, 'add', '-f', '.');
     git(dir, 'commit', '-q', '-m', 'first');
     for (const n of ['data.db', 'notes.txt', '.env']) put(dir, n, `old\n${SECRET}\n`);
-    await rpc(ws, '_agmente/git/status', { projectId: project.id });
-    const before = (await rpc(ws, '_agmente/git/diff', { projectId: project.id, path: 'data.db' })).result;
+    await rpc(ws, '_acpcode/git/status', { projectId: project.id });
+    const before = (await rpc(ws, '_acpcode/git/diff', { projectId: project.id, path: 'data.db' })).result;
     assert.match(before.diff, new RegExp(SECRET), 'before the addition the file is shown');
 
     assert.equal((await addDeny(ws, { projectId: project.id, denyPaths: ['*.db'] })).error, undefined);
-    const after = (await rpc(ws, '_agmente/git/diff', { projectId: project.id, path: 'data.db' })).result;
+    const after = (await rpc(ws, '_acpcode/git/diff', { projectId: project.id, path: 'data.db' })).result;
     assert.deepEqual(after.hidden, ['data.db']);
     assert.doesNotMatch(after.diff, new RegExp(SECRET), 'the addition hides it on the next diff');
-    const notes = (await rpc(ws, '_agmente/git/diff', { projectId: project.id, path: 'notes.txt' })).result;
+    const notes = (await rpc(ws, '_acpcode/git/diff', { projectId: project.id, path: 'notes.txt' })).result;
     assert.match(notes.diff, new RegExp(SECRET), 'a name off both lists is still shown');
-    const env = (await rpc(ws, '_agmente/git/diff', { projectId: project.id, path: '.env' })).result;
+    const env = (await rpc(ws, '_acpcode/git/diff', { projectId: project.id, path: '.env' })).result;
     assert.deepEqual(env.hidden, ['.env'], 'a built-in is still hidden after an addition');
     assert.equal(env.diff, 'secret file changed: .env (content hidden)\n');
-    const whole = (await rpc(ws, '_agmente/git/diff', { projectId: project.id })).result;
+    const whole = (await rpc(ws, '_acpcode/git/diff', { projectId: project.id })).result;
     assert.deepEqual(whole.hidden, ['.env', 'data.db']);
     assert.equal(whole.diff.split(SECRET).length - 1, 1, 'only notes.txt shows its content in the whole-tree diff');
     ws.close();
@@ -118,7 +118,7 @@ test('addDenyPaths and addWatchSkip persist across a gateway restart', async () 
   try {
     let gw = await spawnGateway(config, { configDir: dirs.base });
     let { ws } = await connect(gw.url, auth());
-    const { project } = (await rpc(ws, '_agmente/projects/create', { name: 'kept', path: dirs.project, denyPaths: ['*.db'] })).result;
+    const { project } = (await rpc(ws, '_acpcode/projects/create', { name: 'kept', path: dirs.project, denyPaths: ['*.db'] })).result;
     await addDeny(ws, { projectId: project.id, denyPaths: ['config/prod.yml'] });
     await addSkip(ws, { projectId: project.id, watchSkip: ['cache'] });
     ws.close();
@@ -127,7 +127,7 @@ test('addDenyPaths and addWatchSkip persist across a gateway restart', async () 
     gw = await spawnGateway(config, { configDir: dirs.base });
     try {
       ({ ws } = await connect(gw.url, auth()));
-      const [kept] = (await rpc(ws, '_agmente/projects/list', {})).result.projects;
+      const [kept] = (await rpc(ws, '_acpcode/projects/list', {})).result.projects;
       assert.deepEqual(kept.denyPaths, ['*.db', 'config/prod.yml']);
       assert.deepEqual(kept.watchSkip, ['cache']);
       ws.close();
@@ -143,22 +143,22 @@ test('addWatchSkip uses the same rules, returns the project, and a running watch
   const { gw, ws, dir, project } = await setup();
   try {
     for (const watchSkip of [['*.db'], ['**'], ['../x'], 'cache', null]) {
-      const res = await rpc(ws, '_agmente/projects/addWatchSkip', { projectId: project.id, watchSkip });
+      const res = await rpc(ws, '_acpcode/projects/addWatchSkip', { projectId: project.id, watchSkip });
       assert.equal(res.error?.code, -32602, JSON.stringify(watchSkip));
       assert.match(res.error.message, /watchSkip/, JSON.stringify(watchSkip));
     }
-    assert.equal((await rpc(ws, '_agmente/projects/addWatchSkip', { projectId: 'aaaaaaaaaaaa', watchSkip: ['cache'] })).error?.code, -32602);
+    assert.equal((await rpc(ws, '_acpcode/projects/addWatchSkip', { projectId: 'aaaaaaaaaaaa', watchSkip: ['cache'] })).error?.code, -32602);
     const seen = [];
     ws.on('message', (d) => {
       const m = JSON.parse(d.toString());
-      if (m.method === '_agmente/git/changed') seen.push(m.params);
+      if (m.method === '_acpcode/git/changed') seen.push(m.params);
     });
     git(dir, 'init', '-q', '-b', 'main');
     put(dir, 'a.txt', 'one\n');
     git(dir, 'add', '.');
     git(dir, 'commit', '-q', '-m', 'first');
-    await rpc(ws, '_agmente/git/status', { projectId: project.id });
-    const added = await rpc(ws, '_agmente/projects/addWatchSkip', { projectId: project.id, watchSkip: ['cache'] });
+    await rpc(ws, '_acpcode/git/status', { projectId: project.id });
+    const added = await rpc(ws, '_acpcode/projects/addWatchSkip', { projectId: project.id, watchSkip: ['cache'] });
     assert.deepEqual(added.result.project.watchSkip, ['cache']);
     put(dir, 'cache/x.bin', 'x\n');
     await sleep(1800);

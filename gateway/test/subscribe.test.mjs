@@ -23,20 +23,20 @@ const collect = (ws) => {
   ws.on('message', (d) => seen.push(JSON.parse(d.toString())));
   return seen;
 };
-const eventsOf = (seen, sid) => seen.filter((m) => m.method === '_agmente/event' && m.params.sessionId === sid);
+const eventsOf = (seen, sid) => seen.filter((m) => m.method === '_acpcode/event' && m.params.sessionId === sid);
 const seqs = (evs) => evs.map((e) => e.params.seq);
 const range = (from, to) => Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i);
 async function until(pred, what, ms = 10000) {
   for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(10)) if (pred()) return;
   throw new Error(`timed out waiting for ${what}`);
 }
-const ended = (seen, sid) => eventsOf(seen, sid).some((e) => e.params.message.method === '_agmente/turn_ended');
+const ended = (seen, sid) => eventsOf(seen, sid).some((e) => e.params.message.method === '_acpcode/turn_ended');
 /** Wait until the log's last event for the session is turn_ended. */
 async function untilLoggedEnd(gw, sid, ms = 20000) {
   await until(() => readEvents(gw.config.stateDir, sid).at(-1)?.kind === 'turn_ended', 'turn_ended in the log', ms);
 }
 
-test('subscribe answers {headSeq} first, then replays each logged event as _agmente/event', async () => {
+test('subscribe answers {headSeq} first, then replays each logged event as _acpcode/event', async () => {
   const gw = await startGateway();
   try {
     const a = (await connect(gw.url, auth())).ws;
@@ -44,7 +44,7 @@ test('subscribe answers {headSeq} first, then replays each logged event as _agme
     await rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hi [chunks:3]' }] });
     const b = (await connect(gw.url, auth())).ws;
     const seen = collect(b);
-    const res = await rpc(b, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+    const res = await rpc(b, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
     assert.deepEqual(res.result, { headSeq: 6 });
     await until(() => eventsOf(seen, sessionId).length === 6, '6 events');
     assert.equal(seen[0].id, res.id, 'the response comes before any event');
@@ -67,7 +67,7 @@ test('afterSeq selects where the replay starts; at or past the head nothing is r
     for (const [afterSeq, want] of [[3, [4, 5, 6]], [6, []], [99, []]]) {
       const b = (await connect(gw.url, auth())).ws;
       const seen = collect(b);
-      const res = await rpc(b, '_agmente/sessions/subscribe', { sessionId, afterSeq });
+      const res = await rpc(b, '_acpcode/sessions/subscribe', { sessionId, afterSeq });
       assert.equal(res.result.headSeq, 6);
       await sleep(150);
       assert.deepEqual(seqs(eventsOf(seen, sessionId)), want, `afterSeq ${afterSeq}`);
@@ -76,7 +76,7 @@ test('afterSeq selects where the replay starts; at or past the head nothing is r
     // afterSeq may be left out: it means 0.
     const c = (await connect(gw.url, auth())).ws;
     const seen = collect(c);
-    await rpc(c, '_agmente/sessions/subscribe', { sessionId });
+    await rpc(c, '_acpcode/sessions/subscribe', { sessionId });
     await until(() => eventsOf(seen, sessionId).length === 6, '6 events');
     for (const ws of [a, c]) ws.close();
   } finally {
@@ -96,7 +96,7 @@ test('subscribe refuses an unknown session and a bad afterSeq, and starts no age
       [{ sessionId: 'sess-nope', afterSeq: '3' }, 'afterSeq must be a non-negative integer'],
     ];
     for (const [params, message] of bad) {
-      assert.deepEqual((await rpc(ws, '_agmente/sessions/subscribe', params)).error, { code: -32602, message }, JSON.stringify(params));
+      assert.deepEqual((await rpc(ws, '_acpcode/sessions/subscribe', params)).error, { code: -32602, message }, JSON.stringify(params));
     }
     await gw.settle();
     assert.equal(gw.spawned(), 0);
@@ -112,7 +112,7 @@ test('T-18: disconnect mid-turn, reconnect and subscribe with the last seq: the 
     const a = (await connect(gw.url, auth())).ws;
     const { sessionId } = await useProject(gw, a);
     const seenA = collect(a);
-    assert.deepEqual((await rpc(a, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 })).result, { headSeq: 0 });
+    assert.deepEqual((await rpc(a, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 })).result, { headSeq: 0 });
     a.send(JSON.stringify({ jsonrpc: '2.0', id: 'turn', method: 'session/prompt', params: { sessionId, prompt: [{ type: 'text', text: 'long [chunks:200][slow:5]' }] } }));
     await until(() => eventsOf(seenA, sessionId).length >= 40, '40 events on A');
     a.close();
@@ -125,7 +125,7 @@ test('T-18: disconnect mid-turn, reconnect and subscribe with the last seq: the 
     await sleep(100); // the turn keeps running with no phone attached
     const b = (await connect(gw.url, auth())).ws;
     const seenB = collect(b);
-    const res = await rpc(b, '_agmente/sessions/subscribe', { sessionId, afterSeq: last });
+    const res = await rpc(b, '_acpcode/sessions/subscribe', { sessionId, afterSeq: last });
     assert.ok(res.result.headSeq > last, 'events were logged while no phone was connected');
     await until(() => ended(seenB, sessionId), 'turn_ended on B');
     const fromB = eventsOf(seenB, sessionId);
@@ -153,7 +153,7 @@ test('subscribing while events stream: each subscriber gets 1..head exactly once
       await sleep(delay);
       const ws = (await connect(gw.url, auth())).ws;
       const seen = collect(ws);
-      const res = await rpc(ws, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+      const res = await rpc(ws, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
       subs.push({ ws, seen, head: res.result.headSeq });
     }
     assert.ok(subs.some((s) => s.head > 0) && subs.some((s) => s.head < 1503), `subscribed mid-stream: heads ${subs.map((s) => s.head)}`);
@@ -179,15 +179,15 @@ test('a subscribed socket gets events instead of plain messages; an attached soc
     await rpc(b, '_test/echo', { sessionId }); // b attaches by sending for the session, and does not subscribe
     const seenA = collect(a);
     const seenB = collect(b);
-    await rpc(a, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+    await rpc(a, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
     const res = await rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hi [chunks:3]' }] });
     assert.equal(res.result.stopReason, 'end_turn', 'the prompt response still reaches the subscriber');
     await until(() => ended(seenA, sessionId), 'turn_ended on A');
     assert.equal(seenA.some((m) => m.method === 'session/update'), false);
     assert.deepEqual(eventsOf(seenA, sessionId).map((e) => e.params.message.method),
-      ['_agmente/turn_started', 'session/update', 'session/update', 'session/update', 'session/update', '_agmente/turn_ended']);
+      ['_acpcode/turn_started', 'session/update', 'session/update', 'session/update', 'session/update', '_acpcode/turn_ended']);
     await until(() => seenB.filter((m) => m.method === 'session/update').length === 4, 'plain updates on B');
-    assert.equal(seenB.some((m) => m.method === '_agmente/event'), false);
+    assert.equal(seenB.some((m) => m.method === '_acpcode/event'), false);
     for (const ws of [a, b]) ws.close();
   } finally {
     await gw.stop();
@@ -200,12 +200,12 @@ test('a permission request reaches a subscriber as an event and is answered with
     const { ws } = await connect(gw.url, auth());
     const { sessionId } = await useProject(gw, ws);
     const seen = collect(ws);
-    await rpc(ws, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+    await rpc(ws, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'turn', method: 'session/prompt', params: { sessionId, prompt: [{ type: 'text', text: '[permission]' }] } }));
     const isReq = (e) => e.params.message.method === 'session/request_permission';
     await until(() => eventsOf(seen, sessionId).some(isReq), 'the permission event');
     const req = eventsOf(seen, sessionId).find(isReq).params.message;
-    assert.match(req.id, /^agmente-perm-\d+$/);
+    assert.match(req.id, /^acpcode-perm-\d+$/);
     assert.equal(seen.some((m) => m.method === 'session/request_permission'), false, 'no plain copy');
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { outcome: { outcome: 'selected', optionId: 'cancel' } } }));
     await until(() => seen.some((m) => m.id === 'turn'), 'the prompt response');
@@ -227,8 +227,8 @@ test('a second subscribe on one socket replaces the first: live events arrive on
     const h1 = readEvents(gw.config.stateDir, sessionId).length;
     const b = (await connect(gw.url, auth())).ws;
     const seen = collect(b);
-    await rpc(b, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
-    assert.equal((await rpc(b, '_agmente/sessions/subscribe', { sessionId, afterSeq: h1 })).result.headSeq, h1);
+    await rpc(b, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
+    assert.equal((await rpc(b, '_acpcode/sessions/subscribe', { sessionId, afterSeq: h1 })).result.headSeq, h1);
     await rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'two [chunks:3]' }] });
     const head = readEvents(gw.config.stateDir, sessionId).length;
     await until(() => eventsOf(seen, sessionId).some((e) => e.params.seq === head), `seq ${head}`);
@@ -267,14 +267,14 @@ test('T-19: replaying 10,000 events takes at most 1 s, and the phone is not clos
     let t1;
     b.on('message', (d) => {
       const m = JSON.parse(d.toString());
-      if (m.method !== '_agmente/event') return;
+      if (m.method !== '_acpcode/event') return;
       count += 1;
       if (m.params.seq !== lastSeq + 1) inOrder = false;
       lastSeq = m.params.seq;
       if (lastSeq === 10000) { t1 = performance.now(); done(); }
     });
     const t0 = performance.now();
-    b.send(JSON.stringify({ jsonrpc: '2.0', id: 'sub', method: '_agmente/sessions/subscribe', params: { sessionId, afterSeq: 0 } }));
+    b.send(JSON.stringify({ jsonrpc: '2.0', id: 'sub', method: '_acpcode/sessions/subscribe', params: { sessionId, afterSeq: 0 } }));
     await Promise.race([finished, sleep(10000)]);
     const elapsed = t1 - t0;
     assert.equal(closed, null, `the socket was closed with ${closed}`);

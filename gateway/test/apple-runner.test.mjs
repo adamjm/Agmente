@@ -14,7 +14,7 @@ import { auth, connect, FAKE_AGENT, rpc, sleep, startGateway, useProject } from 
 const FAKE_CONTAINER = fileURLToPath(new URL('./fixtures/fake-container.mjs', import.meta.url));
 
 async function appleGateway({ gitProgram } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'agmente-apple-'));
+  const dir = mkdtempSync(join(tmpdir(), 'acpcode-apple-'));
   const gw = await startGateway({ limits: { idleSeconds: 60 } }, {
     configFn: (dirs, config) => {
       config.runner = { kind: 'apple', image: 'fake-image:1', container: FAKE_CONTAINER };
@@ -42,12 +42,12 @@ test('git uses container exec into the running agent container when a session is
     const ws = (await connect(gw.url, auth())).ws;
     const { project } = await useProject(gw, ws);
     const before = gw.containerLog().length;
-    const res = await rpc(ws, '_agmente/git/status', { projectId: project.id });
+    const res = await rpc(ws, '_acpcode/git/status', { projectId: project.id });
     assert.equal(res.result.branch, 'main');
     const after = gw.containerLog().slice(before);
-    const execs = after.filter((e) => e.event === 'exec' && e.name === `agmente-${project.id}`);
+    const execs = after.filter((e) => e.event === 'exec' && e.name === `acpcode-${project.id}`);
     assert.ok(execs.some((e) => e.argv0 === 'git' && /\bstatus\b/.test(e.args)), `git was not exec'd: ${JSON.stringify(after)}`);
-    assert.deepEqual(after.filter((e) => e.event === 'start' && e.name.startsWith('agmente-git-')), [], 'no one-off git container when the agent is up');
+    assert.deepEqual(after.filter((e) => e.event === 'start' && e.name.startsWith('acpcode-git-')), [], 'no one-off git container when the agent is up');
     ws.close();
   } finally {
     await gw.stop();
@@ -59,11 +59,11 @@ test('git gets a one-off container with no network when no agent container is up
   try {
     initRepo(gw.dirs.project);
     const ws = (await connect(gw.url, auth())).ws;
-    const created = await rpc(ws, '_agmente/projects/create', { name: 'p', path: gw.dirs.project });
+    const created = await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project });
     const id = created.result.project.id;
-    const res = await rpc(ws, '_agmente/git/status', { projectId: id });
+    const res = await rpc(ws, '_acpcode/git/status', { projectId: id });
     assert.equal(res.result.branch, 'main');
-    const starts = gw.containerLog().filter((e) => e.event === 'start' && e.name.startsWith('agmente-git-'));
+    const starts = gw.containerLog().filter((e) => e.event === 'start' && e.name.startsWith('acpcode-git-'));
     assert.ok(starts.length >= 1, 'git ran in one-off containers');
     for (const s of starts) {
       assert.match(s.args, /--network none/);
@@ -77,7 +77,7 @@ test('git gets a one-off container with no network when no agent container is up
 });
 
 test('a git call that times out is killed inside the container, not only as the CLI', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agmente-hang-'));
+  const dir = mkdtempSync(join(tmpdir(), 'acpcode-hang-'));
   const hang = join(dir, 'hang-git.sh');
   writeFileSync(hang, '#!/bin/sh\nexec sleep 30\n');
   chmodSync(hang, 0o755);
@@ -86,7 +86,7 @@ test('a git call that times out is killed inside the container, not only as the 
     initRepo(gw.dirs.project);
     const ws = (await connect(gw.url, auth())).ws;
     const { project } = await useProject(gw, ws);
-    const res = await rpc(ws, '_agmente/git/status', { projectId: project.id });
+    const res = await rpc(ws, '_acpcode/git/status', { projectId: project.id });
     assert.match(res.error?.message ?? '', /git timeout/, JSON.stringify(res));
     const killed = gw.containerLog().find((e) => e.event === 'killed');
     assert.ok(killed, 'the cleanup killed the process inside the container');

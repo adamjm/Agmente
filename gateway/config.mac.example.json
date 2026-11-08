@@ -12,11 +12,11 @@
     "command": ["bob", "acp", "--accept-license", "--log-level", "warn"],
     "envPassthrough": ["PATH", "HOME", "LANG", "BOB_API_KEY"]
   },
-  "projects": { "roots": ["/Users/you/agmente/projects"] },
-  "stateDir": "/Users/you/agmente/state",
+  "projects": { "roots": ["/Users/you/acpcode/projects"] },
+  "stateDir": "/Users/you/acpcode/state",
   "runner": {
     "kind": "apple",
-    "image": "localhost/agmente-bob:2.0.9",
+    "image": "localhost/acpcode-bob:2.0.9",
     "container": "/opt/homebrew/bin/container",
     "dns": "192.168.1.1"
   },

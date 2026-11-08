@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // maxPendingPairings bounds the pairing pages a public client can hold open at once.
@@ -75,10 +75,10 @@ func (c *Connector) serveAuthorize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect to Agmente</title></head>`+
+	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect to ACP Code</title></head>`+
 		`<body style="font-family:-apple-system,system-ui,sans-serif;padding:24px;max-width:480px;line-height:1.4">`+
 		`<h1 style="font-size:22px">Approve on your phone</h1>`+
-		`<p>Check that this code matches the code on your Agmente phone:</p>`+
+		`<p>Check that this code matches the code on your ACP Code phone:</p>`+
 		`<p style="font-size:40px;letter-spacing:4px;font-weight:600">%s %s</p>`+
 		`<p>Connecting: <code>%s</code>. This page finishes when your phone answers. Keep it open.</p>`,
 		p.Code[:3], p.Code[3:], html.EscapeString(p.ClientName))
@@ -226,7 +226,7 @@ func flush(w http.ResponseWriter) {
 	}
 }
 
-// Phone answers the phone's _agmente/connector/* methods (C5). It is nil-safe: a disabled connector
+// Phone answers the phone's _acpcode/connector/* methods (C5). It is nil-safe: a disabled connector
 // has no methods, so each one is method-not-found.
 func (c *Connector) Phone(ctx context.Context, who audit.Who, method string, params *jsonv.Value) (any, *RPCError) {
 	if !c.Enabled() {
@@ -237,15 +237,15 @@ func (c *Connector) Phone(ctx context.Context, who audit.Who, method string, par
 		raw = params.Marshal()
 	}
 	switch method {
-	case "_agmente/connector/pending":
+	case "_acpcode/connector/pending":
 		return c.pendingList(), nil
-	case "_agmente/connector/approve":
+	case "_acpcode/connector/approve":
 		return c.approve(ctx, who, raw)
-	case "_agmente/connector/deny":
+	case "_acpcode/connector/deny":
 		return c.deny(who, raw)
-	case "_agmente/connector/grants":
+	case "_acpcode/connector/grants":
 		return c.grantList(), nil
-	case "_agmente/connector/revoke":
+	case "_acpcode/connector/revoke":
 		return c.revoke(who, raw)
 	}
 	return nil, &RPCError{Code: rpcMethodNotFound, Message: "Method not found"}

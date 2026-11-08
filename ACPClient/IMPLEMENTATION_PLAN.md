@@ -30,5 +30,5 @@ Reference docs: local `Docs/` (copied from agent-client-protocol/docs). Core spe
 
 ## Integration notes
 - Swift Package targets: `ACPClient`, `ACPClientMocks` (test/previews). Minimum iOS 17 (set in Package.swift).
-- In Xcode: add local package (`Agmente/ACPClient`), link `ACPClient` to app target.
+- In Xcode: add local package (`ACPCode/ACPClient`), link `ACPClient` to app target.
 - App: SwiftUI view model wraps `ACPClient`; Keychain for tokens, UserDefaults/CoreData for agent lists/history.

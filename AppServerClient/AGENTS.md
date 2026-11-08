@@ -4,8 +4,8 @@
 Typed Codex app-server transport/service package used by the iOS app.
 
 ## External Repo Paths
-- Read `.agmente.paths` (from repo root) before cross-checking Codex app-server upstream source.
-- Codex upstream reference root: `AGMENTE_CODEX_REPO/codex-rs`.
+- Read `.acpcode.paths` (from repo root) before cross-checking Codex app-server upstream source.
+- Codex upstream reference root: `ACPCODE_CODEX_REPO/codex-rs`.
 
 ## Architecture Model
 - Transport and request orchestration are separated from protocol payload parsing.
@@ -19,7 +19,7 @@ Typed Codex app-server transport/service package used by the iOS app.
 - Treat method-name and payload-shape drift as compatibility-sensitive changes.
 
 ## Codex Thread Maintenance
-Final thread hydration behavior used by Agmente for Codex:
+Final thread hydration behavior used by ACP Code for Codex:
 
 1. Open/reconnect prefers non-destructive attach:
    - `thread/loaded/list`

@@ -4,7 +4,7 @@ import (
 	"context"
 	"os/exec"
 
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/config"
 	"errors"
 	"os"
 	"path/filepath"
@@ -40,12 +40,12 @@ func TestSnapshotRunsNoFilterUnderPodman(t *testing.T) {
 	if err != nil {
 		t.Skip("skipped: podman is not installed")
 	}
-	image := os.Getenv("AGMENTE_TEST_IMAGE")
+	image := os.Getenv("ACPCODE_TEST_IMAGE")
 	if image == "" {
-		image = "localhost/agmente-bob:2.0.9"
+		image = "localhost/acpcode-bob:2.0.9"
 	}
 	if exec.Command(podman, "image", "exists", image).Run() != nil {
-		t.Skipf("skipped: image %s is not available (set AGMENTE_TEST_IMAGE)", image)
+		t.Skipf("skipped: image %s is not available (set ACPCODE_TEST_IMAGE)", image)
 	}
 	s, p := gitTestServer(t)
 	s.cfg.Runner = config.Runner{Kind: "podman", Image: image, Podman: podman}
@@ -67,7 +67,7 @@ func TestSnapshotRunsNoFilterUnderPodman(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(p.Path, "b.txt"), []byte("two\n"), 0o644)
 	mustGit(t, p.Path, "add", ".")
 	mustGit(t, p.Path, "commit", "-q", "-m", "one")
-	mustGit(t, p.Path, "config", "filter.evil.clean", "touch "+filepath.Join(markers, "ran")+" /tmp/agmente-marker; false")
+	mustGit(t, p.Path, "config", "filter.evil.clean", "touch "+filepath.Join(markers, "ran")+" /tmp/acpcode-marker; false")
 	mustGit(t, p.Path, "config", "filter.evil.required", "true")
 	_ = os.WriteFile(filepath.Join(p.Path, "a.txt"), []byte("TWO\n"), 0o644)
 

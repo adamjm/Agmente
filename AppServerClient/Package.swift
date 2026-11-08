@@ -15,13 +15,13 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(path: "../AgmenteTransport")
+        .package(path: "../ACPCodeTransport")
     ],
     targets: [
         .target(
             name: "AppServerClient",
             dependencies: [
-                .product(name: "AgmenteTransport", package: "AgmenteTransport")
+                .product(name: "ACPCodeTransport", package: "ACPCodeTransport")
             ]
         ),
         .target(

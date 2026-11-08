@@ -14,8 +14,8 @@ const put = (dir, name, text) => {
   mkdirSync(join(dir, name, '..'), { recursive: true });
   writeFileSync(join(dir, name), text);
 };
-const status = async (ws, projectId) => (await rpc(ws, '_agmente/git/status', { projectId })).result;
-const diff = (ws, params) => rpc(ws, '_agmente/git/diff', params);
+const status = async (ws, projectId) => (await rpc(ws, '_acpcode/git/status', { projectId })).result;
+const diff = (ws, params) => rpc(ws, '_acpcode/git/diff', params);
 
 async function repo() {
   const gw = await startGateway();
@@ -86,12 +86,12 @@ test('T-28: a diff path must come from the last status; others are refused, a le
     const s = await status(ws, id);
     assert.equal(s.files.length, 5);
 
-    const refused = ['nope.txt', '../etc/passwd', '/etc/passwd', '.git/config', '--output=/tmp/agmente-x', '-p', 'a.txt/', './a.txt', 'a.tx*', ''];
+    const refused = ['nope.txt', '../etc/passwd', '/etc/passwd', '.git/config', '--output=/tmp/acpcode-x', '-p', 'a.txt/', './a.txt', 'a.tx*', ''];
     for (const path of refused) {
       const res = await diff(ws, { projectId: id, path });
       assert.equal(res.error?.code, -32602, `refused: ${JSON.stringify(path)} ${JSON.stringify(res)}`);
     }
-    assert.equal(existsSync('/tmp/agmente-x'), false);
+    assert.equal(existsSync('/tmp/acpcode-x'), false);
 
     // A file that is in the status is diffed even if its name starts with "-" or looks like a glob:
     // the path goes after "--" and as a literal.
@@ -189,7 +189,7 @@ test('T-29: a changed secret file shows by name; its content never leaves the ga
 
 test('T-26 over the wire: a hostile repository runs no program for status or diff', async () => {
   const { gw, ws, dir, id } = await repo();
-  const markers = mkdtempSync(join(tmpdir(), 'agmente-markers-'));
+  const markers = mkdtempSync(join(tmpdir(), 'acpcode-markers-'));
   try {
     put(dir, 'a.txt', 'one\n');
     put(dir, '.gitattributes', '*.txt diff=evil\n');
@@ -210,7 +210,7 @@ test('T-26 over the wire: a hostile repository runs no program for status or dif
     assert.equal(s.files.length, 1);
     assert.match((await diff(ws, { projectId: id, path: 'a.txt' })).result.diff, /\+two/);
     assert.match((await diff(ws, { projectId: id })).result.diff, /\+two/);
-    await rpc(ws, '_agmente/git/log', { projectId: id });
+    await rpc(ws, '_acpcode/git/log', { projectId: id });
     assert.deepEqual(readdirSync(markers).filter((n) => !n.endsWith('.sh')), [], 'no program ran');
     ws.close();
   } finally {
@@ -221,26 +221,26 @@ test('T-26 over the wire: a hostile repository runs no program for status or dif
 test('log: newest first, pages by cursor, empty repository, bad parameters', async () => {
   const { gw, ws, dir, id } = await repo();
   try {
-    assert.deepEqual((await rpc(ws, '_agmente/git/log', { projectId: id })).result, { commits: [] }, 'no commits yet');
+    assert.deepEqual((await rpc(ws, '_acpcode/git/log', { projectId: id })).result, { commits: [] }, 'no commits yet');
     for (let i = 1; i <= 5; i += 1) {
       put(dir, 'f.txt', `${i}\n`);
       git(dir, 'add', '.');
       git(dir, 'commit', '-q', '-m', `commit ${i}\n\nbody ${i}`);
     }
-    const first = (await rpc(ws, '_agmente/git/log', { projectId: id, limit: 2 })).result;
+    const first = (await rpc(ws, '_acpcode/git/log', { projectId: id, limit: 2 })).result;
     assert.deepEqual(first.commits.map((c) => c.subject), ['commit 5', 'commit 4']);
     assert.deepEqual(Object.keys(first.commits[0]).sort(), ['author', 'date', 'hash', 'shortHash', 'subject']);
     assert.match(first.commits[0].hash, /^[0-9a-f]{40}$/);
     assert.equal(first.commits[0].shortHash, first.commits[0].hash.slice(0, 7));
     assert.equal(first.commits[0].author, 't');
     assert.match(first.commits[0].date, /^\d{4}-\d\d-\d\dT/);
-    const second = (await rpc(ws, '_agmente/git/log', { projectId: id, limit: 2, cursor: first.nextCursor })).result;
+    const second = (await rpc(ws, '_acpcode/git/log', { projectId: id, limit: 2, cursor: first.nextCursor })).result;
     assert.deepEqual(second.commits.map((c) => c.subject), ['commit 3', 'commit 2']);
-    const last = (await rpc(ws, '_agmente/git/log', { projectId: id, limit: 2, cursor: second.nextCursor })).result;
+    const last = (await rpc(ws, '_acpcode/git/log', { projectId: id, limit: 2, cursor: second.nextCursor })).result;
     assert.deepEqual(last, { commits: [{ ...last.commits[0], subject: 'commit 1' }] }, 'no nextCursor on the last page');
-    assert.equal((await rpc(ws, '_agmente/git/log', { projectId: id })).result.commits.length, 5);
+    assert.equal((await rpc(ws, '_acpcode/git/log', { projectId: id })).result.commits.length, 5);
     for (const [params, message] of [[{ limit: 0 }, 'limit must be an integer from 1 to 200'], [{ limit: 201 }, 'limit must be an integer from 1 to 200'], [{ limit: 1.5 }, 'limit must be an integer from 1 to 200'], [{ cursor: 'abc' }, 'cursor must be a value from a previous git/log'], [{ cursor: '-1' }, 'cursor must be a value from a previous git/log']]) {
-      assert.deepEqual((await rpc(ws, '_agmente/git/log', { projectId: id, ...params })).error, { code: -32602, message }, JSON.stringify(params));
+      assert.deepEqual((await rpc(ws, '_acpcode/git/log', { projectId: id, ...params })).error, { code: -32602, message }, JSON.stringify(params));
     }
     ws.close();
   } finally {
@@ -253,7 +253,7 @@ test('a folder that is not a repository gets "not a git repository"; a big diff 
   try {
     execFileSync('rm', ['-rf', join(dir, '.git')]);
     for (const method of ['status', 'log']) {
-      assert.deepEqual((await rpc(ws, `_agmente/git/${method}`, { projectId: id })).error, { code: -32000, message: 'not a git repository' });
+      assert.deepEqual((await rpc(ws, `_acpcode/git/${method}`, { projectId: id })).error, { code: -32000, message: 'not a git repository' });
     }
     git(dir, 'init', '-q', '-b', 'main');
     put(dir, 'big.txt', 'x\n');
@@ -277,9 +277,9 @@ test('a slow git call does not hold up the same socket\'s other requests', async
     git(dir, 'add', '.');
     git(dir, 'commit', '-q', '-m', 'first');
     const t0 = Date.now();
-    const calls = await Promise.all([1, 2, 3].map(() => rpc(ws, '_agmente/git/status', { projectId: id })));
+    const calls = await Promise.all([1, 2, 3].map(() => rpc(ws, '_acpcode/git/status', { projectId: id })));
     assert.ok(calls.every((c) => c.result.branch === 'main'));
-    assert.deepEqual((await rpc(ws, '_agmente/projects/list', {})).result.projects.length, 1);
+    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects.length, 1);
     assert.ok(Date.now() - t0 < 5000);
     ws.close();
   } finally {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
 )
 
 // fakeGateway stands in for the server. Each StartPrompt is a turn the test finishes by hand, or at

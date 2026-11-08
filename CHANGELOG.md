@@ -17,7 +17,7 @@
 
 ## 1.0.0 — Initial Open Source Release
 
-First public release of Agmente, an iOS client for Agent Communication Protocol (ACP) servers.
+First public release of ACP Code, an iOS client for Agent Communication Protocol (ACP) servers.
 
 - Connect to ACP-compatible agent servers over WebSocket
 - Connect to OpenAI Codex servers

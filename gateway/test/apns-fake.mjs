@@ -11,14 +11,14 @@ import { join } from 'node:path';
 
 export const KEY_ID = 'TESTKEY123';
 export const TEAM_ID = 'TEAM123456';
-export const TOPIC = 'com.example.agmente.test';
+export const TOPIC = 'com.example.acpcode.test';
 
 /**
  * Make a throwaway key (PKCS#8, the .p8 format), its public half, and a self-signed certificate for
  * 127.0.0.1 and localhost. The certificate is the test-only CA the gateway trusts (push.caFile).
  */
 export async function makeMaterial() {
-  const dir = await mkdtemp(join(tmpdir(), 'agmente-apns-'));
+  const dir = await mkdtemp(join(tmpdir(), 'acpcode-apns-'));
   const keyFile = join(dir, `AuthKey_${KEY_ID}.p8`);
   const pubFile = join(dir, 'public.pem');
   const certFile = join(dir, 'ca.pem');

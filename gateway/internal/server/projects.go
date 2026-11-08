@@ -1,6 +1,6 @@
 package server
 
-// Gateway extension methods (D-002, SPEC 6.2). The gateway answers every `_agmente/*` request
+// Gateway extension methods (D-002, SPEC 6.2). The gateway answers every `_acpcode/*` request
 // itself; none reaches the agent. This file has the project registry (FR-17, PLAN 3.3).
 
 import (
@@ -18,9 +18,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const (
@@ -68,7 +68,7 @@ var modeID = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 
 const maxProjectName = 100
 
-// handleExtension answers one `_agmente/*` request. It returns the result to send, or an error.
+// handleExtension answers one `_acpcode/*` request. It returns the result to send, or an error.
 func (s *Server) handleExtension(ctx context.Context, who audit.Who, method string, params *jsonv.Value) (any, *rpcError) {
 	if result, rerr, handled := s.serveMCPConfig(ctx, who, method, params); handled {
 		return result, rerr
@@ -77,7 +77,7 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		return result, rerr
 	}
 	switch method {
-	case "_agmente/projects/list":
+	case "_acpcode/projects/list":
 		projects, err := s.store.Projects(ctx)
 		if err != nil {
 			return nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
@@ -88,42 +88,42 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 			out = append(out, toProjectJSON(p))
 		}
 		return map[string]any{"projects": out}, nil
-	case "_agmente/projects/create":
+	case "_acpcode/projects/create":
 		p, folderCreated, rerr := s.createProject(ctx, params)
 		if rerr != nil {
 			return nil, rerr
 		}
 		s.audit.Log("project_created", with(who, audit.Fields{Project: p.ID, FolderCreated: folderCreated}))
 		return map[string]any{"project": toProjectJSON(*p)}, nil
-	case "_agmente/projects/roots":
+	case "_acpcode/projects/roots":
 		return s.projectRoots(), nil
-	case "_agmente/projects/addDenyPaths":
+	case "_acpcode/projects/addDenyPaths":
 		return s.addProjectList(ctx, who, params, "denyPaths")
-	case "_agmente/projects/addWatchSkip":
+	case "_acpcode/projects/addWatchSkip":
 		return s.addProjectList(ctx, who, params, "watchSkip")
-	case "_agmente/sessions/index":
+	case "_acpcode/sessions/index":
 		return s.sessionIndex(ctx, who, params)
-	case "_agmente/sessions/read":
+	case "_acpcode/sessions/read":
 		return s.markRead(ctx, who, params)
-	case "_agmente/approvals/pending":
+	case "_acpcode/approvals/pending":
 		return s.pendingApprovals()
-	case "_agmente/approvals/answer":
+	case "_acpcode/approvals/answer":
 		return s.answerApproval(ctx, who, params)
-	case "_agmente/elicitation/answer":
+	case "_acpcode/elicitation/answer":
 		return s.answerElicitation(ctx, who, params)
-	case "_agmente/push/register":
+	case "_acpcode/push/register":
 		return s.pushRegister(ctx, who, params)
-	case "_agmente/push/unregister":
+	case "_acpcode/push/unregister":
 		return s.pushUnregister(ctx, who)
-	case "_agmente/git/status":
+	case "_acpcode/git/status":
 		return s.gitStatus(ctx, params)
-	case "_agmente/git/diff":
+	case "_acpcode/git/diff":
 		return s.gitDiff(ctx, params)
-	case "_agmente/git/turnDiff":
+	case "_acpcode/git/turnDiff":
 		return s.gitTurnDiff(ctx, params)
-	case "_agmente/git/log":
+	case "_acpcode/git/log":
 		return s.gitLog(ctx, params)
-	case "_agmente/files/url":
+	case "_acpcode/files/url":
 		return s.fileURL(ctx, who, params)
 	default:
 		return nil, &rpcError{Code: rpcMethodNotFound, Message: "Method not found"}
@@ -332,7 +332,7 @@ func (s *Server) projectHome(id string) string {
 }
 
 // newProjectID returns 12 lowercase hex characters. It is safe in a container name
-// (agmente-<projectId>, D-015) and in a path.
+// (acpcode-<projectId>, D-015) and in a path.
 func newProjectID() (string, error) {
 	b := make([]byte, 6)
 	if _, err := rand.Read(b); err != nil {

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 // folderTestServer is a server with one root and a folder outside it. Both paths are realpaths, as

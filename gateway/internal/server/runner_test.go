@@ -8,23 +8,23 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/store"
 )
 
 func TestPodmanArgsMountPathsAsIsAndPassSecretsByNameOnly(t *testing.T) {
 	cfg := &config.Config{
 		AgentCommand:   []string{"bob", "acp", "--accept-license"},
 		EnvPassthrough: []string{"PATH", "HOME", "LANG", "BOB_API_KEY"},
-		Runner:         config.Runner{Kind: "podman", Image: "agmente-bob:2.0.9", Podman: "podman"},
+		Runner:         config.Runner{Kind: "podman", Image: "acpcode-bob:2.0.9", Podman: "podman"},
 	}
 	t.Setenv("BOB_API_KEY", "must-not-appear")
-	args := podmanRunner{cfg: cfg}.args(store.Project{ID: "0123456789ab", Path: "/srv/p/x"}, "/var/lib/agmente/state/homes/0123456789ab")
+	args := podmanRunner{cfg: cfg}.args(store.Project{ID: "0123456789ab", Path: "/srv/p/x"}, "/var/lib/acpcode/state/homes/0123456789ab")
 	got := strings.Join(args, " ")
-	want := "run --rm -i --name agmente-0123456789ab --pull=never --init --userns=keep-id:uid=10001,gid=10001 --user 10001:10001" +
-		" -e HOME=/var/lib/agmente/state/homes/0123456789ab" +
-		" -v /var/lib/agmente/state/homes/0123456789ab:/var/lib/agmente/state/homes/0123456789ab" +
-		" -v /srv/p/x:/srv/p/x -w /srv/p/x -e LANG -e BOB_API_KEY agmente-bob:2.0.9 bob acp --accept-license"
+	want := "run --rm -i --name acpcode-0123456789ab --pull=never --init --userns=keep-id:uid=10001,gid=10001 --user 10001:10001" +
+		" -e HOME=/var/lib/acpcode/state/homes/0123456789ab" +
+		" -v /var/lib/acpcode/state/homes/0123456789ab:/var/lib/acpcode/state/homes/0123456789ab" +
+		" -v /srv/p/x:/srv/p/x -w /srv/p/x -e LANG -e BOB_API_KEY --entrypoint bob acpcode-bob:2.0.9 acp --accept-license"
 	if got != want {
 		t.Fatalf("args:\n got  %s\n want %s", got, want)
 	}
@@ -58,16 +58,16 @@ func TestHostLockIsExclusiveAndInheritedByTheAgent(t *testing.T) {
 		t.Fatalf("lock after the child exited: %v", err)
 	}
 	again.Close()
-	if _, err := os.Stat(filepath.Join(home, ".agmente.lock")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".acpcode.lock")); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestAgentEnvReplacesHome(t *testing.T) {
 	t.Setenv("HOME", "/Users/gateway")
-	t.Setenv("AGMENTE_X", "1")
-	env := strings.Join(agentEnv([]string{"PATH", "HOME", "AGMENTE_X"}, "/state/homes/p"), "\n")
-	if strings.Contains(env, "/Users/gateway") || !strings.Contains(env, "HOME=/state/homes/p") || !strings.Contains(env, "AGMENTE_X=1") {
+	t.Setenv("ACPCODE_X", "1")
+	env := strings.Join(agentEnv([]string{"PATH", "HOME", "ACPCODE_X"}, "/state/homes/p"), "\n")
+	if strings.Contains(env, "/Users/gateway") || !strings.Contains(env, "HOME=/state/homes/p") || !strings.Contains(env, "ACPCODE_X=1") {
 		t.Fatalf("env: %s", env)
 	}
 }

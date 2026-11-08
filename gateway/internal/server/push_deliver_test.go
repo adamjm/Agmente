@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/push"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/push"
+	"acpcode/gateway/internal/store"
 )
 
 // PLAN 3.11: the agent path only enqueues. A full queue drops the push and audits it, and nothing

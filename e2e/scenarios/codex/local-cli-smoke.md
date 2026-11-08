@@ -9,7 +9,7 @@ tags: [codex, simulator, smoke]
 # Setup
 
 - Start a local Codex app-server from `e2e/backends/codex-local.md`, or provide an already running compatible endpoint.
-- Build and launch Agmente on the target simulator.
+- Build and launch ACP Code on the target simulator.
 
 # Steps
 
@@ -33,4 +33,4 @@ tags: [codex, simulator, smoke]
 # Cleanup
 
 - Stop the Codex backend if this run started it.
-- Uninstall Agmente from the simulator.
+- Uninstall ACP Code from the simulator.

@@ -1,5 +1,5 @@
 {
-  "name": "agmente-gateway",
+  "name": "acpcode-gateway",
   "version": "0.1.0",
   "private": true,
   "description": "Wire-level tests, fake agent and Bob probes for the Go gateway (D-021).",

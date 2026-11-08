@@ -10,7 +10,7 @@ test('create writes the project path as TRUST_FOLDER in the project home, with t
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    const { project } = (await rpc(ws, '_agmente/projects/create', { name: 'trusted', path: gw.dirs.project })).result;
+    const { project } = (await rpc(ws, '_acpcode/projects/create', { name: 'trusted', path: gw.dirs.project })).result;
     const home = join(gw.config.stateDir, 'homes', project.id);
     const bob = join(home, '.bob');
     const trust = join(bob, 'trustedFolders.json');

@@ -17,12 +17,12 @@ private final class CreationFakeGateway: GatewayCalling, @unchecked Sendable {
 final class GatewayProjectCreationClientTests: XCTestCase {
     func testCreateFolderSendsTheParentPathAndTheNameAndDecodesTheProject() async throws {
         let fake = CreationFakeGateway()
-        fake.results["_agmente/projects/create"] = .object(["project": .object([
+        fake.results["_acpcode/projects/create"] = .object(["project": .object([
             "id": .string("9f2c1a7b3e10"), "name": .string("Fresh"), "path": .string("/srv/root/Fresh"), "defaultMode": .null,
         ])])
         let project = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", createFolder: true)
         XCTAssertEqual(project, GatewayProject(id: "9f2c1a7b3e10", name: "Fresh", path: "/srv/root/Fresh", defaultMode: nil))
-        XCTAssertEqual(fake.calls.map(\.method), ["_agmente/projects/create"])
+        XCTAssertEqual(fake.calls.map(\.method), ["_acpcode/projects/create"])
         XCTAssertEqual(fake.calls.first?.params, .object([
             "name": .string("Fresh"), "path": .string("/srv/root"), "createFolder": .bool(true),
         ]))
@@ -30,7 +30,7 @@ final class GatewayProjectCreationClientTests: XCTestCase {
 
     func testPathModeLeavesCreateFolderOut() async throws {
         let fake = CreationFakeGateway()
-        fake.results["_agmente/projects/create"] = .object(["project": .object([
+        fake.results["_acpcode/projects/create"] = .object(["project": .object([
             "id": .string("a1"), "name": .string("Site"), "path": .string("/srv/site"),
         ])])
         let project = try await GatewayClient(fake).createProject(name: "Site", path: "/srv/site")
@@ -64,7 +64,7 @@ final class GatewayProjectCreationClientTests: XCTestCase {
 
     func testAnAnswerWithoutAProjectIsNamed() async {
         let fake = CreationFakeGateway()
-        fake.results["_agmente/projects/create"] = .object(["id": .string("a1")])
+        fake.results["_acpcode/projects/create"] = .object(["id": .string("a1")])
         do {
             _ = try await GatewayClient(fake).createProject(name: "x", path: "/srv/root", createFolder: true)
             XCTFail("expected an error")
@@ -75,16 +75,16 @@ final class GatewayProjectCreationClientTests: XCTestCase {
 
     func testRootsDecodeAndSendNoParams() async throws {
         let fake = CreationFakeGateway()
-        fake.results["_agmente/projects/roots"] = .object(["roots": .array([.string("/srv/root"), .string("/srv/other")])])
+        fake.results["_acpcode/projects/roots"] = .object(["roots": .array([.string("/srv/root"), .string("/srv/other")])])
         let roots = try await GatewayClient(fake).projectRoots()
         XCTAssertEqual(roots, ["/srv/root", "/srv/other"])
-        XCTAssertEqual(fake.calls.first?.method, "_agmente/projects/roots")
+        XCTAssertEqual(fake.calls.first?.method, "_acpcode/projects/roots")
         XCTAssertEqual(fake.calls.first?.params, .object([:]))
     }
 
     func testRootsWithTheWrongShapeIsNamed() async {
         let fake = CreationFakeGateway()
-        fake.results["_agmente/projects/roots"] = .object(["roots": .string("/srv/root")])
+        fake.results["_acpcode/projects/roots"] = .object(["roots": .string("/srv/root")])
         do {
             _ = try await GatewayClient(fake).projectRoots()
             XCTFail("expected an error")

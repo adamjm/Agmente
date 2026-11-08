@@ -26,6 +26,7 @@ if (args[0] !== 'run') {
 }
 let name = null;
 let keepId = false;
+let entrypoint = null; // --entrypoint replaces the image entrypoint, as Podman does
 let user = null;
 let cwd = process.cwd();
 const env = { PATH: process.env.PATH };
@@ -37,7 +38,8 @@ for (; i < args.length; i += 1) {
   if (a === '--user') { user = args[++i]; continue; }
   if (a === '--name') name = args[++i];
   else if (a === '-w') cwd = args[++i];
-  else if (a === '-v') i += 1;
+  else if (a === "-v") i += 1;
+  else if (a === "--entrypoint") entrypoint = args[++i];
   else if (a === '-e') {
     const kv = args[++i];
     const eq = kv.indexOf('=');
@@ -47,7 +49,7 @@ for (; i < args.length; i += 1) {
   } else break;
 }
 i += 1; // the image
-const command = args.slice(i);
+const command = entrypoint ? [entrypoint, ...args.slice(i)] : args.slice(i);
 if (!name || command.length === 0) {
   process.stderr.write('fake-podman: need --name, an image and a command\n');
   process.exit(125);

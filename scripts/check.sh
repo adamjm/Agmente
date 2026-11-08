@@ -41,14 +41,14 @@ fi
 go version
 
 step "Go gateway: vet, unit tests, build"
-(cd gateway && go vet ./... && go test ./... && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)
-echo "ok  gateway/bin/agmente-gateway"
+(cd gateway && go vet ./... && go test ./... && go build -trimpath -o bin/acpcode-gateway ./cmd/acpcode-gateway)
+echo "ok  gateway/bin/acpcode-gateway"
 
 step "Gateway wire tests against the Go gateway"
-AGMENTE_GATEWAY_CMD="[\"$ROOT/gateway/bin/agmente-gateway\"]" npm test --prefix gateway --silent
+ACPCODE_GATEWAY_CMD="[\"$ROOT/gateway/bin/acpcode-gateway\"]" npm test --prefix gateway --silent
 
 step "Gateway dry run with the example config"
-gateway/bin/agmente-gateway --config gateway/config.example.json --dry-run > /dev/null
+gateway/bin/acpcode-gateway --config gateway/config.example.json --dry-run > /dev/null
 echo "ok"
 
 step "No secrets in the overlay"
@@ -76,7 +76,7 @@ node scripts/check-docs.mjs
 
 step "Swift package tests (macOS only)"
 if [ "$(uname -s)" = "Darwin" ] && command -v swift > /dev/null 2>&1; then
-  for pkg in AgmenteTransport ACPClient AppServerClient; do
+  for pkg in ACPCodeTransport ACPClient AppServerClient; do
     if [ -d "$pkg" ]; then
       swift test --package-path "$pkg"
     fi

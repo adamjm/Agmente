@@ -34,13 +34,13 @@ File: `ACPClient/Sources/ACPClient/ACP/SessionUpdateHandler.swift` (`interpretUp
 | `available_commands_update` | `availableCommandsUpdate` | no | same |
 | unknown | text fallback only | no | same |
 
-Display side: `Agmente/Fork/Session/ForkSessionMeta.swift` (`usage`, `ForkUsageFormat.line`), `Agmente/SessionDetailView.swift:120` (`SessionUsageFooter` under the composer), `Agmente/Fork/Session/SessionPlanView.swift:70-73`, and `Agmente/ACPSessionViewModel.swift:728` (routes `.usage`, `.planUpdate`, `.sessionInfo` to the meta state).
+Display side: `ACPCode/Fork/Session/ForkSessionMeta.swift` (`usage`, `ForkUsageFormat.line`), `ACPCode/SessionDetailView.swift:120` (`SessionUsageFooter` under the composer), `ACPCode/Fork/Session/SessionPlanView.swift:70-73`, and `ACPCode/ACPSessionViewModel.swift:728` (routes `.usage`, `.planUpdate`, `.sessionInfo` to the meta state).
 
 The decision record says the usage and plan shapes are "verify" against Bob (`docs/DECISIONS.md` D-070). This research confirms the shape from Bob's own schema (section 2.2): Bob's `usage_update` uses exactly `used`, `size` and `cost {amount, currency}`, and its plan kinds are `plan` and `plan_update`. Bob's server emits only `plan`, not `plan_update` (section 2.2). The app handles both, so nothing is broken.
 
 ### 1.2 Gateway forwarding
 
-- Every agent `session/update` is written to the event log unchanged and sent to subscribers as `_agmente/event` (`gateway/internal/server/supervisor.go` `notify`, lines ~320 to 385; `gateway/internal/store` `events` table; D-027). The gateway therefore already forwards a Bob `usage_update` to the phone today, with no gateway change, and replays it on reopen.
+- Every agent `session/update` is written to the event log unchanged and sent to subscribers as `_acpcode/event` (`gateway/internal/server/supervisor.go` `notify`, lines ~320 to 385; `gateway/internal/store` `events` table; D-027). The gateway therefore already forwards a Bob `usage_update` to the phone today, with no gateway change, and replays it on reopen.
 - The gateway reads only two kinds itself: `current_mode_update` (`currentModeId`) and `session_info_update` (`title`, `supervisor.go` lines 337 to 350).
 - Session status is computed in `gateway/internal/server/sessions.go` lines 60 to 90 (`awaiting_approval` from open approvals, `running` from memory, otherwise the stored `idle` or `error`). The stored value is set in `supervisor.go` `logTurnEnded` (~line 740).
 - The gateway does not keep any usage numbers. The sessions table has no usage column.
@@ -116,7 +116,7 @@ Conclusion for (b): the spec defines what we need, the app already parses it, an
 - `tool_call_update` with status `in_progress`, `completed` or `failed`, plus content and `rawOutput`.
 - `plan` entries with `status` `pending`, `in_progress` or `completed`.
 - `session/request_permission` (open and answered, via the approval queue).
-- `_agmente/turn_started` and `_agmente/turn_ended` (stop reason or error).
+- `_acpcode/turn_started` and `_acpcode/turn_ended` (stop reason or error).
 - Session status from the index: `running`, `awaiting_approval`, `idle`, `error`.
 - A running tool is derivable: a `tool_call` with no later terminal `tool_call_update` for its `toolCallId`. The gateway does not compute this today; the app can, from the log.
 
@@ -156,10 +156,10 @@ Conclusion for (b): the spec defines what we need, the app already parses it, an
 
 Recommendation (Option A): **no new usage notification for ACP data.** Keep forwarding `usage_update` as an event (already the case), and add two things:
 
-1. **Index field.** The gateway stores the last `usage_update` per session (new columns `usage_used`, `usage_size`, `usage_cost_amount`, `usage_cost_currency`, `usage_at`; schema version 6, migration in place, as D-051 and D-067 did). `_agmente/sessions/index` returns `usage: {used, size, costAmount?, costCurrency?, updatedAt}` per session, or omits it when unknown. This feeds the home list without a subscribe.
-2. **Project agent state.** A new non-logged notification `_agmente/project/state {projectId, agent: "stopped"|"starting"|"running"|"stopping", since}`, sent to sockets that have called `projects/list` or `sessions/index` for that project, and on each change. It mirrors `git/changed`: change-only, at most 2 per second per project (NFR-9 pattern). Audit already records the same events.
+1. **Index field.** The gateway stores the last `usage_update` per session (new columns `usage_used`, `usage_size`, `usage_cost_amount`, `usage_cost_currency`, `usage_at`; schema version 6, migration in place, as D-051 and D-067 did). `_acpcode/sessions/index` returns `usage: {used, size, costAmount?, costCurrency?, updatedAt}` per session, or omits it when unknown. This feeds the home list without a subscribe.
+2. **Project agent state.** A new non-logged notification `_acpcode/project/state {projectId, agent: "stopped"|"starting"|"running"|"stopping", since}`, sent to sockets that have called `projects/list` or `sessions/index` for that project, and on each change. It mirrors `git/changed`: change-only, at most 2 per second per project (NFR-9 pattern). Audit already records the same events.
 
-Option B, a new `_agmente/usage` notification that the gateway synthesises, is rejected. It would duplicate the ACP field, and it would be needed only if Bob reported usage outside ACP, which it does not.
+Option B, a new `_acpcode/usage` notification that the gateway synthesises, is rejected. It would duplicate the ACP field, and it would be needed only if Bob reported usage outside ACP, which it does not.
 
 No change to the event log format is needed. `usage_update` events already replay on reopen.
 
@@ -186,7 +186,7 @@ No change to the event log format is needed. `usage_update` events already repla
   - App: context chip, usage sheet, home row bar, "not reported" state, throttle. Swift unit tests for the chip text and the throttle; the parser already has tests (`ACPClient/Tests/ACPClientTests/SessionMetaUpdateTests.swift`).
   - Blocked for live check: real numbers until Bob emits `usage_update`.
 - **U2 (running work):**
-  - Gateway: `_agmente/project/state` notification (not logged), with a wire test using the fake agent's lifecycle (start, idle stop, exit).
+  - Gateway: `_acpcode/project/state` notification (not logged), with a wire test using the fake agent's lifecycle (start, idle stop, exit).
   - App: running-now strip derived from the log; subagent gap stated in the UI. Unit tests for the derivation (a `tool_call` with and without a terminal update). Mutation: count completed tools as running; the test must fail.
 - **U3 (optional, owner's call):** measure one headless `bob run --format json` to learn whether `stats` has context tokens and what the cost of one minimal prompt is. This needs a separate spend and is not part of the ACP path. Not recommended unless the owner wants measured cost before U1.
 - **Not planned:** a balance display. No interface exists to build on.
@@ -211,7 +211,7 @@ No change to the event log format is needed. `usage_update` events already repla
 
 ## 9. Files and evidence
 
-- Repo: `ACPClient/Sources/ACPClient/ACP/SessionUpdateHandler.swift`, `SessionMetaUpdateParsing.swift`, `SessionUpdateParsing.swift`; `Agmente/Fork/Session/ForkSessionMeta.swift`, `SessionPlanView.swift`; `Agmente/SessionDetailView.swift`; `Agmente/ACPSessionViewModel.swift`; `gateway/internal/server/supervisor.go`, `sessions.go`, `idle.go`, `subscribe.go`; `gateway/test/fixtures/bob-initialize-2.0.9.json`, `fake-agent.mjs`; `docs/RESULTS.md` (2026-11-07 open questions), `docs/DECISIONS.md` (D-027, D-030, D-032, D-040, D-070).
+- Repo: `ACPClient/Sources/ACPClient/ACP/SessionUpdateHandler.swift`, `SessionMetaUpdateParsing.swift`, `SessionUpdateParsing.swift`; `ACPCode/Fork/Session/ForkSessionMeta.swift`, `SessionPlanView.swift`; `ACPCode/SessionDetailView.swift`; `ACPCode/ACPSessionViewModel.swift`; `gateway/internal/server/supervisor.go`, `sessions.go`, `idle.go`, `subscribe.go`; `gateway/test/fixtures/bob-initialize-2.0.9.json`, `fake-agent.mjs`; `docs/RESULTS.md` (2026-11-07 open questions), `docs/DECISIONS.md` (D-027, D-030, D-032, D-040, D-070).
 - Bob: `/opt/homebrew/lib/node_modules/@ibm/bob/ACP.md`, `dist/bob.js` (static search only).
 - Probe: `<scratchpad>/usage-probe/probe.mjs`, run once, with a disposable HOME under `<scratchpad>/usage-probe/home`.
 - Spec: `https://agentclientprotocol.com/rfds/session-usage`, `https://agentclientprotocol.com/announcements/session-usage-stabilized`.

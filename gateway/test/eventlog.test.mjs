@@ -35,8 +35,8 @@ test('FR-18: a turn is logged in order with seq 1, 2, 3...: turn_started, the up
     const events = readEvents(gw.config.stateDir, sessionId);
     assert.deepEqual(events.map((e) => e.seq), [1, 2, 3, 4, 5, 6]);
     assert.deepEqual(events.map((e) => e.kind), ['turn_started', 'update', 'update', 'update', 'update', 'turn_ended']);
-    assert.deepEqual(events[0].message, { jsonrpc: '2.0', method: '_agmente/turn_started', params: { sessionId, prompt } });
-    assert.deepEqual(events[5].message, { jsonrpc: '2.0', method: '_agmente/turn_ended', params: { sessionId, stopReason: 'end_turn' } });
+    assert.deepEqual(events[0].message, { jsonrpc: '2.0', method: '_acpcode/turn_started', params: { sessionId, prompt } });
+    assert.deepEqual(events[5].message, { jsonrpc: '2.0', method: '_acpcode/turn_ended', params: { sessionId, stopReason: 'end_turn' } });
     // The logged updates are exactly what the phone received, in the same order.
     const updates = seen.filter((m) => m.method === 'session/update');
     assert.deepEqual(events.filter((e) => e.kind === 'update').map((e) => e.message), updates);
@@ -84,7 +84,7 @@ test('a permission request is logged as phones see it, under the gateway id', as
     for (let i = 0; i < 100 && !(req = seen.find((m) => m.method === 'session/request_permission')); i++) await sleep(20);
     const logged = readEvents(gw.config.stateDir, sessionId).find((e) => e.kind === 'permission_request');
     assert.deepEqual(logged.message, req);
-    assert.match(logged.message.id, /^agmente-perm-\d+$/);
+    assert.match(logged.message.id, /^acpcode-perm-\d+$/);
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: req.id, result: { outcome: { outcome: 'selected', optionId: 'cancel' } } }));
     for (let i = 0; i < 100 && !seen.find((m) => m.id === 'turn'); i++) await sleep(20);
     assert.equal(readEvents(gw.config.stateDir, sessionId).at(-1).kind, 'turn_ended');
@@ -105,7 +105,7 @@ test('a turn cut short by the agent exiting ends with turn_ended and the error',
     process.kill(pid, 'SIGKILL');
     assert.deepEqual((await turn).error, { code: -32000, message: 'agent exited' });
     const last = readEvents(gw.config.stateDir, sessionId).at(-1);
-    assert.deepEqual(last.message, { jsonrpc: '2.0', method: '_agmente/turn_ended', params: { sessionId, error: { code: -32000, message: 'agent exited' } } });
+    assert.deepEqual(last.message, { jsonrpc: '2.0', method: '_acpcode/turn_ended', params: { sessionId, error: { code: -32000, message: 'agent exited' } } });
     ws.close();
   } finally {
     await gw.stop();
@@ -136,7 +136,7 @@ test('T-20: after SIGKILL of the gateway and a restart, every event a phone rece
     assert.deepEqual(logged.slice(0, received.length), received, 'each received event is logged, in order');
     // The restarted gateway serves the same project.
     const again = (await connect(gw.url, auth())).ws;
-    assert.equal((await rpc(again, '_agmente/projects/list', {})).result.projects.length, 1);
+    assert.equal((await rpc(again, '_acpcode/projects/list', {})).result.projects.length, 1);
     again.close();
     console.log(`# T-20: received ${received.length} updates before SIGKILL; logged ${logged.length}; ${events.length} events, seq 1..${events.length}`);
   } finally {

@@ -119,7 +119,7 @@ test('maxAgentsTotal caps running project agents; a request over it gets a JSON-
     await useProject(gw, ws);
     const second = join(gw.dirs.root, 'second');
     await mkdir(second);
-    assert.ok((await rpc(ws, '_agmente/projects/create', { name: 'second', path: second })).result);
+    assert.ok((await rpc(ws, '_acpcode/projects/create', { name: 'second', path: second })).result);
     const res = await rpc(ws, 'session/new', { cwd: second, mcpServers: [] });
     assert.equal(res.error.code, -32000);
     assert.match(res.error.message, /agent capacity reached/);
@@ -236,7 +236,7 @@ test('health check needs no auth and reveals nothing', async () => {
 });
 
 test('D-015: a replacement agent starts only after the old one has exited', async () => {
-  const marker = join(await mkdtemp(join(tmpdir(), 'agmente-slow-')), 'exited');
+  const marker = join(await mkdtemp(join(tmpdir(), 'acpcode-slow-')), 'exited');
   // The agent keeps running for 600 ms after SIGTERM, as Bob does while it saves its task store.
   const gw = await startGateway({
     agent: { command: [process.execPath, FAKE_AGENT, '--exit-delay', '600', '--exit-marker', marker], envPassthrough: ['PATH'] },

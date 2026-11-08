@@ -604,12 +604,12 @@ func (s *Store) CloseOpenApprovals(ctx context.Context, reason string) (int64, e
 	return res.RowsAffected()
 }
 
-// MaxApprovalSeq is the highest n in an approval id "agmente-perm-<n>", or 0, so ids stay unique
+// MaxApprovalSeq is the highest n in an approval id "acpcode-perm-<n>", or 0, so ids stay unique
 // across gateway restarts.
 func (s *Store) MaxApprovalSeq(ctx context.Context) (int64, error) {
 	var n int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(CAST(SUBSTR(id, 14) AS INTEGER)), 0) FROM approvals WHERE id LIKE 'agmente-perm-%'`).Scan(&n)
+		`SELECT COALESCE(MAX(CAST(SUBSTR(id, 14) AS INTEGER)), 0) FROM approvals WHERE id LIKE 'acpcode-perm-%'`).Scan(&n)
 	return n, err
 }
 

@@ -16,10 +16,10 @@ import (
 
 	"github.com/coder/websocket"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/connector"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/connector"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 // connectorSource is the source a connector prompt is audited under (C7).

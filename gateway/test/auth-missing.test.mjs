@@ -47,7 +47,7 @@ test('T-35: session/new refused with -32000 "Authentication required" reaches th
   });
   try {
     const ws = (await connect(gw.url, auth())).ws;
-    const created = await rpc(ws, '_agmente/projects/create', { name: 'auth', path: gw.dirs.project });
+    const created = await rpc(ws, '_acpcode/projects/create', { name: 'auth', path: gw.dirs.project });
     assert.ok(created.result?.project, `project not created: ${JSON.stringify(created)}`);
 
     const res = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
@@ -63,7 +63,7 @@ test('T-35: session/new refused with -32000 "Authentication required" reaches th
     assert.equal(log, 'session/new\n', 'the agent received exactly one session/new');
 
     // No session was recorded either.
-    const index = await rpc(ws, '_agmente/sessions/index', {});
+    const index = await rpc(ws, '_acpcode/sessions/index', {});
     assert.deepEqual(index.result?.sessions, [], 'the refused session is not in the session index');
     ws.close();
   } finally {

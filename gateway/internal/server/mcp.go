@@ -16,10 +16,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/mcpconf"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/mcpconf"
+	"acpcode/gateway/internal/store"
 )
 
 // mcpMu serialises the read-modify-write of a config file, so two sets cannot lose each other's
@@ -218,7 +218,7 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// mcpList answers _agmente/mcp/list {projectId}.
+// mcpList answers _acpcode/mcp/list {projectId}.
 func (s *Server) mcpList(ctx context.Context, who audit.Who, params *jsonv.Value) (any, *rpcError) {
 	p, rerr := s.mcpProject(ctx, params)
 	if rerr != nil {
@@ -246,7 +246,7 @@ func validMCPName(name string) bool {
 	return true
 }
 
-// mcpSet answers _agmente/mcp/set {projectId, name, disabled, alwaysAllow?, source?}. It changes
+// mcpSet answers _acpcode/mcp/set {projectId, name, disabled, alwaysAllow?, source?}. It changes
 // `disabled`, and `alwaysAllow` when the phone sends it, of a server already in the file and
 // nothing else (D-089). source ("project" or "home") picks the file; left
 // out, the project's file is tried first, then the home's.
@@ -343,10 +343,10 @@ func (s *Server) mcpSet(ctx context.Context, who audit.Who, params *jsonv.Value)
 // caller can go on to its own list. The main session wires it into handleExtension.
 func (s *Server) serveMCPConfig(ctx context.Context, who audit.Who, method string, params *jsonv.Value) (result any, rerr *rpcError, handled bool) {
 	switch method {
-	case "_agmente/mcp/list":
+	case "_acpcode/mcp/list":
 		result, rerr = s.mcpList(ctx, who, params)
 		return result, rerr, true
-	case "_agmente/mcp/set":
+	case "_acpcode/mcp/set":
 		result, rerr = s.mcpSet(ctx, who, params)
 		return result, rerr, true
 	}

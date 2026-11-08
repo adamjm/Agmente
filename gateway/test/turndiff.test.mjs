@@ -11,7 +11,7 @@ import { auth, connect, rpc, startGateway, useProject } from './helpers.mjs';
 const git = (dir, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, encoding: 'utf8' });
 const put = (dir, name, text) => { mkdirSync(join(dir, name, '..'), { recursive: true }); writeFileSync(join(dir, name), text); };
 const prompt = (ws, sessionId, text) => rpc(ws, 'session/prompt', { sessionId, prompt: [{ type: 'text', text }] });
-const turnDiff = (ws, sessionId, turn) => rpc(ws, '_agmente/git/turnDiff', { sessionId, turn });
+const turnDiff = (ws, sessionId, turn) => rpc(ws, '_acpcode/git/turnDiff', { sessionId, turn });
 
 async function setup({ init = true } = {}) {
   const gw = await startGateway();
@@ -41,9 +41,9 @@ test('T-31: a turn in which the agent writes new.txt has a turn diff that lists 
     assert.match(res.toTree, /^[0-9a-f]{40}$/);
     assert.notEqual(res.fromTree, res.toTree);
     // The two trees can be diffed again through git/diff, for one file.
-    await rpc(ws, '_agmente/git/status', { projectId: (await rpc(ws, '_agmente/projects/list', {})).result.projects[0].id });
-    const projectId = (await rpc(ws, '_agmente/projects/list', {})).result.projects[0].id;
-    const one = (await rpc(ws, '_agmente/git/diff', { projectId, fromTree: res.fromTree, toTree: res.toTree, path: 'new.txt' })).result;
+    await rpc(ws, '_acpcode/git/status', { projectId: (await rpc(ws, '_acpcode/projects/list', {})).result.projects[0].id });
+    const projectId = (await rpc(ws, '_acpcode/projects/list', {})).result.projects[0].id;
+    const one = (await rpc(ws, '_acpcode/git/diff', { projectId, fromTree: res.fromTree, toTree: res.toTree, path: 'new.txt' })).result;
     assert.match(one.diff, /\+x/);
     ws.close();
   } finally {
@@ -72,7 +72,7 @@ test('each turn has its own diff: edits outside the agent between turns belong t
 
 test('T-27 (snapshot): a hostile repo\'s clean filter, fsmonitor and hooks never run', async () => {
   const { gw, ws, dir, sessionId } = await setup();
-  const markers = mkdtempSync(join(tmpdir(), 'agmente-snapmarkers-'));
+  const markers = mkdtempSync(join(tmpdir(), 'acpcode-snapmarkers-'));
   try {
     const script = (name, body) => { const f = join(markers, `${name}.sh`); writeFileSync(f, `#!/bin/sh\n${body}\n`); chmodSync(f, 0o755); return f; };
     put(dir, '.gitattributes', '*.txt filter=evil\n');
@@ -115,7 +115,7 @@ test('snapshots leave the repository as it was: same index, same objects, same r
 
 test('secret files in a turn show by name only; symlinks and pipes are left out', async () => {
   const { gw, ws, dir, sessionId } = await setup();
-  const outside = mkdtempSync(join(tmpdir(), 'agmente-outside-'));
+  const outside = mkdtempSync(join(tmpdir(), 'acpcode-outside-'));
   try {
     writeFileSync(join(outside, 'private.txt'), 'OUTSIDE-SECRET\n');
     symlinkSync(join(outside, 'private.txt'), join(dir, 'old-link.txt'));
@@ -143,7 +143,7 @@ test('turnDiff errors: unknown session, bad turn, a running turn, a folder with 
       [{ sessionId, turn: 0 }, 'turn must be a positive integer'],
       [{ sessionId, turn: '1' }, 'turn must be a positive integer'],
       [{ sessionId, turn: 1.5 }, 'turn must be a positive integer'],
-    ]) assert.deepEqual((await rpc(ws, '_agmente/git/turnDiff', params)).error, { code: -32602, message }, JSON.stringify(params));
+    ]) assert.deepEqual((await rpc(ws, '_acpcode/git/turnDiff', params)).error, { code: -32602, message }, JSON.stringify(params));
     assert.deepEqual((await turnDiff(ws, sessionId, 1)).result.diff, '', 'a turn that changed nothing has an empty diff');
     assert.deepEqual((await turnDiff(ws, sessionId, 9)).error, { code: -32000, message: 'no snapshot for this turn' });
 
@@ -177,13 +177,13 @@ test('git/diff with trees: both must be tree ids; a path must be in that diff', 
   try {
     await prompt(ws, sessionId, 'x [write:new.txt]');
     const t = (await turnDiff(ws, sessionId, 1)).result;
-    const d = (params) => rpc(ws, '_agmente/git/diff', { projectId: project.id, ...params });
-    for (const params of [{ fromTree: t.fromTree }, { fromTree: 'HEAD', toTree: t.toTree }, { fromTree: t.fromTree, toTree: '--output=/tmp/agmente-y' }, { fromTree: t.fromTree, toTree: 7 }]) {
+    const d = (params) => rpc(ws, '_acpcode/git/diff', { projectId: project.id, ...params });
+    for (const params of [{ fromTree: t.fromTree }, { fromTree: 'HEAD', toTree: t.toTree }, { fromTree: t.fromTree, toTree: '--output=/tmp/acpcode-y' }, { fromTree: t.fromTree, toTree: 7 }]) {
       assert.equal((await d(params)).error?.code, -32602, JSON.stringify(params));
     }
     assert.equal((await d({ fromTree: t.fromTree, toTree: t.toTree, path: 'a.txt' })).error.message, 'path is not in this diff');
     assert.equal((await d({ fromTree: t.fromTree, toTree: t.toTree })).result.diff, t.diff);
-    assert.equal(existsSync('/tmp/agmente-y'), false);
+    assert.equal(existsSync('/tmp/acpcode-y'), false);
     ws.close();
   } finally {
     await gw.stop();

@@ -32,7 +32,7 @@ final class GatewayUsageDecodingTests: XCTestCase {
 
     private func index(_ rows: [ACP.Value]) async throws -> GatewaySessionsWithUsage {
         let fake = UsageFakeGateway()
-        fake.results["_agmente/sessions/index"] = .object(["sessions": .array(rows)])
+        fake.results["_acpcode/sessions/index"] = .object(["sessions": .array(rows)])
         return try await GatewayClient(fake).sessionsWithUsage()
     }
 
@@ -104,9 +104,9 @@ final class GatewayUsageDecodingTests: XCTestCase {
 
     func testSessionsIndexStillSendsTheProjectFilter() async throws {
         let fake = UsageFakeGateway()
-        fake.results["_agmente/sessions/index"] = .object(["sessions": .array([])])
+        fake.results["_acpcode/sessions/index"] = .object(["sessions": .array([])])
         _ = try await GatewayClient(fake).sessionsWithUsage(projectId: "a1")
-        XCTAssertEqual(fake.calls.map(\.method), ["_agmente/sessions/index"])
+        XCTAssertEqual(fake.calls.map(\.method), ["_acpcode/sessions/index"])
         XCTAssertEqual(fake.calls.first?.params, .object(["projectId": .string("a1")]))
     }
 

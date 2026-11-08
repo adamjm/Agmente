@@ -1,10 +1,10 @@
-# Spec: Agmente for IBM Bob (fork)
+# Spec: ACP Code for IBM Bob (fork)
 
 **Status:** Draft v0.1 · **Owner:** Adam Makarucha · **Date:** 2026-11-05
 
 ## 1. Purpose
 
-This fork makes Agmente, an iOS client for ACP coding agents, a safe remote client for IBM Bob Shell over the public internet, without a VPN.
+This fork makes ACP Code, an iOS client for ACP coding agents, a safe remote client for IBM Bob Shell over the public internet, without a VPN.
 
 The fork adds a server component, the **gateway**. The gateway replaces `@rebornix/stdio-to-ws`. It authenticates every connection, keeps agent sessions running when the phone is away, and serves project data (git state, files, MCP and skill config) to the app.
 
@@ -37,12 +37,12 @@ All findings come from the review doc and from code at the versions below. Sourc
 | F-2 | `stdio-to-ws` listens on all interfaces (`new WebSocketServer({ port })`). | [S2] |
 | F-3 | With `--persist`, any client that sends a known `X-Client-Id` reattaches to a live agent and receives its buffered output. | [S2] `handleWebSocketConnection` |
 | F-4 | `stdio-to-ws` spawns one agent per connection, with no cap. | [S2] |
-| F-5 | Agmente stores the bearer token and Cloudflare client secret as plain Core Data string attributes. | [S1] `Agmente.xcdatamodel` `StoredServer` |
-| F-6 | Agmente's WebSocket uses `NWConnection`. App Transport Security does not cover it. The default scheme is `ws`. | [S1] `URLSessionWebSocketProvider.swift`, `AppViewModel.swift:15` |
-| F-7 | Agmente accepts inbound frames up to `Int.max` bytes. | [S1] `parseFrameFromBuffer` |
-| F-8 | Agmente always sends `mcpServers: []`. | [S1] `ServerViewModel.swift:894, 1234, 1328` |
-| F-9 | Agmente extracts only text from agent content blocks. Image, resource and resource-link blocks are dropped. | [S1] `SessionUpdateParsing.swift` |
-| F-10 | Agmente builds its file-change list from tool-call kinds and titles. | [S1] `FileChangesSummaryView.swift` |
+| F-5 | ACP Code stores the bearer token and Cloudflare client secret as plain Core Data string attributes. | [S1] `ACPCode.xcdatamodel` `StoredServer` |
+| F-6 | ACP Code's WebSocket uses `NWConnection`. App Transport Security does not cover it. The default scheme is `ws`. | [S1] `URLSessionWebSocketProvider.swift`, `AppViewModel.swift:15` |
+| F-7 | ACP Code accepts inbound frames up to `Int.max` bytes. | [S1] `parseFrameFromBuffer` |
+| F-8 | ACP Code always sends `mcpServers: []`. | [S1] `ServerViewModel.swift:894, 1234, 1328` |
+| F-9 | ACP Code extracts only text from agent content blocks. Image, resource and resource-link blocks are dropped. | [S1] `SessionUpdateParsing.swift` |
+| F-10 | ACP Code builds its file-change list from tool-call kinds and titles. | [S1] `FileChangesSummaryView.swift` |
 | F-11 | Bob 2.0.9 `initialize` returns `loadSession: true`, session `list`, `delete`, `resume`, `close`, `promptCapabilities.image: true`, `embeddedContext: true`, `mcpCapabilities.http: true`, `authMethods: [sso]`, `_meta["bob/extensions"].version: 1`. | [S3] live probe, fixture `gateway/test/fixtures/bob-initialize-2.0.9.json` |
 | F-12 | Bob's `loadSession` and `resumeSession` call `disposeExistingSession` first. If the session is running a turn in the same process, Bob refuses with `-32600` "Session is already running a prompt" and the turn continues. If it is idle, Bob throws the session away, rebuilds it and replays the history as coalesced `session/update` notifications (one per message) after the response. The check covers only sessions in the same process (D-014). | [S3] package source (minified); live probe on 2.0.7 and 2.0.9, 2026-11-06 |
 | F-13 | Bob requires license consent. Without stored consent and without client `elicitation.form`, `session/new` fails. `--accept-license` records consent. | [S3] package source; [S4] |
@@ -83,15 +83,15 @@ All findings come from the review doc and from code at the versions below. Sourc
 | FR-16 | The gateway keeps one agent process per project, alive independent of phone connections. | Must | 3 |
 | FR-17 | The gateway has a project registry. A project path must be inside a configured root. The gateway trusts the folder for Bob at registration. | Must | 3 |
 | FR-18 | The gateway writes every agent-to-client message for a session to a persistent event log with a sequence number that increases by 1. | Must | 3 |
-| FR-19 | `_agmente/sessions/subscribe` with `afterSeq` replays the logged events after `afterSeq`, then streams live events. | Must | 3 |
+| FR-19 | `_acpcode/sessions/subscribe` with `afterSeq` replays the logged events after `afterSeq`, then streams live events. | Must | 3 |
 | FR-20 | The gateway never sends `session/load` or `session/resume` to the agent for a session that is live in that agent. It sends them only after an agent restart and only when no turn is running. | Must | 3 |
-| FR-21 | `_agmente/sessions/index` returns every session with project, title, status (`idle`, `running`, `awaiting_approval`, `error`), last activity and unread count. | Must | 3 |
+| FR-21 | `_acpcode/sessions/index` returns every session with project, title, status (`idle`, `running`, `awaiting_approval`, `error`), last activity and unread count. | Must | 3 |
 | FR-22 | The gateway holds each `session/request_permission` until a device answers. The first answer wins. After a timeout it rejects. It never approves on its own. | Must | 3 |
 | FR-23 | The gateway sends an APNs push when a turn ends, an approval is needed or a session fails. The payload holds only the project name, session ID and event type. | Should | 3 |
 | FR-24 | The gateway closes an agent session after an idle time with no running turn and no subscriber. | Should | 3 |
 | FR-25 | Every device of one identity sees the same projects and sessions. | Should | 3 |
 | FR-26 | The app home screen lists sessions grouped by project, newest first, with a status badge. The new-session sheet picks a project, not a path. | Must | 3 |
-| FR-27 | The gateway serves read-only git state: `_agmente/git/status`, `git/diff`, `git/log`, `git/turnDiff`, and the `git/changed` notification. | Must | 3 |
+| FR-27 | The gateway serves read-only git state: `_acpcode/git/status`, `git/diff`, `git/log`, `git/turnDiff`, and the `git/changed` notification. | Must | 3 |
 | FR-28 | Git runs inside the project container as the project user, with the safe flags in ARCHITECTURE.md. | Must | 3 |
 | FR-29 | Git file paths come only from the current status output and are passed after `--`. | Must | 3 |
 | FR-30 | The gateway hides the content of files that match the secret deny-list in all diffs. | Must | 3 |
@@ -136,7 +136,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 
 - Only Caddy faces the internet. The gateway listens on loopback. Mutual TLS at Caddy and a bearer token at the gateway (D-003).
-- The phone speaks ACP to the gateway, plus `_agmente/*` extension methods (D-002).
+- The phone speaks ACP to the gateway, plus `_acpcode/*` extension methods (D-002).
 - Each project runs in its own container. Bob and git run there, never in the gateway process (D-008).
 - The gateway never approves a tool call (D-009).
 
@@ -153,43 +153,43 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `_agmente/projects/list` | — | `{ projects: [{ id, name, path, defaultMode }] }` (`denyPaths` and `watchSkip` are added to a project only when not empty) |
-| `_agmente/projects/create` | `{ name, path, defaultMode?, denyPaths?, watchSkip? }` | `{ project }` (`denyPaths`: additions to the secret deny-list, D-050; `watchSkip`: folders the git watcher leaves out, D-065; each returned only when not empty) |
-| `_agmente/projects/addDenyPaths` | `{ projectId, denyPaths }` | `{ project }`: adds to the deny-list; never removes; same rules as create; 32 in total (D-066) |
-| `_agmente/projects/addWatchSkip` | `{ projectId, watchSkip }` | `{ project }`: adds to the watcher's skip list; never removes; same rules as create; 32 in total (D-066) |
-| `_agmente/sessions/index` | `{ projectId? }` | `{ sessions: [{ sessionId, projectId, title, status, lastActivity, headSeq, unread }] }` (D-030) |
-| `_agmente/sessions/read` | `{ sessionId, seq }` | `{ lastSeenSeq }`: the identity's read marker, which only moves forward (D-030) |
-| `_agmente/sessions/subscribe` | `{ sessionId, afterSeq }` | `{ headSeq }`, then notifications `_agmente/event { sessionId, seq, message }`: the replay up to `headSeq`, then live events (D-028) |
-| `_agmente/approvals/pending` | — | `{ approvals: [{ approvalId, sessionId, projectId, toolCall, options, since }] }` (D-031) |
-| `_agmente/approvals/answer` | `{ approvalId, optionId }` or `{ approvalId, cancelled: true }` | `{}`; a later answer gets `-32001` with the reason (D-031) |
-| `_agmente/git/status` | `{ projectId }` | `{ branch, upstream, ahead, behind, files: [{ path, status, staged, added, removed }], hash, truncated }` (D-035) |
-| `_agmente/git/diff` | `{ projectId, path?, staged?, fromTree?, toTree? }` | `{ diff, truncated, hidden }` (D-035; the tree params come with 3.15) |
-| `_agmente/git/log` | `{ projectId, limit, cursor? }` | `{ commits: [...], nextCursor? }` |
-| `_agmente/git/turnDiff` | `{ sessionId, turn }` | `{ diff, truncated, hidden, fromTree, toTree }` (D-036) |
-| `_agmente/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
-| `_agmente/push/register`, `_agmente/push/unregister` | `{ deviceToken, environment }` (`sandbox` or `production`), none | `{}` (D-052; the token is kept per identity and device) |
-| `_agmente/files/url` | `{ projectId, path }` | `{ url, expiresAt }`: `url` is `https://<files.host>/f/<token>`; `path` is relative to the project and must pass D-063; refusals are `-32602`, a disabled feature `-32000` (D-061, D-062) |
-| `_agmente/mcp/list` | `{ projectId }` | `{ servers }` (D-084, D-085) |
-| `_agmente/mcp/set` | `{ projectId, name, disabled, alwaysAllow?, source? }`: `alwaysAllow` allowed per D-089; `source` is `project` or `home`, and when left out the project's file is tried first | `{ servers }`: changes `disabled` and `alwaysAllow` of a server already in the file only (D-084, D-085, D-086) |
-| `_agmente/skills/list` | `{ projectId, scope }`: `scope` is `project` (D-087) | `{ skills: [{ name, bytes }] }` |
-| `_agmente/skills/put` | `{ projectId, scope, name, content }`: name `^[a-z0-9]+(-[a-z0-9]+)*$`, content at most 64 KiB (D-087) | `{ skill: { name, bytes } }`; atomic write (D-085) |
-| `_agmente/skills/read` | `{ projectId, scope, name }` | `{ name, content, bytes }` |
-| `_agmente/skills/delete` | `{ projectId, scope, name }` | `{}`; removes that skill's folder only |
+| `_acpcode/projects/list` | — | `{ projects: [{ id, name, path, defaultMode }] }` (`denyPaths` and `watchSkip` are added to a project only when not empty) |
+| `_acpcode/projects/create` | `{ name, path, defaultMode?, denyPaths?, watchSkip? }` | `{ project }` (`denyPaths`: additions to the secret deny-list, D-050; `watchSkip`: folders the git watcher leaves out, D-065; each returned only when not empty) |
+| `_acpcode/projects/addDenyPaths` | `{ projectId, denyPaths }` | `{ project }`: adds to the deny-list; never removes; same rules as create; 32 in total (D-066) |
+| `_acpcode/projects/addWatchSkip` | `{ projectId, watchSkip }` | `{ project }`: adds to the watcher's skip list; never removes; same rules as create; 32 in total (D-066) |
+| `_acpcode/sessions/index` | `{ projectId? }` | `{ sessions: [{ sessionId, projectId, title, status, lastActivity, headSeq, unread }] }` (D-030) |
+| `_acpcode/sessions/read` | `{ sessionId, seq }` | `{ lastSeenSeq }`: the identity's read marker, which only moves forward (D-030) |
+| `_acpcode/sessions/subscribe` | `{ sessionId, afterSeq }` | `{ headSeq }`, then notifications `_acpcode/event { sessionId, seq, message }`: the replay up to `headSeq`, then live events (D-028) |
+| `_acpcode/approvals/pending` | — | `{ approvals: [{ approvalId, sessionId, projectId, toolCall, options, since }] }` (D-031) |
+| `_acpcode/approvals/answer` | `{ approvalId, optionId }` or `{ approvalId, cancelled: true }` | `{}`; a later answer gets `-32001` with the reason (D-031) |
+| `_acpcode/git/status` | `{ projectId }` | `{ branch, upstream, ahead, behind, files: [{ path, status, staged, added, removed }], hash, truncated }` (D-035) |
+| `_acpcode/git/diff` | `{ projectId, path?, staged?, fromTree?, toTree? }` | `{ diff, truncated, hidden }` (D-035; the tree params come with 3.15) |
+| `_acpcode/git/log` | `{ projectId, limit, cursor? }` | `{ commits: [...], nextCursor? }` |
+| `_acpcode/git/turnDiff` | `{ sessionId, turn }` | `{ diff, truncated, hidden, fromTree, toTree }` (D-036) |
+| `_acpcode/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
+| `_acpcode/push/register`, `_acpcode/push/unregister` | `{ deviceToken, environment }` (`sandbox` or `production`), none | `{}` (D-052; the token is kept per identity and device) |
+| `_acpcode/files/url` | `{ projectId, path }` | `{ url, expiresAt }`: `url` is `https://<files.host>/f/<token>`; `path` is relative to the project and must pass D-063; refusals are `-32602`, a disabled feature `-32000` (D-061, D-062) |
+| `_acpcode/mcp/list` | `{ projectId }` | `{ servers }` (D-084, D-085) |
+| `_acpcode/mcp/set` | `{ projectId, name, disabled, alwaysAllow?, source? }`: `alwaysAllow` allowed per D-089; `source` is `project` or `home`, and when left out the project's file is tried first | `{ servers }`: changes `disabled` and `alwaysAllow` of a server already in the file only (D-084, D-085, D-086) |
+| `_acpcode/skills/list` | `{ projectId, scope }`: `scope` is `project` (D-087) | `{ skills: [{ name, bytes }] }` |
+| `_acpcode/skills/put` | `{ projectId, scope, name, content }`: name `^[a-z0-9]+(-[a-z0-9]+)*$`, content at most 64 KiB (D-087) | `{ skill: { name, bytes } }`; atomic write (D-085) |
+| `_acpcode/skills/read` | `{ projectId, scope, name }` | `{ name, content, bytes }` |
+| `_acpcode/skills/delete` | `{ projectId, scope, name }` | `{}`; removes that skill's folder only |
 
 Shapes are a draft. Each phase confirms them in its plan notes and records changes in DECISIONS.md.
 
 ### 6.3 Gateway config file
 
-JSON, path from `--config`. Example: `gateway/config.example.json`; the Mac example is `gateway/config.mac.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `apple` (D-079) with `image` (full name, for example `localhost/agmente-bob:2.0.9`), optional `container` (absolute path to the Apple `container` CLI; default `container`), optional `dns` (an IP address of a nameserver, for the container; D-080, D-081), and optional `containerUid`/`containerGid` (D-051; the apple runner sets the user with `-u`), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)), `push` (optional; delivery is off when absent, D-053, D-055), `files` (optional, D-061: `host` (required, the files host name), `ttlSeconds` (1 to 300, default 300, NFR-12), `maxBytes` (default 20 MiB), `secretFile` (optional absolute path to a key file, mode 0600 or stricter, at least 32 bytes; no key in the config). Absent means signed file URLs are off).
+JSON, path from `--config`. Example: `gateway/config.example.json`; the Mac example is `gateway/config.mac.example.json`. Keys: `listen` (`host`, `port`), `trustProxy`, `tokens` (`id`, `identity`, `sha256`), `agent` (`command`, `envPassthrough`), `projects.roots`, `stateDir` (absolute; the database and project homes, D-024), `runner` (`kind` `podman` with `image` and optional `podman`, `containerUid`, `containerGid` (D-051), or `apple` (D-079) with `image` (full name, for example `localhost/acpcode-bob:2.0.9`), optional `container` (absolute path to the Apple `container` CLI; default `container`), optional `dns` (an IP address of a nameserver, for the container; D-080, D-081), and optional `containerUid`/`containerGid` (D-051; the apple runner sets the user with `-u`), or `host` with `allowHost: true` for tests, D-025), `limits` (`maxMessageBytes`, `maxAgentsPerIdentity` (accepted, unused since D-025), `maxAgentsTotal`, `maxConnectionsPerIdentity`, `authFailuresPerWindow`, `authWindowSeconds`, `lockoutSeconds`, `approvalTimeoutSeconds` (NFR-10, D-031), `idleSeconds` (NFR-10, D-032)), `push` (optional; delivery is off when absent, D-053, D-055), `files` (optional, D-061: `host` (required, the files host name), `ttlSeconds` (1 to 300, default 300, NFR-12), `maxBytes` (default 20 MiB), `secretFile` (optional absolute path to a key file, mode 0600 or stricter, at least 32 bytes; no key in the config). Absent means signed file URLs are off).
 
 The `push` block: `keyFile` (absolute path to the APNs `.p8` key), `keyId` and `teamId` (10 characters each), `topic` (the app's bundle id), and optional `sandboxURL` and `productionURL` (https, host only). Config holds no key material. The gateway refuses to start when the key file is readable by group or others, or does not parse. Two keys are for tests only: `caFile` (a PEM CA trusted for APNs requests) and the URL overrides, which point the wire suite at a fake APNs server (D-055). Deployments leave them out.
 
 ### 6.4 Gateway CLI
 
-- `agmente-gateway --config <file>`: run.
-- `agmente-gateway --config <file> --dry-run`: validate config, print a summary, exit.
-- `agmente-gateway new-token <id> <identity>`: print a new token once and its config entry.
-- The binary is built to `gateway/bin/agmente-gateway` (D-021). The Node gateway was removed (D-022).
+- `acpcode-gateway --config <file>`: run.
+- `acpcode-gateway --config <file> --dry-run`: validate config, print a summary, exit.
+- `acpcode-gateway new-token <id> <identity>`: print a new token once and its config entry.
+- The binary is built to `gateway/bin/acpcode-gateway` (D-021). The Node gateway was removed (D-022).
 
 ## 7. Test plan
 
@@ -271,7 +271,7 @@ The `push` block: `keyFile` (absolute path to the APNs `.p8` key), `keyId` and `
 
 ## 10. Sources
 
-- [S1] Agmente, commit `87f224e` (21 Mar 2026): https://github.com/rebornix/Agmente
+- [S1] ACP Code, commit `87f224e` (21 Mar 2026): https://github.com/rebornix/ACP Code
 - [S2] `@rebornix/stdio-to-ws` 0.2.0 (npm): https://github.com/rebornix/stdio-to-ws
 - [S3] `@ibm/bob` 2.0.9 (npm), probed 2026-11-05: https://zed.dev/acp/agent/bob
 - [S4] Bob Shell ACP: https://bob.ibm.com/docs/shell/features/acp

@@ -1,7 +1,7 @@
 package server
 
 // Read-only git state for phones (PLAN 3.14, FR-27, FR-29, FR-30, D-034, D-035):
-// _agmente/git/status, git/diff and git/log. Every command runs through runGit.
+// _acpcode/git/status, git/diff and git/log. Every command runs through runGit.
 
 import (
 	"bytes"
@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync"
 
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const (

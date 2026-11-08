@@ -24,7 +24,7 @@ test('T-5: the gateway itself (not only --dry-run) exits non-zero for a public h
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const dir = mkdtempSync(join(tmpdir(), 'agmente-cfg-'));
+  const dir = mkdtempSync(join(tmpdir(), 'acpcode-cfg-'));
   try {
     const file = join(dir, 'config.json');
     writeFileSync(file, JSON.stringify(rawConfig('/srv/p', { listen: { host: '0.0.0.0', port: 0 } })));
@@ -123,9 +123,9 @@ test('unreadable and non-JSON config files are refused', async () => {
   assert.notEqual(arr.status, 0);
   assert.match(arr.stderr, /config must be a JSON object/);
   const [cmd, ...args] = gatewayCommand();
-  const missing = spawnSync(cmd, [...args, '--config', '/nonexistent/agmente.json', '--dry-run'], { encoding: 'utf8' });
+  const missing = spawnSync(cmd, [...args, '--config', '/nonexistent/acpcode.json', '--dry-run'], { encoding: 'utf8' });
   assert.notEqual(missing.status, 0);
-  assert.match(missing.stderr, /cannot read \/nonexistent\/agmente\.json/);
+  assert.match(missing.stderr, /cannot read \/nonexistent\/acpcode\.json/);
   const noArg = spawnSync(cmd, args, { encoding: 'utf8' });
   assert.equal(noArg.status, 2);
   assert.match(noArg.stderr, /Usage: .*--config <file> \[--dry-run\]/);

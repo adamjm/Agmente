@@ -125,10 +125,10 @@ if (cmd === 'exec') {
   env.PATH = withGitShim(env.PATH, env);
   const child = spawn(argv[0], argv.slice(1), { cwd, env, stdio: 'inherit', detached: true });
   log('exec', { name, pid: child.pid, argv0: argv[0], args: argv.slice(1).join(' ') });
-  if (env.AGMENTE_EXEC) writeFileSync(join(dir, `marker-${env.AGMENTE_EXEC}`), String(child.pid));
+  if (env.ACPCODE_EXEC) writeFileSync(join(dir, `marker-${env.ACPCODE_EXEC}`), String(child.pid));
   child.on('exit', (code, signal) => {
     log('exec_exit', { name, pid: child.pid, code, signal });
-    if (env.AGMENTE_EXEC) { try { unlinkSync(join(dir, `marker-${env.AGMENTE_EXEC}`)); } catch {} }
+    if (env.ACPCODE_EXEC) { try { unlinkSync(join(dir, `marker-${env.ACPCODE_EXEC}`)); } catch {} }
     process.exit(code ?? 1);
   });
   // The CLI forwards nothing on its own when it is killed: the detached child keeps running.

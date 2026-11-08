@@ -9,14 +9,14 @@ public enum PushEnvironment: String, Sendable {
 }
 
 public extension GatewayClient {
-    /// `_agmente/push/register`: stores this device's APNs token (lowercase or uppercase hex).
+    /// `_acpcode/push/register`: stores this device's APNs token (lowercase or uppercase hex).
     func registerPush(deviceToken: String, environment: PushEnvironment) async throws {
-        _ = try await call("_agmente/push/register",
+        _ = try await call("_acpcode/push/register",
                            .object(["deviceToken": .string(deviceToken), "environment": .string(environment.rawValue)]))
     }
 
-    /// `_agmente/push/unregister`: removes this device's token. Not an error when there is none.
+    /// `_acpcode/push/unregister`: removes this device's token. Not an error when there is none.
     func unregisterPush() async throws {
-        _ = try await call("_agmente/push/unregister", .object([:]))
+        _ = try await call("_acpcode/push/unregister", .object([:]))
     }
 }

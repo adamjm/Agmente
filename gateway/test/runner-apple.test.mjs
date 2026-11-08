@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { dryRun, rawConfig } from './helpers.mjs';
 
-const apple = (extra) => rawConfig('/srv/p', { runner: { kind: 'apple', image: 'agmente-bob:2.0.9', ...extra } });
+const apple = (extra) => rawConfig('/srv/p', { runner: { kind: 'apple', image: 'acpcode-bob:2.0.9', ...extra } });
 
 test('kind apple is accepted and reports its container CLI', async () => {
   const run = await dryRun(apple({ container: '/opt/homebrew/bin/container' }));

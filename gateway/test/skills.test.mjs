@@ -13,7 +13,7 @@ const INVALID = -32602;
 async function setup() {
   const gw = await startGateway();
   const { ws } = await connect(gw.url, auth());
-  const created = await rpc(ws, '_agmente/projects/create', { name: 'skills', path: gw.dirs.project });
+  const created = await rpc(ws, '_acpcode/projects/create', { name: 'skills', path: gw.dirs.project });
   assert.ok(created.result?.project, JSON.stringify(created.error));
   return { gw, ws, projectId: created.result.project.id, dir: gw.dirs.project, outside: gw.dirs.outside };
 }
@@ -24,10 +24,10 @@ async function stopAll(ctx) {
 }
 
 const put = (ctx, name, content, scope = 'project') =>
-  rpc(ctx.ws, '_agmente/skills/put', { projectId: ctx.projectId, scope, name, content });
-const list = (ctx, scope = 'project') => rpc(ctx.ws, '_agmente/skills/list', { projectId: ctx.projectId, scope });
+  rpc(ctx.ws, '_acpcode/skills/put', { projectId: ctx.projectId, scope, name, content });
+const list = (ctx, scope = 'project') => rpc(ctx.ws, '_acpcode/skills/list', { projectId: ctx.projectId, scope });
 const del = (ctx, name, scope = 'project') =>
-  rpc(ctx.ws, '_agmente/skills/delete', { projectId: ctx.projectId, scope, name });
+  rpc(ctx.ws, '_acpcode/skills/delete', { projectId: ctx.projectId, scope, name });
 
 const skillsDir = (ctx) => join(ctx.dir, '.bob', 'skills');
 
@@ -191,7 +191,7 @@ test('D-087: skill_put and skill_deleted carry the project, the name and the byt
 });
 
 const read = (ctx, name, scope = 'project') =>
-  rpc(ctx.ws, '_agmente/skills/read', { projectId: ctx.projectId, scope, name });
+  rpc(ctx.ws, '_acpcode/skills/read', { projectId: ctx.projectId, scope, name });
 
 test('read: put then read returns the same content, name and byte count', async () => {
   const ctx = await setup();

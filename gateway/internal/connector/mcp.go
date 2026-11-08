@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"agmente/gateway/internal/audit"
+	"acpcode/gateway/internal/audit"
 )
 
 // protocolVersion is the MCP revision this endpoint speaks by default (MCP 2025-11-25).
@@ -106,7 +106,7 @@ func (c *Connector) initializeResult(params json.RawMessage) map[string]any {
 	return map[string]any{
 		"protocolVersion": version,
 		"capabilities":    map[string]any{"tools": map[string]any{}},
-		"serverInfo":      map[string]any{"name": "agmente-connector", "version": c.opts.Version},
+		"serverInfo":      map[string]any{"name": "acpcode-connector", "version": c.opts.Version},
 	}
 }
 

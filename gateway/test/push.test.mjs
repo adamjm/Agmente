@@ -22,7 +22,7 @@ test('the gateway advertises the push extension', async () => {
   try {
     const { ws } = await connect(gw.url, auth());
     const init = await rpc(ws, 'initialize', { protocolVersion: 1, clientCapabilities: {} });
-    assert.ok(init.result._meta['agmente/gateway'].extensions.includes('push'));
+    assert.ok(init.result._meta['acpcode/gateway'].extensions.includes('push'));
     ws.close();
   } finally {
     await gw.stop();
@@ -33,9 +33,9 @@ test('register stores the token under the authenticated device; a second call re
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    assert.deepEqual((await rpc(ws, '_agmente/push/register', { deviceToken: TOKEN_A.toUpperCase(), environment: 'sandbox' })).result, {});
+    assert.deepEqual((await rpc(ws, '_acpcode/push/register', { deviceToken: TOKEN_A.toUpperCase(), environment: 'sandbox' })).result, {});
     assert.deepEqual(rows(gw), [{ identity: 'owner', device: 'phone', token: TOKEN_A, environment: 'sandbox' }]);
-    await rpc(ws, '_agmente/push/register', { deviceToken: TOKEN_B, environment: 'production' });
+    await rpc(ws, '_acpcode/push/register', { deviceToken: TOKEN_B, environment: 'production' });
     assert.deepEqual(rows(gw), [{ identity: 'owner', device: 'phone', token: TOKEN_B, environment: 'production' }]);
     ws.close();
   } finally {
@@ -48,12 +48,12 @@ test('bad tokens and environments are refused and store nothing', async () => {
   try {
     const { ws } = await connect(gw.url, auth());
     for (const deviceToken of ['', 'zz'.repeat(32), 'ab'.repeat(31), 'ab'.repeat(101), `${TOKEN_A}a`, 7, null, `${TOKEN_A}\n`]) {
-      const res = await rpc(ws, '_agmente/push/register', { deviceToken, environment: 'sandbox' });
+      const res = await rpc(ws, '_acpcode/push/register', { deviceToken, environment: 'sandbox' });
       assert.equal(res.error?.code, -32602, JSON.stringify(deviceToken));
       assert.match(res.error.message, /deviceToken/);
     }
     for (const environment of ['', 'Sandbox', 'dev', 3, null, undefined]) {
-      const res = await rpc(ws, '_agmente/push/register', { deviceToken: TOKEN_A, environment });
+      const res = await rpc(ws, '_acpcode/push/register', { deviceToken: TOKEN_A, environment });
       assert.equal(res.error?.code, -32602, JSON.stringify(environment));
       assert.match(res.error.message, /environment/);
     }
@@ -69,13 +69,13 @@ test('unregister removes only the caller\'s token', async () => {
   try {
     const a = await connect(gw.url, auth());
     const b = await connect(gw.url, auth(OTHER_TOKEN));
-    await rpc(a.ws, '_agmente/push/register', { deviceToken: TOKEN_A, environment: 'sandbox' });
-    await rpc(b.ws, '_agmente/push/register', { deviceToken: TOKEN_B, environment: 'sandbox' });
+    await rpc(a.ws, '_acpcode/push/register', { deviceToken: TOKEN_A, environment: 'sandbox' });
+    await rpc(b.ws, '_acpcode/push/register', { deviceToken: TOKEN_B, environment: 'sandbox' });
     assert.equal(rows(gw).length, 2);
-    assert.deepEqual((await rpc(b.ws, '_agmente/push/unregister', {})).result, {});
+    assert.deepEqual((await rpc(b.ws, '_acpcode/push/unregister', {})).result, {});
     assert.deepEqual(rows(gw), [{ identity: 'owner', device: 'phone', token: TOKEN_A, environment: 'sandbox' }]);
     // Removing again is not an error.
-    assert.deepEqual((await rpc(b.ws, '_agmente/push/unregister', {})).result, {});
+    assert.deepEqual((await rpc(b.ws, '_acpcode/push/unregister', {})).result, {});
     a.ws.close();
     b.ws.close();
   } finally {
@@ -87,7 +87,7 @@ test('the token never appears in the audit log or in a response', async () => {
   const gw = await startGateway();
   try {
     const { ws } = await connect(gw.url, auth());
-    const res = await rpc(ws, '_agmente/push/register', { deviceToken: TOKEN_A, environment: 'sandbox' });
+    const res = await rpc(ws, '_acpcode/push/register', { deviceToken: TOKEN_A, environment: 'sandbox' });
     assert.ok(!JSON.stringify(res).includes(TOKEN_A));
     await sleep(100);
     assert.ok(gw.audit.some((e) => e.event === 'push_registered' && e.identity === 'owner' && e.device === 'phone'));

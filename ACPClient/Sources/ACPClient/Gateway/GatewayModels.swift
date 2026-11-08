@@ -1,7 +1,7 @@
 import Foundation
 import ACP
 
-// Types for the gateway's `_agmente/*` methods (docs/SPEC.md 6.2, DECISIONS D-024 to D-037).
+// Types for the gateway's `_acpcode/*` methods (docs/SPEC.md 6.2, DECISIONS D-024 to D-037).
 
 public struct GatewayProject: Codable, Equatable, Hashable, Sendable, Identifiable {
     public let id: String

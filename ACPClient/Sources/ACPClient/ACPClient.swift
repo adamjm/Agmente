@@ -178,7 +178,7 @@ public final class ACPClient {
             }
 
             // 2. Fallback: split newline-delimited payloads (common with stdio bridges)
-            // Only proceed if ALL lines are valid messages, otherwise treat as fragmented/complex
+            // Only proceed if ALL lines are valid messages, otherwise treat as fracpcoded/complex
             if let text = String(data: data, encoding: .utf8) {
                 let lines = text
                     .split(separator: "\n")
@@ -207,7 +207,7 @@ public final class ACPClient {
             }
         }
 
-        // 3. Buffering fallback for fragmented or complex messages
+        // 3. Buffering fallback for fracpcoded or complex messages
         buffer.append(data)
 
         while true {

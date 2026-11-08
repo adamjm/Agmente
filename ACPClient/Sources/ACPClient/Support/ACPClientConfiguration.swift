@@ -1,5 +1,5 @@
 import Foundation
-@_exported import AgmenteTransport
+@_exported import ACPCodeTransport
 
 public struct ACPClientConfiguration {
     public typealias TokenProvider = () async throws -> String

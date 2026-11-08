@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/store"
 )
 
 // openBridgeStore opens a store with one project and two sessions, for the bridge reads.
@@ -74,13 +74,13 @@ func TestStopReasonIsTheLastTurnsEnd(t *testing.T) {
 	if got, err := b.stopReason(ctx, "s2"); err != nil || got != "" {
 		t.Fatalf("no turn yet: %q %v", got, err)
 	}
-	if _, err := db.AppendEvent(ctx, "s2", "turn_ended", []byte(`{"jsonrpc":"2.0","method":"_agmente/turn_ended","params":{"sessionId":"s2","stopReason":"max_tokens"}}`)); err != nil {
+	if _, err := db.AppendEvent(ctx, "s2", "turn_ended", []byte(`{"jsonrpc":"2.0","method":"_acpcode/turn_ended","params":{"sessionId":"s2","stopReason":"max_tokens"}}`)); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := b.stopReason(ctx, "s2"); got != "max_tokens" {
 		t.Fatalf("stop reason = %q", got)
 	}
-	if _, err := db.AppendEvent(ctx, "s2", "turn_ended", []byte(`{"jsonrpc":"2.0","method":"_agmente/turn_ended","params":{"sessionId":"s2","error":{"code":-1}}}`)); err != nil {
+	if _, err := db.AppendEvent(ctx, "s2", "turn_ended", []byte(`{"jsonrpc":"2.0","method":"_acpcode/turn_ended","params":{"sessionId":"s2","error":{"code":-1}}}`)); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := b.stopReason(ctx, "s2"); got != "error" {

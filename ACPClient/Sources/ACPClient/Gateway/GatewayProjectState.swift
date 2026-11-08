@@ -1,7 +1,7 @@
 import Foundation
 import ACP
 
-// `_agmente/project/state {projectId, agent, since}` (contract C2, D-102): the agent state of one project.
+// `_acpcode/project/state {projectId, agent, since}` (contract C2, D-102): the agent state of one project.
 // The gateway sends it only when the state changes, and only to the sockets that listed the project. It is
 // not in the event log, and nothing is sent when a socket starts listing: a project's state is unknown until
 // its first change after that.
@@ -27,9 +27,9 @@ public enum GatewayAgentState: Equatable, Sendable {
     }
 }
 
-/// One `_agmente/project/state` notification.
+/// One `_acpcode/project/state` notification.
 public struct GatewayProjectState: Equatable, Sendable {
-    public static let method = "_agmente/project/state"
+    public static let method = "_acpcode/project/state"
 
     public let projectId: String
     public let agent: GatewayAgentState

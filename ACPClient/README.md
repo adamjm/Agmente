@@ -23,5 +23,5 @@ Protocol definition: https://agentclientprotocol.com/overview/introduction (ACP 
 7) Tests: mock socket/clock; cover encoding/decoding, connect/send/receive flow, reconnection, heartbeat, error handling; add snapshot JSON fixtures.
 
 ## Integration notes
-- Add this package locally in Xcode: File > Add Packages… > Add Local, select `Agmente/ACPClient`; link product `ACPClient` to the iOS app target.
+- Add this package locally in Xcode: File > Add Packages… > Add Local, select `ACPCode/ACPClient`; link product `ACPClient` to the iOS app target.
 - Set minimum platform to iOS 17 (already in `Package.swift`).

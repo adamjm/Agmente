@@ -32,24 +32,24 @@ private func grantValue(_ id: String, scope: ACP.Value, lastUsed: ACP.Value = .n
 final class GatewayConnectorClientTests: XCTestCase {
     func testPendingDecodesEveryPairingAndSendsNoParams() async throws {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/pending"] = .object(["pairings": .array([pairingValue("p1"), pairingValue("p2", code: "000111", client: "Other")])])
+        transport.results["_acpcode/connector/pending"] = .object(["pairings": .array([pairingValue("p1"), pairingValue("p2", code: "000111", client: "Other")])])
         let pairings = try await GatewayClient(transport).connectorPending()
         XCTAssertEqual(pairings.map(\.pairingId), ["p1", "p2"])
         XCTAssertEqual(pairings[0].code, "482913")
         XCTAssertEqual(pairings[0].clientName, "Claude")
         XCTAssertEqual(pairings[1].clientName, "Other")
         XCTAssertEqual(pairings[0].expiresDate, Date(timeIntervalSince1970: 1_794_045_900), "the gateway's millisecond time parses")
-        XCTAssertEqual(transport.calls.map(\.method), ["_agmente/connector/pending"])
+        XCTAssertEqual(transport.calls.map(\.method), ["_acpcode/connector/pending"])
         XCTAssertEqual(transport.calls.first?.params, .object([:]))
     }
 
     func testApproveSendsOneProjectAndOneSessionAndReturnsTheGrantId() async throws {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/approve"] = .object(["grantId": .string("g1")])
+        transport.results["_acpcode/connector/approve"] = .object(["grantId": .string("g1")])
         let session = GatewaySession(sessionId: "s9", projectId: "proj-a", title: "Fix", status: .idle, lastActivity: "2026-11-07T10:00:00.000Z", headSeq: 1, unread: 0)
         let grantId = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .oneSession(session))
         XCTAssertEqual(grantId, "g1")
-        XCTAssertEqual(transport.calls.map(\.method), ["_agmente/connector/approve"])
+        XCTAssertEqual(transport.calls.map(\.method), ["_acpcode/connector/approve"])
         XCTAssertEqual(transport.calls.first?.params, .object([
             "pairingId": .string("p1"),
             "scope": .object(["projects": .array([.string("proj-a")]), "sessions": .array([.string("s9")])]),
@@ -58,7 +58,7 @@ final class GatewayConnectorClientTests: XCTestCase {
 
     func testApproveAllProjectsSendsTheWordAllAndNoSessionList() async throws {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/approve"] = .object(["grantId": .string("g2")])
+        transport.results["_acpcode/connector/approve"] = .object(["grantId": .string("g2")])
         let grantId = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .allProjects)
         XCTAssertEqual(grantId, "g2")
         XCTAssertEqual(transport.calls.first?.params, .object([
@@ -69,7 +69,7 @@ final class GatewayConnectorClientTests: XCTestCase {
 
     func testApproveWithoutAGrantIdIsNamed() async {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/approve"] = .object([:])
+        transport.results["_acpcode/connector/approve"] = .object([:])
         do {
             _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .allProjects)
             XCTFail("expected an error")
@@ -81,13 +81,13 @@ final class GatewayConnectorClientTests: XCTestCase {
     func testDenySendsThePairingIdAndNeedsNoAnswerBody() async throws {
         let transport = ConnectorFakeTransport()
         try await GatewayClient(transport).denyConnectorPairing(pairingId: "p3")
-        XCTAssertEqual(transport.calls.map(\.method), ["_agmente/connector/deny"])
+        XCTAssertEqual(transport.calls.map(\.method), ["_acpcode/connector/deny"])
         XCTAssertEqual(transport.calls.first?.params, .object(["pairingId": .string("p3")]))
     }
 
     func testGrantsDecodeBothScopeShapesAndLastUse() async throws {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/grants"] = .object(["grants": .array([
+        transport.results["_acpcode/connector/grants"] = .object(["grants": .array([
             grantValue("g1", scope: .object(["projects": .string("all")]), lastUsed: .string("2026-11-07T10:02:00.000Z")),
             grantValue("g2", scope: .object(["projects": .array([.string("a")]), "sessions": .array([.string("s1")])])),
         ])])
@@ -104,7 +104,7 @@ final class GatewayConnectorClientTests: XCTestCase {
 
     func testAGrantWithAScopeTheAppDoesNotKnowIsNamed() async {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/grants"] = .object(["grants": .array([
+        transport.results["_acpcode/connector/grants"] = .object(["grants": .array([
             grantValue("g1", scope: .object(["projects": .string("some")])),
         ])])
         do {
@@ -118,7 +118,7 @@ final class GatewayConnectorClientTests: XCTestCase {
     func testRevokeSendsTheGrantId() async throws {
         let transport = ConnectorFakeTransport()
         try await GatewayClient(transport).revokeConnectorGrant(grantId: "g1")
-        XCTAssertEqual(transport.calls.map(\.method), ["_agmente/connector/revoke"])
+        XCTAssertEqual(transport.calls.map(\.method), ["_acpcode/connector/revoke"])
         XCTAssertEqual(transport.calls.first?.params, .object(["grantId": .string("g1")]))
     }
 
@@ -142,8 +142,8 @@ final class GatewayConnectorClientTests: XCTestCase {
             }
         }
         XCTAssertEqual(transport.calls.map(\.method), [
-            "_agmente/connector/pending", "_agmente/connector/approve", "_agmente/connector/deny",
-            "_agmente/connector/grants", "_agmente/connector/revoke",
+            "_acpcode/connector/pending", "_acpcode/connector/approve", "_acpcode/connector/deny",
+            "_acpcode/connector/grants", "_acpcode/connector/revoke",
         ])
     }
 
@@ -166,7 +166,7 @@ final class GatewayConnectorClientTests: XCTestCase {
 
     func testAPendingAnswerWithTheWrongShapeIsNamed() async {
         let transport = ConnectorFakeTransport()
-        transport.results["_agmente/connector/pending"] = .object(["pairings": .string("none")])
+        transport.results["_acpcode/connector/pending"] = .object(["pairings": .string("none")])
         do {
             _ = try await GatewayClient(transport).connectorPending()
             XCTFail("expected an error")

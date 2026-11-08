@@ -5,7 +5,7 @@ import ACP
 ///
 /// This type only describes what the agent sent. It never decodes or fetches anything:
 /// `data` and `blob` stay as the base64 text from the wire, and a `resourceLink` is only a
-/// reference. Size and MIME checks belong to the view layer (`Agmente/Fork/ForkImage*`).
+/// reference. Size and MIME checks belong to the view layer (`ACPCode/Fork/ForkImage*`).
 public enum ACPMediaBlock: Equatable, Sendable {
     /// `{"type":"image","data":<base64>,"mimeType":...,"uri":...}`
     case image(mimeType: String, data: String, uri: String?)

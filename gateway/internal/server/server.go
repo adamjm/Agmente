@@ -19,11 +19,11 @@ import (
 
 	"github.com/coder/websocket"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/connector"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/connector"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const killGrace = 2 * time.Second
@@ -31,7 +31,7 @@ const killGrace = 2 * time.Second
 // Version is the gateway version reported in initialize (D-026).
 const Version = "0.3.0-dev"
 
-// extensions lists the _agmente/* method groups this gateway serves (D-026).
+// extensions lists the _acpcode/* method groups this gateway serves (D-026).
 var extensions = []string{"projects", "sessions", "approvals", "git", "push", "files"}
 
 //go:embed default-initialize.json
@@ -228,7 +228,7 @@ func (s *Server) captureCapabilities(result *jsonv.Value) {
 }
 
 // initializeResult is the gateway's answer to a phone's initialize: the agent's capabilities plus
-// _meta["agmente/gateway"] (D-026). The phone's initialize never reaches an agent.
+// _meta["acpcode/gateway"] (D-026). The phone's initialize never reaches an agent.
 func (s *Server) initializeResult() *jsonv.Value {
 	s.capsMu.Lock()
 	data := s.caps
@@ -249,7 +249,7 @@ func (s *Server) initializeResult() *jsonv.Value {
 		meta = jsonv.Obj()
 		v.Set("_meta", meta)
 	}
-	meta.Set("agmente/gateway", gw)
+	meta.Set("acpcode/gateway", gw)
 	return v
 }
 
@@ -509,14 +509,14 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 			s.answerPermission(c, msg, id)
 		}
 		return
-	case strings.HasPrefix(method, "_agmente/"):
+	case strings.HasPrefix(method, "_acpcode/"):
 		// Gateway extension methods are answered here and never reach an agent (D-002, D-024).
 		s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: method}))
-		if method == "_agmente/sessions/subscribe" && !id.IsNull() {
+		if method == "_acpcode/sessions/subscribe" && !id.IsNull() {
 			s.subscribe(c, id, msg.Get("params"))
 			return
 		}
-		if strings.HasPrefix(method, "_agmente/connector/") { // the phone's pairing and grant methods (C5, D-095)
+		if strings.HasPrefix(method, "_acpcode/connector/") { // the phone's pairing and grant methods (C5, D-095)
 			if !id.IsNull() {
 				result, cerr := s.connector.Phone(ctx, who, method, msg.Get("params"))
 				if cerr != nil {
@@ -527,7 +527,7 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 			}
 			return
 		}
-		if strings.HasPrefix(method, "_agmente/git/") {
+		if strings.HasPrefix(method, "_acpcode/git/") {
 			// git runs in a container and can take seconds: answer from a goroutine so the socket's
 			// other requests are not held up. A panic here is answered like any other (D-033).
 			params := msg.Get("params")
@@ -573,7 +573,7 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 	}
 }
 
-// serveGit answers one _agmente/git/* request. A successful git/status also adds the socket to the
+// serveGit answers one _acpcode/git/* request. A successful git/status also adds the socket to the
 // project's watchers, so it is told when the status changes (FR-27, D-037).
 func (s *Server) serveGit(ctx context.Context, c *client, who audit.Who, method string, id *jsonv.Value, params *jsonv.Value,
 	reply func(*jsonv.Value, any, *rpcError)) {
@@ -587,11 +587,11 @@ func (s *Server) serveGit(ctx context.Context, c *client, who audit.Who, method 
 		return
 	}
 	var baseline uint64
-	if method == "_agmente/git/status" {
+	if method == "_acpcode/git/status" {
 		baseline = s.watchBaseline(ctx, params) // before git runs (D-037, D-065)
 	}
 	result, rerr := s.handleExtension(ctx, who, method, params)
-	if rerr == nil && method == "_agmente/git/status" {
+	if rerr == nil && method == "_acpcode/git/status" {
 		if m, ok := result.(map[string]any); ok {
 			if hash, ok := m["hash"].(string); ok {
 				if pid, ok := params.Get("projectId").StringValue(); ok {

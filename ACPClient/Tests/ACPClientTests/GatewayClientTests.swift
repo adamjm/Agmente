@@ -19,7 +19,7 @@ final class GatewayClientTests: XCTestCase {
         let result: ACP.Value = .object([
             "protocolVersion": .number(1),
             "agentInfo": .object(["name": .string("bob"), "version": .string("2.0.9")]),
-            "_meta": .object(["agmente/gateway": .object([
+            "_meta": .object(["acpcode/gateway": .object([
                 "version": .string("0.3.0-dev"),
                 "extensions": .array([.string("projects"), .string("sessions"), .string("git")]),
             ])]),
@@ -31,7 +31,7 @@ final class GatewayClientTests: XCTestCase {
     }
 
     func testAServerWithoutTheGatewayKeyHasNoGatewayInfo() {
-        for meta: ACP.Value? in [nil, .object([:]), .object(["agmente/gateway": .null]), .object(["agmente/gateway": .object(["extensions": .array([])])]), .object(["bob/extensions": .object(["version": .number(1)])])] {
+        for meta: ACP.Value? in [nil, .object([:]), .object(["acpcode/gateway": .null]), .object(["acpcode/gateway": .object(["extensions": .array([])])]), .object(["bob/extensions": .object(["version": .number(1)])])] {
             var object: [String: ACP.Value] = ["protocolVersion": .number(1), "agentInfo": .object(["name": .string("x")])]
             if let meta { object["_meta"] = meta }
             XCTAssertNil(ACPInitializeParser.parse(result: .object(object))?.gateway, "\(String(describing: meta))")
@@ -40,13 +40,13 @@ final class GatewayClientTests: XCTestCase {
 
     func testProjectsDecodeAndSendTheMethodWithNoParams() async throws {
         let fake = FakeGateway()
-        fake.results["_agmente/projects/list"] = .object(["projects": .array([
+        fake.results["_acpcode/projects/list"] = .object(["projects": .array([
             .object(["id": .string("a1"), "name": .string("Site"), "path": .string("/srv/site"), "defaultMode": .string("plan")]),
             .object(["id": .string("b2"), "name": .string("API"), "path": .string("/srv/api"), "defaultMode": .null]),
         ])])
         let projects = try await GatewayClient(fake).projects()
         XCTAssertEqual(projects, [GatewayProject(id: "a1", name: "Site", path: "/srv/site", defaultMode: "plan"), GatewayProject(id: "b2", name: "API", path: "/srv/api", defaultMode: nil)])
-        XCTAssertEqual(fake.calls.map(\.method), ["_agmente/projects/list"])
+        XCTAssertEqual(fake.calls.map(\.method), ["_acpcode/projects/list"])
     }
 
     func testSessionsDecodeEveryStatusAndAnUnknownOneAndFilterByProject() async throws {
@@ -55,7 +55,7 @@ final class GatewayClientTests: XCTestCase {
             .object(["sessionId": .string(id), "projectId": .string("a1"), "title": id == "s1" ? .null : .string("Fix \(id)"),
                      "status": .string(status), "lastActivity": .string("2026-11-06T08:08:11.638Z"), "headSeq": .number(12), "unread": .number(2)])
         }
-        fake.results["_agmente/sessions/index"] = .object(["sessions": .array([row("s1", "idle"), row("s2", "running"), row("s3", "awaiting_approval"), row("s4", "error"), row("s5", "paused")])])
+        fake.results["_acpcode/sessions/index"] = .object(["sessions": .array([row("s1", "idle"), row("s2", "running"), row("s3", "awaiting_approval"), row("s4", "error"), row("s5", "paused")])])
         let sessions = try await GatewayClient(fake).sessions(projectId: "a1")
         XCTAssertEqual(sessions.map(\.status), [.idle, .running, .awaitingApproval, .error, .unknown("paused")])
         XCTAssertEqual(sessions[0].title, nil)
@@ -86,7 +86,7 @@ final class GatewayClientTests: XCTestCase {
             XCTAssertEqual(error as? GatewayError, .disconnected)
         }
         fake.error = nil
-        fake.results["_agmente/projects/list"] = .object(["projects": .string("not a list")])
+        fake.results["_acpcode/projects/list"] = .object(["projects": .string("not a list")])
         do {
             _ = try await GatewayClient(fake).projects()
             XCTFail("expected an error")
@@ -120,20 +120,20 @@ final class GatewayEventTests: XCTestCase {
 
     func testTurnStartedBecomesOneUserMessageChunkPerPromptBlock() {
         let blocks: [ACP.Value] = [.object(["type": .string("text"), "text": .string("fix it")]), .object(["type": .string("image"), "data": .string("AAAA"), "mimeType": .string("image/png")])]
-        let parsed = GatewayEvent.parse(event(1, .object(["method": .string("_agmente/turn_started"), "params": .object(["sessionId": .string("s1"), "prompt": .array(blocks)])])))
+        let parsed = GatewayEvent.parse(event(1, .object(["method": .string("_acpcode/turn_started"), "params": .object(["sessionId": .string("s1"), "prompt": .array(blocks)])])))
         guard case .userPrompt(let updates)? = parsed?.action else { return XCTFail("\(String(describing: parsed?.action))") }
         XCTAssertEqual(updates.count, 2)
         XCTAssertEqual(updates[0], .object(["sessionId": .string("s1"), "update": .object(["sessionUpdate": .string("user_message_chunk"), "content": blocks[0]])]))
         XCTAssertEqual(updates[1]["update"]?["content"], blocks[1])
-        let empty = GatewayEvent.parse(event(1, .object(["method": .string("_agmente/turn_started"), "params": .object(["sessionId": .string("s1")])])))
+        let empty = GatewayEvent.parse(event(1, .object(["method": .string("_acpcode/turn_started"), "params": .object(["sessionId": .string("s1")])])))
         XCTAssertEqual(empty?.action, .userPrompt([]))
     }
 
     func testAPermissionRequestKeepsTheGatewayIdForTheAnswer() {
         let params: ACP.Value = .object(["sessionId": .string("s1"), "toolCall": .object(["toolCallId": .string("c1")]), "options": .array([])])
-        let parsed = GatewayEvent.parse(event(4, .object(["jsonrpc": .string("2.0"), "id": .string("agmente-perm-7"), "method": .string("session/request_permission"), "params": params])))
+        let parsed = GatewayEvent.parse(event(4, .object(["jsonrpc": .string("2.0"), "id": .string("acpcode-perm-7"), "method": .string("session/request_permission"), "params": params])))
         guard case .permissionRequest(let request)? = parsed?.action else { return XCTFail() }
-        XCTAssertEqual(request.id, .string("agmente-perm-7"))
+        XCTAssertEqual(request.id, .string("acpcode-perm-7"))
         XCTAssertEqual(request.method, "session/request_permission")
         XCTAssertEqual(request.params, params)
         let noId = GatewayEvent.parse(event(4, .object(["method": .string("session/request_permission"), "params": params])))
@@ -142,16 +142,16 @@ final class GatewayEventTests: XCTestCase {
 
     func testTurnEndedCarriesTheStopReasonOrTheError() {
         func action(_ params: ACP.Value) -> GatewayEventAction? {
-            GatewayEvent.parse(event(9, .object(["method": .string("_agmente/turn_ended"), "params": params])))?.action
+            GatewayEvent.parse(event(9, .object(["method": .string("_acpcode/turn_ended"), "params": params])))?.action
         }
         XCTAssertEqual(action(.object(["sessionId": .string("s1"), "stopReason": .string("end_turn")])), .turnEnded(stopReason: "end_turn", error: nil))
         XCTAssertEqual(action(.object(["sessionId": .string("s1"), "error": .object(["code": .int(-32000), "message": .string("agent exited")])])), .turnEnded(stopReason: nil, error: "agent exited"))
     }
 
     func testApprovalAnsweredAndUnknownMethods() {
-        let answered = GatewayEvent.parse(event(5, .object(["method": .string("_agmente/approval_answered"), "params": .object(["sessionId": .string("s1"), "approvalId": .string("agmente-perm-7"), "answeredBy": .string("owner/phone"), "outcome": .object([:])])])))
-        XCTAssertEqual(answered?.action, .approvalAnswered(approvalId: "agmente-perm-7"))
-        XCTAssertEqual(GatewayEvent.parse(event(6, .object(["method": .string("_agmente/future_thing")])))?.action, .other(method: "_agmente/future_thing"))
+        let answered = GatewayEvent.parse(event(5, .object(["method": .string("_acpcode/approval_answered"), "params": .object(["sessionId": .string("s1"), "approvalId": .string("acpcode-perm-7"), "answeredBy": .string("owner/phone"), "outcome": .object([:])])])))
+        XCTAssertEqual(answered?.action, .approvalAnswered(approvalId: "acpcode-perm-7"))
+        XCTAssertEqual(GatewayEvent.parse(event(6, .object(["method": .string("_acpcode/future_thing")])))?.action, .other(method: "_acpcode/future_thing"))
     }
 
     func testSequenceAppliesInOrderDropsRepeatsAndReportsGaps() {
@@ -171,8 +171,8 @@ final class GatewayEventTests: XCTestCase {
 
     func testSubscribeAndMarkReadSendTheDocumentedParams() async throws {
         let fake = FakeGateway()
-        fake.results["_agmente/sessions/subscribe"] = .object(["headSeq": .int(42)])
-        fake.results["_agmente/sessions/read"] = .object(["lastSeenSeq": .int(40)])
+        fake.results["_acpcode/sessions/subscribe"] = .object(["headSeq": .int(42)])
+        fake.results["_acpcode/sessions/read"] = .object(["lastSeenSeq": .int(40)])
         let client = GatewayClient(fake)
         let head = try await client.subscribe(sessionId: "s1", afterSeq: 17)
         XCTAssertEqual(head, 42)
@@ -180,7 +180,7 @@ final class GatewayEventTests: XCTestCase {
         let seen = try await client.markRead(sessionId: "s1", seq: 41)
         XCTAssertEqual(seen, 40)
         XCTAssertEqual(fake.calls.last?.params, .object(["sessionId": .string("s1"), "seq": .int(41)]))
-        fake.results["_agmente/sessions/subscribe"] = .object([:])
+        fake.results["_acpcode/sessions/subscribe"] = .object([:])
         do {
             _ = try await client.subscribe(sessionId: "s1", afterSeq: 0)
             XCTFail("expected an error")
@@ -207,13 +207,13 @@ final class GatewayApprovalTests: XCTestCase {
 
     func testPendingApprovalsDecodeWithTheirToolCallAndOptions() async throws {
         let fake = FakeGateway()
-        fake.results["_agmente/approvals/pending"] = .object(["approvals": .array([
-            approval("agmente-perm-1", input: .object(["command": .string("rm -rf build")])),
-            approval("agmente-perm-2", session: "s2", input: .string("plain text input")),
-            approval("agmente-perm-3"),
+        fake.results["_acpcode/approvals/pending"] = .object(["approvals": .array([
+            approval("acpcode-perm-1", input: .object(["command": .string("rm -rf build")])),
+            approval("acpcode-perm-2", session: "s2", input: .string("plain text input")),
+            approval("acpcode-perm-3"),
         ])])
         let list = try await GatewayClient(fake).pendingApprovals()
-        XCTAssertEqual(list.map(\.approvalId), ["agmente-perm-1", "agmente-perm-2", "agmente-perm-3"])
+        XCTAssertEqual(list.map(\.approvalId), ["acpcode-perm-1", "acpcode-perm-2", "acpcode-perm-3"])
         XCTAssertEqual(list[0].title, "Run echo")
         XCTAssertEqual(list[0].kind, "execute")
         XCTAssertEqual(list[0].detail, "rm -rf build")
@@ -223,7 +223,7 @@ final class GatewayApprovalTests: XCTestCase {
         XCTAssertEqual(list[0].options.map(\.optionId), ["proceed_once", "cancel"])
         XCTAssertEqual(list[0].options.map(\.isAllow), [true, false])
         XCTAssertEqual(list[0].sinceDate, Date(timeIntervalSince1970: 1_793_952_491.638))
-        XCTAssertEqual(fake.calls.last?.method, "_agmente/approvals/pending")
+        XCTAssertEqual(fake.calls.last?.method, "_acpcode/approvals/pending")
     }
 
     func testAToolCallWithNoTitleStillShows() {
@@ -235,12 +235,12 @@ final class GatewayApprovalTests: XCTestCase {
 
     func testAnswerAndCancelSendTheDocumentedParams() async throws {
         let fake = FakeGateway()
-        fake.results["_agmente/approvals/answer"] = .object([:])
+        fake.results["_acpcode/approvals/answer"] = .object([:])
         let client = GatewayClient(fake)
-        try await client.answerApproval(approvalId: "agmente-perm-1", optionId: "proceed_once")
-        XCTAssertEqual(fake.calls.last?.params, .object(["approvalId": .string("agmente-perm-1"), "optionId": .string("proceed_once")]))
-        try await client.cancelApproval(approvalId: "agmente-perm-2")
-        XCTAssertEqual(fake.calls.last?.params, .object(["approvalId": .string("agmente-perm-2"), "cancelled": .bool(true)]))
+        try await client.answerApproval(approvalId: "acpcode-perm-1", optionId: "proceed_once")
+        XCTAssertEqual(fake.calls.last?.params, .object(["approvalId": .string("acpcode-perm-1"), "optionId": .string("proceed_once")]))
+        try await client.cancelApproval(approvalId: "acpcode-perm-2")
+        XCTAssertEqual(fake.calls.last?.params, .object(["approvalId": .string("acpcode-perm-2"), "cancelled": .bool(true)]))
     }
 
     func testAnswerElsewhereIsRecognisedAndOtherErrorsAreNot() async {

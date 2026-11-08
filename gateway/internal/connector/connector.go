@@ -31,8 +31,8 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
 )
 
 // Options is what the connector needs from the rest of the gateway.

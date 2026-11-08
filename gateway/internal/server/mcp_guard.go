@@ -14,8 +14,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // mcpMethods are the requests that carry an mcpServers list.

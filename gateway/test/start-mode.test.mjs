@@ -9,7 +9,7 @@ test('session/new forwards _meta["bob/mode"] to the agent, and the agent starts 
   const gw = await startGateway();
   try {
     const ws = (await connect(gw.url, auth())).ws;
-    const created = await rpc(ws, '_agmente/projects/create', { name: 'modes', path: gw.dirs.project, defaultMode: 'plan' });
+    const created = await rpc(ws, '_acpcode/projects/create', { name: 'modes', path: gw.dirs.project, defaultMode: 'plan' });
     assert.equal(created.result.project.defaultMode, 'plan');
 
     const withMode = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [], _meta: { 'bob/mode': 'plan' } });

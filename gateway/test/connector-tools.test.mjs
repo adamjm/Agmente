@@ -9,8 +9,8 @@ import { FAKE_AGENT, rpc, startGateway, useProject } from './helpers.mjs';
 import { PUBLIC_ORIGIN, freePort, phone, grantToken, callTool } from './connector-helpers.mjs';
 
 const SECRET = 'SECRET-D2-PROMPT-7731';
-const usageAgent = { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'AGMENTE_TEST_USAGE'] };
-const usageEnv = { AGMENTE_TEST_USAGE: JSON.stringify([{ used: 1200, size: 200000, cost: { amount: 0.42, currency: 'USD' } }]) };
+const usageAgent = { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'ACPCODE_TEST_USAGE'] };
+const usageEnv = { ACPCODE_TEST_USAGE: JSON.stringify([{ used: 1200, size: 200000, cost: { amount: 0.42, currency: 'USD' } }]) };
 
 /** A gateway with the connector on. `agent` and `env` let a test report usage from the fake agent. */
 async function start({ connector = {}, limits = {}, agent, env = {} } = {}) {

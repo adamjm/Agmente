@@ -12,7 +12,7 @@ requires:
 
 # Setup
 
-- Build and launch Agmente on a clean simulator.
+- Build and launch ACP Code on a clean simulator.
 - Add an ACP server named `Copilot ACP E2E` that points to `localhost:8765`.
 - Use a valid host working directory such as `/tmp`.
 - Confirm the server initializes and shows a Copilot version card.
@@ -20,7 +20,7 @@ requires:
 # Steps
 
 1. Start the Copilot ACP backend from `e2e/backends/copilot-acp.md`.
-2. Verify the Agmente empty state before creating a session.
+2. Verify the ACP Code empty state before creating a session.
 3. Trigger session refresh and confirm sessions can be listed for known cwd values.
 4. Create a fresh session.
 5. Send `Reply with exactly: Hello from Copilot ACP E2E.`
@@ -54,4 +54,4 @@ requires:
 # Cleanup
 
 - Stop the backend with the command from `e2e/backends/copilot-acp.md`.
-- Uninstall Agmente from the simulator.
+- Uninstall ACP Code from the simulator.

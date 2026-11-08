@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/store"
 )
 
 const (
@@ -216,7 +216,7 @@ func (r podmanRunner) execOnce(ctx context.Context, p store.Project, home string
 	if _, err := rand.Read(suffix[:]); err != nil {
 		return gitResult{}, err
 	}
-	name := "agmente-git-" + p.ID + "-" + hex.EncodeToString(suffix[:])
+	name := "acpcode-git-" + p.ID + "-" + hex.EncodeToString(suffix[:])
 	cmd := exec.Command(r.cfg.Runner.Podman, r.gitArgs(name, p, home, argv, extraEnv)...)
 	cmd.Env = os.Environ()
 	res, err := runCapped(ctx, cmd, stdin)

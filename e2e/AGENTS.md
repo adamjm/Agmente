@@ -1,4 +1,4 @@
-# Agmente E2E Scenarios Guide
+# ACP Code E2E Scenarios Guide
 
 ## Scope
 Repository-owned end-to-end scenario specifications, reusable backend definitions, shared assertions, and contribution rules for simulator/manual protocol validation.

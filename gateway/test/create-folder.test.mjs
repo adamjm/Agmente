@@ -1,4 +1,4 @@
-// Folder creation from the phone over the wire (D-091): `_agmente/projects/create` with
+// Folder creation from the phone over the wire (D-091): `_acpcode/projects/create` with
 // `createFolder: true` makes <path>/<name> and registers it. The path-based call is unchanged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,7 +7,7 @@ import { mkdir, symlink, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { auth, connect, rpc, startGateway } from './helpers.mjs';
 
-const create = (ws, params) => rpc(ws, '_agmente/projects/create', params);
+const create = (ws, params) => rpc(ws, '_acpcode/projects/create', params);
 const folderParams = (gw, name, extra = {}) => ({ createFolder: true, name, path: gw.dirs.root, ...extra });
 
 test('createFolder makes <path>/<name> with mode 0755, registers it and audits the creation', async () => {
@@ -33,7 +33,7 @@ test('createFolder makes <path>/<name> with mode 0755, registers it and audits t
     const session = await rpc(ws, 'session/new', { cwd: folder, mcpServers: [] });
     assert.equal(typeof session.result?.sessionId, 'string', JSON.stringify(session.error));
 
-    const list = (await rpc(ws, '_agmente/projects/list', {})).result.projects;
+    const list = (await rpc(ws, '_acpcode/projects/list', {})).result.projects;
     assert.deepEqual(list.map((p) => p.id), [project.id]);
 
     const line = await gw.waitForAudit((l) => l.event === 'project_created' && l.project === project.id);
@@ -76,7 +76,7 @@ test('the name rules: single component, no leading dot, no empty, at most 64, th
     }
     // Nothing was created in the root, and nothing was registered.
     assert.deepEqual(readdirSync(gw.dirs.root).sort(), ['project']);
-    assert.deepEqual((await rpc(ws, '_agmente/projects/list', {})).result.projects, []);
+    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
 
     // The edges that are allowed: 64 characters, every allowed character class.
     for (const name of ['x'.repeat(64), 'My-app_v1.2 beta']) {
@@ -118,7 +118,7 @@ test('a parent outside the roots is refused, and so is a path that is not clean'
     assert.equal(existsSync(join(gw.dirs.outside, 'new-one')), false);
     assert.equal(existsSync(join(sibling, 'new-one')), false);
     assert.equal(existsSync(join(gw.dirs.root, 'new-one')), false);
-    assert.deepEqual((await rpc(ws, '_agmente/projects/list', {})).result.projects, []);
+    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
     ws.close();
   } finally {
     await gw.stop();
@@ -165,7 +165,7 @@ test('a name that already exists is refused in create mode, whatever it is, and 
     const existing = await create(ws, folderParams(gw, 'project'));
     assert.equal(existing.error?.code, -32602);
     assert.match(existing.error.message, /already exists/);
-    assert.deepEqual((await rpc(ws, '_agmente/projects/list', {})).result.projects, []);
+    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
 
     // A file of that name, and a symbolic link of that name (even a dangling one): both exist.
     await writeFile(join(gw.dirs.root, 'notes'), 'keep me');
@@ -263,15 +263,15 @@ test('projects/roots lists the configured roots that exist, as realpaths, and on
   });
   try {
     const { ws } = await connect(gw.url, auth());
-    const res = await rpc(ws, '_agmente/projects/roots', {});
+    const res = await rpc(ws, '_acpcode/projects/roots', {});
     // The missing root and the repeated root are left out.
     assert.deepEqual(res.result, { roots: [gw.dirs.root, second] });
     // A root removed after start is no longer offered.
     rmdirSync(second);
-    const after = await rpc(ws, '_agmente/projects/roots', {});
+    const after = await rpc(ws, '_acpcode/projects/roots', {});
     assert.deepEqual(after.result, { roots: [gw.dirs.root] });
     // Listing roots changes nothing.
-    assert.deepEqual((await rpc(ws, '_agmente/projects/list', {})).result.projects, []);
+    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
     ws.close();
   } finally {
     await gw.stop();

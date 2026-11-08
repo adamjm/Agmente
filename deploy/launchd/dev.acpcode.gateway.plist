@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent template for the ACPCode gateway on a Mac (D-098). Status: template, not installed.
+  Replace every /Users/you path with your own. Do not install it from the repo as is.
+
+  Install (a user agent, because the Apple container CLI and the project folders belong to your user):
+    mkdir -p /Users/you/acpcode/state/logs
+    cp deploy/launchd/dev.acpcode.gateway.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.acpcode.gateway.plist
+
+  Stop and remove (this stops running project agents; do it when no session is running):
+    launchctl bootout gui/$(id -u)/dev.acpcode.gateway
+
+  BOB_API_KEY is not in this file. The command loads it from a secrets file outside the repo, with
+  NAME=value lines (docs/MAC-SETUP.md, step 6). The file must be readable only by you (chmod 600).
+  KeepAlive restarts the gateway after a crash. A config error makes it restart every
+  ThrottleInterval seconds, so run `gateway/bin/acpcode-gateway --config ... --dry-run` first.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.acpcode.gateway</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>set -a; . /Users/you/acpcode/secrets.env; set +a; exec /Users/you/acpcode/repo/gateway/bin/acpcode-gateway --config /Users/you/acpcode/config.json</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/you/acpcode</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- The agent sees only the variables in agent.envPassthrough. PATH must find `bob`. -->
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+
+	<key>StandardOutPath</key>
+	<string>/Users/you/acpcode/state/logs/gateway.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/you/acpcode/state/logs/gateway.err.log</string>
+</dict>
+</plist>

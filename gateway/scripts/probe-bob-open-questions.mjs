@@ -7,7 +7,7 @@
 // Why Bob's own stdio and not the gateway: the gateway answers session/load and session/resume
 // itself for a live session (D-029), so going through it would hide the behaviour under test.
 // Bob runs as `bob acp --accept-license --log-level warn` (no --auto-approve, no --trust) in a
-// scratch project under ~/.agmente-live/ with a disposable HOME. Every permission request is
+// scratch project under ~/.acpcode-live/ with a disposable HOME. Every permission request is
 // answered here: allow once only for the probe's own tool (make_image, ping_http); reject the rest.
 // Output: one line per observation. Raw traffic is kept in the scratch folder and removed unless --keep.
 import { spawn, execFileSync } from 'node:child_process';
@@ -48,8 +48,8 @@ log(`bob: ${bobPath}; BOB_API_KEY set: ${key.length > 0}`);
 const bobVersion = execFileSync(bobPath, ['--version'], { encoding: 'utf8' }).split('\n')[0].trim();
 log(`bob version: ${bobVersion}`);
 
-// --- scratch folders (under ~/.agmente-live, not the repo) -------------------
-const liveDir = join(homedir(), '.agmente-live');
+// --- scratch folders (under ~/.acpcode-live, not the repo) -------------------
+const liveDir = join(homedir(), '.acpcode-live');
 await mkdir(liveDir, { recursive: true });
 const base = await realpath(await mkdtemp(join(liveDir, `openq-${new Date().toISOString().slice(0, 10)}-`)));
 const project = join(base, 'root', 'proj');

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/store"
 )
 
 const secretValue = "secret-value-never-in-argv-5d1e"
@@ -75,7 +75,7 @@ func TestContainerRunnersPassSecretByNameOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := secretsRunnerConfig(t, 0o600, []string{"bob", "acp", "--accept-license"})
-	cfg.Runner = config.Runner{Kind: "podman", Image: "agmente-bob:2.0.9", Podman: stub}
+	cfg.Runner = config.Runner{Kind: "podman", Image: "acpcode-bob:2.0.9", Podman: stub}
 	t.Setenv("BOB_API_KEY", "gateway-env-value-must-lose")
 	home := filepath.Join(t.TempDir(), "home")
 	project := store.Project{ID: "0123456789ab", Path: t.TempDir()}
@@ -101,7 +101,7 @@ func TestContainerRunnersPassSecretByNameOnly(t *testing.T) {
 
 	// The Apple runner builds the same kind of command: the name only.
 	apple := cfg
-	apple.Runner = config.Runner{Kind: "apple", Image: "localhost/agmente-bob:2.0.9", Container: "/opt/homebrew/bin/container"}
+	apple.Runner = config.Runner{Kind: "apple", Image: "localhost/acpcode-bob:2.0.9", Container: "/opt/homebrew/bin/container"}
 	if aargs := newAppleRunner(apple).agentArgs(project, home); argvHasValue(aargs) || !containsPair(aargs, "-e", "BOB_API_KEY") {
 		t.Fatalf("apple args: %q", aargs)
 	}
@@ -137,12 +137,12 @@ func TestSecretEnvWithoutFileIsEmpty(t *testing.T) {
 func TestAgentArgvNeverHasTrust(t *testing.T) {
 	command := []string{"bob", "acp", "--accept-license", "--log-level", "warn"}
 	project := store.Project{ID: "0123456789ab", Path: t.TempDir()}
-	home := "/var/lib/agmente/state/homes/0123456789ab"
+	home := "/var/lib/acpcode/state/homes/0123456789ab"
 	cfg := &config.Config{AgentCommand: command, EnvPassthrough: []string{"PATH", "HOME", "BOB_API_KEY"},
-		Runner: config.Runner{Kind: "podman", Image: "agmente-bob:2.0.9", Podman: "podman"}}
+		Runner: config.Runner{Kind: "podman", Image: "acpcode-bob:2.0.9", Podman: "podman"}}
 	argvs := map[string][]string{
 		"podman": podmanRunner{cfg: cfg}.args(project, home),
-		"apple":  newAppleRunner(&config.Config{AgentCommand: command, EnvPassthrough: []string{"PATH", "HOME"}, Runner: config.Runner{Kind: "apple", Image: "localhost/agmente-bob:2.0.9"}}).agentArgs(project, home),
+		"apple":  newAppleRunner(&config.Config{AgentCommand: command, EnvPassthrough: []string{"PATH", "HOME"}, Runner: config.Runner{Kind: "apple", Image: "localhost/acpcode-bob:2.0.9"}}).agentArgs(project, home),
 	}
 	// Host runner: its command is built inline by start, so run a real command with the same argv.
 	hostCfg := &config.Config{AgentCommand: []string{"/bin/sh", "-c", "sleep 5", "bob", "acp", "--accept-license", "--log-level", "warn"}, EnvPassthrough: []string{"PATH"}, Runner: config.Runner{Kind: "host"}}

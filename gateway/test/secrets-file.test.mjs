@@ -73,7 +73,7 @@ test('a secrets file that became unreadable stops the agent start with a generic
   try {
     const { ws } = await connect(gw.url, auth());
     await chmod(file, 0o644);
-    const res = await rpc(ws, '_agmente/projects/create', { name: 'p', path: dirs.project });
+    const res = await rpc(ws, '_acpcode/projects/create', { name: 'p', path: dirs.project });
     assert.ok(res.result?.project, 'the project is registered');
     const started = await rpc(ws, 'session/new', { cwd: dirs.project, mcpServers: [] });
     assert.equal(started.error?.code, -32000);

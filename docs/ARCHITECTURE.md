@@ -15,11 +15,11 @@ Read with [SPEC.md](SPEC.md). Decision IDs (D-n) refer to [DECISIONS.md](DECISIO
 | Gateway: project data (phases 3, 5, 6) | `git.go`, `gitexec.go`, `snapshot.go`, `watch.go`; planned `files/`, `mcp/`, `skills/` | Read-only git (D-034, D-035); later signed file URLs, MCP and skill config. | `gateway/internal/server/` |
 | Gateway: notify (phase 3) | `push/`, `push_deliver.go` | APNs payloads (D-038), token-based auth, HTTP/2 send, cleanup and retry (D-053); triggers and suppression (D-054). | `gateway/internal/push/`, `gateway/internal/server/` |
 | Project runtime | One container per project | Run `bob acp` and git as the project user. Podman on Linux, Apple `container` on a Mac (D-079). | `deploy/` (planned); Mac: `docs/MAC-SETUP.md` |
-| App: transport | `AgmenteTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `AgmenteTransport/`, upstream folders |
-| App: security | Keychain store | Tokens, client identity, MCP headers. | `Agmente/Security/` (new) |
-| App: features | Home, Git, Preview, MCP, Skills screens | UI for the gateway features. | `Agmente/Fork/` (new) |
+| App: transport | `ACPCodeTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `ACPCodeTransport/`, upstream folders |
+| App: security | Keychain store | Tokens, client identity, MCP headers. | `ACPCode/Security/` (new) |
+| App: features | Home, Git, Preview, MCP, Skills screens | UI for the gateway features. | `ACPCode/Fork/` (new) |
 
-Rule: new app code goes in new files under `Agmente/Fork/` and `Agmente/Security/`. Edits to upstream files stay small hooks (D-005).
+Rule: new app code goes in new files under `ACPCode/Fork/` and `ACPCode/Security/`. Edits to upstream files stay small hooks (D-005).
 
 ## 2. Data flows
 
@@ -110,7 +110,7 @@ Phone ─session/new, session/resume (mcpServers)─▶ Gateway: list kept in me
 ```
 
 - **Host-path rule (D-085, D-085a).** The gateway reads and writes Bob's config and skill files directly on the host, through the project folder and the home (bind mounts). It never runs `container exec` for them, and a write needs no container start. Modes: 0600 for `mcp.json`, 0644 for `SKILL.md`.
-- **Phone-owned list (D-084).** The phone owns the MCP server list and sends it in `session/new` and `session/resume`. The gateway never writes an HTTP server into a file. `_agmente/mcp/set` only changes `disabled`, and `alwaysAllow` per D-089, on servers already in a file.
+- **Phone-owned list (D-084).** The phone owns the MCP server list and sends it in `session/new` and `session/resume`. The gateway never writes an HTTP server into a file. `_acpcode/mcp/set` only changes `disabled`, and `alwaysAllow` per D-089, on servers already in a file.
 - **Kept per session (D-088, D-088a).** The gateway keeps the list the phone last sent for each live session, in memory only, and sends it on its own load after an idle stop or restart. It is dropped when the phone closes or deletes the session, or the gateway stops. A changed list reaches a live session only on a new session or reload (RESULTS 2026-11-07, Phase 6A).
 - **Container reachability.** An HTTP MCP server for a container-run agent must listen on an address the container can reach, not loopback on the Mac. The Apple container check (RESULTS 2026-11-07) used the Mac's LAN address. See [MAC-SETUP.md](MAC-SETUP.md) section 9.
 - **URL rule (`mcp_guard.go`).** https to any host; http to a loopback host only.
@@ -126,7 +126,7 @@ Phone ─session/new, session/resume (mcpServers)─▶ Gateway: list kept in me
 ## 4. Design choices
 
 - Go gateway with one dependency, `coder/websocket`, checked by a wire-level test suite in Node. See D-021, which supersedes D-001.
-- ACP on the wire, plus `_agmente/*` methods. See D-002.
+- ACP on the wire, plus `_acpcode/*` methods. See D-002.
 - Mutual TLS at Caddy and hashed bearer tokens at the gateway. See D-003.
 - Phases ordered so that no-credential work comes first; sessions and git are built against a fake agent. See D-004.
 - Gateway lives in `gateway/` in the fork. See D-005.

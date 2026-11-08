@@ -1,4 +1,4 @@
-# Agmente fork: iPad and UX critique and build plan
+# ACP Code fork: iPad and UX critique and build plan
 
 Date: 2026-11-07. Author: design review agent. Status: plan only. No code was edited, built, installed or launched.
 
@@ -8,18 +8,18 @@ Goal: (a) make the app a good universal iPhone and iPad app with native iPad UI;
 
 Skills loaded: frontend-design, design-critique, accessibility-review, design-system. All four loaded without error.
 
-Method: read `Agmente/CLAUDE.md`, `docs/SPEC.md`, `ARCHITECTURE.md`, `PLAN.md`, `DECISIONS.md` (as provided), the Xcode project settings, `Info.plist`, and these UI files in full or in the parts that matter: `ContentView.swift`, `Fork/Gateway/*`, `SessionDetailView.swift`, `SettingsView.swift`, `ServerManagementViews.swift`, `Fork/Git/GitView.swift`, `SessionSupplementalViews.swift`, `SessionSidebarView.swift`, `SessionWindowStore.swift`, `AgmenteApp.swift`, `PromptComposerCommands.swift`, and the UIKit transcript in `ChatRendering/`. I did not read `CodexSessionDetailView.swift` line by line (it mirrors `SessionDetailView.swift`; every hook below must be applied to both, and ACP and Codex stay separate per `Agents.md`). I did not read the MCP, Skills or Elicitation views in full.
+Method: read `ACPCode/CLAUDE.md`, `docs/SPEC.md`, `ARCHITECTURE.md`, `PLAN.md`, `DECISIONS.md` (as provided), the Xcode project settings, `Info.plist`, and these UI files in full or in the parts that matter: `ContentView.swift`, `Fork/Gateway/*`, `SessionDetailView.swift`, `SettingsView.swift`, `ServerManagementViews.swift`, `Fork/Git/GitView.swift`, `SessionSupplementalViews.swift`, `SessionSidebarView.swift`, `SessionWindowStore.swift`, `ACPCodeApp.swift`, `PromptComposerCommands.swift`, and the UIKit transcript in `ChatRendering/`. I did not read `CodexSessionDetailView.swift` line by line (it mirrors `SessionDetailView.swift`; every hook below must be applied to both, and ACP and Codex stay separate per `Agents.md`). I did not read the MCP, Skills or Elicitation views in full.
 
 Limits of this critique:
 - It is from code, not from screenshots of a running app. Anything about on-screen behaviour is marked "verify". The first plan phase produces the baseline screenshots.
 - Contrast ratios were computed in `scratchpad/contrast.py` from iOS system colour values as I remember them (approximate). Phase 1 adds a test that resolves the real `UIColor` values.
 - API availability in section 5 is from memory of the SDK. None was re-read this session. Per CLAUDE.md, every row is "verify" until checked against the `@available` annotations in Xcode.
-- The task says upstream edits stay small hooks (D-005). CLAUDE.md line 31 says upstream files "may be changed freely" (D-017, no upstream merges). These conflict. I followed the task: new code in `Agmente/Fork/`, upstream edits listed one by one in section 6.2.
+- The task says upstream edits stay small hooks (D-005). CLAUDE.md line 31 says upstream files "may be changed freely" (D-017, no upstream merges). These conflict. I followed the task: new code in `ACPCode/Fork/`, upstream edits listed one by one in section 6.2.
 - Line numbers drift: the brief said `SessionListPage` about line 437; it is at `ContentView.swift:503`. `SessionRow` is at `:1505`, `NewSessionSheet` at `:1577`.
 
 ## 1. Facts found
 
-### 1.1 Project settings (Agmente.xcodeproj, Debug and Release identical)
+### 1.1 Project settings (ACPCode.xcodeproj, Debug and Release identical)
 
 | Setting | Value |
 | --- | --- |
@@ -33,7 +33,7 @@ Limits of this critique:
 | `UIRequiresFullScreen` | not set. The app is allowed in Split View, Slide Over and Stage Manager. |
 | `UIApplicationSupportsMultipleScenes` | not set (generated scene manifest). No "New Window" on iPad today. |
 | `UIApplicationSupportsIndirectInputEvents` | YES. Pointer and trackpad events reach the app. |
-| Project style | `objectVersion = 77` synchronized folders: new files under `Agmente/Fork/` join the target with no project-file edit (PLAN, phase 2 notes). |
+| Project style | `objectVersion = 77` synchronized folders: new files under `ACPCode/Fork/` join the target with no project-file edit (PLAN, phase 2 notes). |
 
 Simulators available on this Mac (listed, not booted): iPad Pro 13-inch (M5), iPad Pro 11-inch (M5), iPad Air 13-inch (M4), iPad Air 11-inch (M4), iPad mini (A20 Pro), iPad (A16), plus iPhone 17, 17e, Air, 18 Pro, 18 Pro Max, iPhone Duo.
 
@@ -42,7 +42,7 @@ Simulators available on this Mac (listed, not booted): iPad Pro 13-inch (M5), iP
 Almost none.
 - Zero uses of `horizontalSizeClass`, `userInterfaceIdiom`, `ViewThatFits`, `ScaledMetric`, `.popover`, `.inspector`, `.hoverEffect`, `.keyboardShortcut` (outside macOS commands), `dropDestination`, `UIScreen`.
 - `NavigationSplitView` exists once, inside `#if os(macOS)` (`ContentView.swift:54`). iOS, including every iPad, gets one `NavigationStack(path:)` (`:63`). So an iPad shows the phone layout stretched.
-- `PromptComposerCommands` (send with Command-Return, cancel with Command-period) is compiled only for `macOS || macCatalyst` (`PromptComposerCommands.swift:26`, `AgmenteApp.swift:17`). The `focusedSceneValue` that feeds it is set on iOS too (`SessionDetailView.swift:564`) but nothing consumes it.
+- `PromptComposerCommands` (send with Command-Return, cancel with Command-period) is compiled only for `macOS || macCatalyst` (`PromptComposerCommands.swift:26`, `ACPCodeApp.swift:17`). The `focusedSceneValue` that feeds it is set on iOS too (`SessionDetailView.swift:564`) but nothing consumes it.
 - `.contextMenu` appears only in `#if os(macOS)` blocks (`ContentView.swift:705`, `:1985`) and once in `SessionDetailView.swift:1528`.
 - `.presentationDetents` appears three times (`SessionDetailView.swift:149`, `PlanModeViews.swift:175`, `ContentView.swift:1666`).
 - There are 18 `.sheet(` sites and no popovers.
@@ -252,7 +252,7 @@ Content column (sessions of the selected scope):
 - Rows: title, one line of preview, project name when the scope is not a single project, relative time, status pill, unread count.
 - Search field at the top of the column; scopes (all, needs you, running) as search scopes (verify).
 - Toolbar: New session (plus), group menu, refresh. Command-N. Pull to refresh stays.
-- Swipe: trailing "Archive" or "Delete" where the server supports it (`canArchiveSessions`, `canDeleteSessionsLocally` exist); leading "Mark read" (gateway `markRead`). Context menu with the same actions plus "Copy session link" (`agmente://session/...` exists in `DeepLink.swift`).
+- Swipe: trailing "Archive" or "Delete" where the server supports it (`canArchiveSessions`, `canDeleteSessionsLocally` exist); leading "Mark read" (gateway `markRead`). Context menu with the same actions plus "Copy session link" (`acpcode://session/...` exists in `DeepLink.swift`).
 - Empty and error states render in this column (section 2.3).
 
 Detail column:
@@ -285,7 +285,7 @@ Detail column:
 - `NavigationSplitView(columnVisibility:preferredCompactColumn:)`, style `.balanced` (verify against `.prominentDetail`). Visibility is stored per scene as a string in `@SceneStorage`. Sidebar scope and selected session id are stored the same way, then validated against the loaded server (an id from another server is dropped).
 - `List(selection:)` on a `String?` session id. Selection set calls `model.openSession(id)` exactly once. The detail view must not call it again: the existing `destinationView` has `.task(id: sessionId) { model.openSession(sessionId) }` (`ContentView.swift:280`); `ForkSplitRoot` passes a detail builder that omits it. Add a test that counts subscribe calls (extend `GatewayOpenTests`).
 - `model.serverSessionId` changes (new session created, deep link, push tap) drive the selection through `ForkNavigationModel`, guarded by equality to avoid a loop. The macOS-style `.onChange(of: model.serverSessionId)` block and the iOS `navigationPath` block in `ContentView` are skipped on iPad.
-- Deep link and push tap (`openLinkedSession`, `.agmenteOpenDeepLink`): on iPad set scope to the session's project and select the session; reveal the detail column in compact mode.
+- Deep link and push tap (`openLinkedSession`, `.acpcodeOpenDeepLink`): on iPad set scope to the session's project and select the session; reveal the detail column in compact mode.
 - Compact collapse adds one level (sidebar, list, conversation). With `preferredCompactColumn = .content`, the person lands on the list.
 
 Fallback if `NavigationSplitView` selection or compact collapse misbehaves on iOS 18 or 26 (it has known quirks; verify on both): a hand-built three-pane `HStack` with `ViewThatFits` and explicit toggles. This loses system sidebar behaviour and is the last resort.
@@ -379,7 +379,7 @@ Rules:
 - Escape closes popovers and sheets (system). Sheets: confirm is the default action only for non-destructive forms.
 - No shortcut or default action may approve a tool call.
 - Hover: `.hoverEffect(.highlight)` and `contentShape(.hoverEffect, ...)` on rows and custom buttons (the plain button style removes system highlights; verify). Context menus on iOS rows. Pointer cursor for text areas is system.
-- Drag and drop: drop images onto the composer (`dropDestination`); drag a session row out as its `agmente://` link.
+- Drag and drop: drop images onto the composer (`dropDestination`); drag a session row out as its `acpcode://` link.
 - Focus: a `FocusState`-based focus ring on list rows and a `defaultFocus` on the composer when a session opens by keyboard (verify against the existing `isTextEditorFocused` scroll logic).
 
 ## 4. Visual system
@@ -428,7 +428,7 @@ Motion: only state-driven (running indicator, row insertion). One orchestrated m
 
 Hit targets: `ForkHitTarget` min 44 x 44. Icon-only buttons require a label (lint test: UI audit).
 
-### 4.2 Components to extract (names in `Agmente/Fork/Design/`)
+### 4.2 Components to extract (names in `ACPCode/Fork/Design/`)
 
 `ForkColor`, `ForkSpacing`, `ForkType`, `ForkStatusPill`, `ForkStatusGlyph`, `ForkConnectionPill`, `ForkConnectionBanner`, `ForkCountBadge`, `ForkRowChrome` (surface, hover, selection, accessibility combine), `ForkHitTarget`, `ForkEmptyState`, `ForkSkeletonRows`.
 
@@ -470,27 +470,27 @@ Devices: iPad Pro 13-inch (M5), iPad Air 11-inch (M4), iPad mini (A20 Pro), iPad
 Orientations: portrait and landscape on each iPad. Appearance: light, dark. Text size: default, Accessibility XL (`accessibility-extra-extra-extra-large`). Increase Contrast on, off for the status screens.
 
 ```
-xcodebuild -project Agmente.xcodeproj -scheme Agmente \
+xcodebuild -project ACPCode.xcodeproj -scheme ACPCode \
   -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' \
   -resultBundlePath build/ipad-pro13.xcresult \
-  test -only-testing:AgmenteUITests/ForkIPadScreenshotTests
+  test -only-testing:ACPCodeUITests/ForkIPadScreenshotTests
 xcrun simctl ui booted appearance dark
 xcrun simctl ui booted content_size accessibility-extra-extra-extra-large
 xcrun simctl ui booted increase_contrast enabled     # verify the subcommand exists on this Xcode
 xcrun xcresulttool export attachments --path build/ipad-pro13.xcresult --output-path docs/design/shots/<date>/ipad-pro13   # verify subcommand
 ```
 
-Existing gate: `scripts/check.sh` and `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test` (CLAUDE.md). Required suites from `Agmente/AGENTS.md` stay green: `CodexServerViewModelTests`, `ViewModelSyncTests`, `ACPSessionViewModelTests`, plus `GatewayHomeTests`, `GatewayOpenTests`, `NewSessionProjectPickTests` here.
+Existing gate: `scripts/check.sh` and `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test` (CLAUDE.md). Required suites from `ACPCode/AGENTS.md` stay green: `CodexServerViewModelTests`, `ViewModelSyncTests`, `ACPSessionViewModelTests`, plus `GatewayHomeTests`, `GatewayOpenTests`, `NewSessionProjectPickTests` here.
 
 Split View, Slide Over and Stage Manager cannot be driven by XCUITest (verify). Those are a manual checklist, not a phase, with screenshots saved to `docs/design/shots/`.
 
-Fixture: screenshots need no live gateway. A DEBUG-only launch argument (`-AgmenteUIFixture gateway-busy`) seeds projects, sessions in every status, two approvals and a canned transcript. Same pattern as the existing DEBUG `ChatComponentGalleryView`. Release builds must contain no fixture code (check: search the Release binary's strings for the fixture name; verify the method).
+Fixture: screenshots need no live gateway. A DEBUG-only launch argument (`-ACPCodeUIFixture gateway-busy`) seeds projects, sessions in every status, two approvals and a canned transcript. Same pattern as the existing DEBUG `ChatComponentGalleryView`. Release builds must contain no fixture code (check: search the Release binary's strings for the fixture name; verify the method).
 
 ### Phase 7.0 — Baseline and harness (no UI change)
 
 Files (new):
-- `Agmente/Fork/Debug/ForkUIFixtures.swift` (`#if DEBUG`), seeds `GatewayHomeModel`, `ApprovalsInboxModel`, a transcript.
-- `AgmenteUITests/ForkIPadScreenshotTests.swift`: launches with the fixture, attaches screenshots per device, orientation, appearance, text size.
+- `ACPCode/Fork/Debug/ForkUIFixtures.swift` (`#if DEBUG`), seeds `GatewayHomeModel`, `ApprovalsInboxModel`, a transcript.
+- `ACPCodeUITests/ForkIPadScreenshotTests.swift`: launches with the fixture, attaches screenshots per device, orientation, appearance, text size.
 - `scripts/ipad-shots.sh`: loops devices and settings (run later).
 - `docs/design/shots/<date>/before/` for output (owner decides whether to commit images).
 
@@ -508,7 +508,7 @@ Risks: UI test flake on cold simulators; the fixture drifting from real gateway 
 
 ### Phase 7.1 — Tokens, status pill, accessibility quick wins (phone and pad)
 
-Files (new): `Agmente/Fork/Design/ForkColor.swift`, `ForkSpacing.swift`, `ForkType.swift`, `ForkStatusPill.swift`, `ForkConnectionPill.swift`, `ForkHitTarget.swift`, `ForkRowChrome.swift`; new colour sets under `Assets.xcassets` (Any, Dark, High Contrast); `docs/DESIGN.md` (token table, component list, a11y rules); `AgmenteTests/ForkTokenContrastTests.swift`.
+Files (new): `ACPCode/Fork/Design/ForkColor.swift`, `ForkSpacing.swift`, `ForkType.swift`, `ForkStatusPill.swift`, `ForkConnectionPill.swift`, `ForkHitTarget.swift`, `ForkRowChrome.swift`; new colour sets under `Assets.xcassets` (Any, Dark, High Contrast); `docs/DESIGN.md` (token table, component list, a11y rules); `ACPCodeTests/ForkTokenContrastTests.swift`.
 
 Upstream hooks (small): `GatewayHomeView.swift` (a Fork file, free to edit): `GatewayStatusBadge` becomes `ForkStatusPill`; `GatewaySessionRow` combined accessibility element and `ViewThatFits`. `ContentView.swift`: server pill (`:384-413`) uses `ForkConnectionPill`; `SessionRow` dot gets a label and token; `SessionCardStyle` and `DeveloperLogRow` use `surface.row` (no `colorScheme` branch); New Session buttons `.disabled(!connected)` and helper text (`:1120,1155,1189,1216`); `ApprovalsBanner` icon colour. `SessionDetailView.swift` (and the Codex twin): labels and 44 pt targets on send and stop, folder, slash, photo, xmark, scroll-to-bottom; send button uses `ink` with a visible disabled state; toolbar ellipsis gets a label. `GitView.swift` chip: hit target.
 
@@ -527,7 +527,7 @@ Risks: new colour sets change the look of the phone app (owner reviews screensho
 
 ### Phase 7.2 — Navigation model and shared state (no visible change on phone)
 
-Files (new): `Agmente/Fork/Navigation/ForkNavigationModel.swift` (scope enum: needsYou, running, all, project(id), folder(path); selected session; inspector tab; column visibility; Codable for `SceneStorage`), `ForkSessionScope.swift` (pure: scope -> sessions, using `GatewayHomeLayout` and a copy of the time and folder grouping), `AgmenteTests/ForkNavigationModelTests.swift`.
+Files (new): `ACPCode/Fork/Navigation/ForkNavigationModel.swift` (scope enum: needsYou, running, all, project(id), folder(path); selected session; inspector tab; column visibility; Codable for `SceneStorage`), `ForkSessionScope.swift` (pure: scope -> sessions, using `GatewayHomeLayout` and a copy of the time and folder grouping), `ACPCodeTests/ForkNavigationModelTests.swift`.
 
 Upstream hooks: `private` removed on `SessionTimeGroup`, `SessionFolderGroup`, `SessionDisplay` in `ContentView.swift` (3 keywords) so the grouping is not copied. `GatewayHomeLayout` gets a pure `triage(sessions)` (Fork file).
 
@@ -542,7 +542,7 @@ Risks: the access-level change is the only upstream touch; the grouping copy ris
 
 ### Phase 7.3 — iPad shell: sidebar, content column, detail
 
-Files (new): `Agmente/Fork/Navigation/ForkSplitRoot.swift`, `ForkSidebarView.swift`, `ForkSessionListColumn.swift`, `ForkSessionRow.swift` (shared with the phone gateway home), `ForkDetailEmptyView.swift`, `AgmenteUITests/ForkIPadLayoutTests.swift`.
+Files (new): `ACPCode/Fork/Navigation/ForkSplitRoot.swift`, `ForkSidebarView.swift`, `ForkSessionListColumn.swift`, `ForkSessionRow.swift` (shared with the phone gateway home), `ForkDetailEmptyView.swift`, `ACPCodeUITests/ForkIPadLayoutTests.swift`.
 
 Upstream hooks: `ContentView.containerView` gets an iPad branch (about 4 lines: `if UIDevice.current.userInterfaceIdiom == .pad { ForkSplitRoot(...) } else { existing }`). `ContentView` `.onChange(of: model.serverSessionId)` and `.onAppear` iOS blocks and `openLinkedSession` skip the `navigationPath` work on iPad and call `ForkNavigationModel` (3 small `if`s). `destinationView` is passed as a closure (no access change). The existing sheets stay at `ContentView` root and are triggered by closures from the sidebar.
 
@@ -564,7 +564,7 @@ Risks: `NavigationSplitView` selection and compact quirks on iOS 18 and 26 (fall
 
 ### Phase 7.4 — Gateway status, "Needs you", connection and loading states (phone and pad)
 
-Files (new): `Agmente/Fork/Gateway/ForkNeedsYouSection.swift`, `ForkConnectionBanner.swift`, `ConnectionFailureCopy.swift` (+ `AgmenteTests/ConnectionFailureCopyTests.swift`), `ForkSkeletonRows.swift`; `GatewayHomeLayout.triage` tests in `GatewayHomeTests`.
+Files (new): `ACPCode/Fork/Gateway/ForkNeedsYouSection.swift`, `ForkConnectionBanner.swift`, `ConnectionFailureCopy.swift` (+ `ACPCodeTests/ConnectionFailureCopyTests.swift`), `ForkSkeletonRows.swift`; `GatewayHomeLayout.triage` tests in `GatewayHomeTests`.
 
 Upstream hooks: `ContentView.swift` phone home: replace the summary card block and `ApprovalsBanner` placement with the new sections (hook calls into Fork views); `summaryCard` content moves to a server header view (Fork).
 
@@ -583,7 +583,7 @@ Risks: which error strings the app really emits per failure class is unverified 
 
 ### Phase 7.5 — Detail column: readable width, inspector, popovers, sheets
 
-Files (new): `Agmente/Fork/Session/ForkReadableColumn.swift` (modifier + width logic), `ForkInspector.swift` (tabs host reusing `GitTabView`, `SessionPlanView`, file-changes review), `ForkPopoverAdaptation.swift` (`presentationCompactAdaptation` and `presentationSizing` helpers), `ForkNewSessionMenu.swift`.
+Files (new): `ACPCode/Fork/Session/ForkReadableColumn.swift` (modifier + width logic), `ForkInspector.swift` (tabs host reusing `GitTabView`, `SessionPlanView`, file-changes review), `ForkPopoverAdaptation.swift` (`presentationCompactAdaptation` and `presentationSizing` helpers), `ForkNewSessionMenu.swift`.
 
 Upstream hooks: `SessionDetailView.swift` and the Codex twin: pass computed `ChatTranscriptInsets` instead of `.zero` (`:354`); composer `frame(maxWidth:)`; one `.forkInspector(...)` modifier; sheets at `:147` and `:151` become popover or inspector on iPad; `confirmationDialog` moved to the triggering button; `GitView.swift` sheet sites route to the inspector on iPad; `ElicitationFormView.swift` adds `.interactiveDismissDisabled(true)`; `ContentView.swift` sheets get `.presentationSizing(.form)` via helper.
 
@@ -602,7 +602,7 @@ Risks: whether `ListViewKit` lays out rows using the scroll view's bounds or its
 
 ### Phase 7.6 — Transcript accessibility and Dynamic Type (UIKit rows)
 
-Files (edit, upstream UIKit): `ChatRendering/HighPerformanceChatListView/ToolCallRowView.swift` (`UIFontMetrics`), `UserRows.swift`, `MarkdownRows.swift`, `SystemRows.swift`, `FileChangesRows.swift`, `ChatHeightCache.swift`, `HighPerformanceChatListView.swift`. New: `Agmente/Fork/Design/ForkRowAccessibility.swift` (labels and roles as pure functions, unit-testable).
+Files (edit, upstream UIKit): `ChatRendering/HighPerformanceChatListView/ToolCallRowView.swift` (`UIFontMetrics`), `UserRows.swift`, `MarkdownRows.swift`, `SystemRows.swift`, `FileChangesRows.swift`, `ChatHeightCache.swift`, `HighPerformanceChatListView.swift`. New: `ACPCode/Fork/Design/ForkRowAccessibility.swift` (labels and roles as pure functions, unit-testable).
 
 Acceptance:
 1. Changing Dynamic Type while a session is open re-lays out the transcript with correct heights, no clipped text (UI test at default to AX3 to default).
@@ -617,9 +617,9 @@ Risks: the third-party `MarkdownTextView` and `ListViewKit` may limit accessibil
 
 ### Phase 7.7 — Keyboard, pointer, menu bar, drag and drop
 
-Files (new): `Agmente/Fork/Commands/ForkCommands.swift`, `ForkFocusedValues.swift` (navigation actions as a focused scene value), `ForkPointer.swift` (hover and context-menu helpers), `ForkDropTarget.swift`, `AgmenteTests/ForkCommandsTests.swift`.
+Files (new): `ACPCode/Fork/Commands/ForkCommands.swift`, `ForkFocusedValues.swift` (navigation actions as a focused scene value), `ForkPointer.swift` (hover and context-menu helpers), `ForkDropTarget.swift`, `ACPCodeTests/ForkCommandsTests.swift`.
 
-Upstream hooks: `AgmenteApp.swift` `.commands { PromptComposerCommands(); ForkCommands() }` without the macOS-only guard (2 lines); `PromptComposerCommands.swift:26` `#if` guard removed (1 line); `SessionDetailView` composer `onKeyPress` for the optional Return setting; `SessionDetailView` `.dropDestination` (1 line).
+Upstream hooks: `ACPCodeApp.swift` `.commands { PromptComposerCommands(); ForkCommands() }` without the macOS-only guard (2 lines); `PromptComposerCommands.swift:26` `#if` guard removed (1 line); `SessionDetailView` composer `onKeyPress` for the optional Return setting; `SessionDetailView` `.dropDestination` (1 line).
 
 Acceptance:
 1. With a hardware keyboard: Command-N, Command-Return, Command-., Command-F, Command-[ and ], Control-Command-S, Option-Command-I work as listed; each is disabled when it does not apply (unit test of enablement from state).
@@ -635,9 +635,9 @@ Risks: `Commands` on iOS inside a `WindowGroup` with `UIApplicationDelegateAdapt
 
 ### Phase 7.8 — Stage Manager, resizing, scenes
 
-Files (new): `Agmente/Fork/Navigation/ForkSceneSupport.swift` (minimum size, scene-aware deep-link target), notes in `docs/DESIGN.md`. Edit: `ChatHeightCache.swift` (width buckets, cap) if not done in 7.6.
+Files (new): `ACPCode/Fork/Navigation/ForkSceneSupport.swift` (minimum size, scene-aware deep-link target), notes in `docs/DESIGN.md`. Edit: `ChatHeightCache.swift` (width buckets, cap) if not done in 7.6.
 
-Upstream hooks: none planned unless multi-scene is chosen (decision 4). If chosen: `Info.plist` `UIApplicationSupportsMultipleScenes`, `AgmenteApp.swift` model hoisted to an app-level `@StateObject`, `ContentView` taking the model, per-scene selection in `ForkNavigationModel`, `.handlesExternalEvents` for links.
+Upstream hooks: none planned unless multi-scene is chosen (decision 4). If chosen: `Info.plist` `UIApplicationSupportsMultipleScenes`, `ACPCodeApp.swift` model hoisted to an app-level `@StateObject`, `ContentView` taking the model, per-scene selection in `ForkNavigationModel`, `.handlesExternalEvents` for links.
 
 Acceptance (single-scene default):
 1. A scripted drag-resize from full to the minimum size (manual in the simulator with Stage Manager, plus a unit test of the width buckets) does not grow the height cache past its cap and keeps scroll position within one row.
@@ -669,7 +669,7 @@ Risks: simulator-only evidence (no physical iPad pointer or Stage Manager hardwa
 | --- | --- | --- |
 | `ContentView.swift` | iPad branch in `containerView`; `private` removed on 3 grouping types; server pill, `SessionRow`, `SessionCardStyle` use tokens; disabled New Session; summary card moved | 7.1, 7.2, 7.3, 7.4 |
 | `ContentView.swift` | skip `navigationPath` blocks on iPad (3 `if`s) | 7.3 |
-| `AgmenteApp.swift` | ungate `.commands`, add `ForkCommands()` | 7.7 |
+| `ACPCodeApp.swift` | ungate `.commands`, add `ForkCommands()` | 7.7 |
 | `PromptComposerCommands.swift` | remove the macOS-only guard | 7.7 |
 | `SessionDetailView.swift`, `CodexSessionDetailView.swift` | labels and hit targets; insets; inspector modifier; popovers; drop target; `onKeyPress` | 7.1, 7.5, 7.7 |
 | `GitView.swift`, `ElicitationFormView.swift` | hit target; inspector routing; non-dismissible sheet | 7.1, 7.5 |
@@ -723,4 +723,4 @@ Risks: simulator-only evidence (no physical iPad pointer or Stage Manager hardwa
 
 ## Appendix C. Files read
 
-`Agmente/CLAUDE.md`, `Agmente/AGENTS.md` (app layer), `AgmenteUITests/AGENTS.md`, `Agmente.xcodeproj/project.pbxproj` (settings), `Agmente/Info.plist`, `Agmente/AgmenteApp.swift`, `ContentView.swift` (all), `SessionDetailView.swift` (parts: body, transcript, composer, mode picker), `SessionSidebarView.swift`, `SessionWindowStore.swift`, `PromptComposerCommands.swift`, `SettingsView.swift` (parts), `ServerManagementViews.swift` (parts), `SessionSupplementalViews.swift` (parts), `Fork/Gateway/*`, `Fork/Git/GitView.swift` (parts), `Fork/MCP/MCPEntryPoint.swift`, `Fork/Skills/SkillsEditorView.swift` (start), `Fork/Elicitation/ElicitationFormView.swift` (start), `ChatRendering/ChatTranscriptContainerView.swift`, `ChatHeightCache.swift`, `HighPerformanceChatListView.swift` (parts), `UserRows.swift`, `RowViewSupport.swift`, `ACPClient/.../Gateway/GatewayClient.swift` (function list), `Assets.xcassets/AccentColor`. Contrast arithmetic: `scratchpad/contrast.py`.
+`ACPCode/CLAUDE.md`, `ACPCode/AGENTS.md` (app layer), `ACPCodeUITests/AGENTS.md`, `ACPCode.xcodeproj/project.pbxproj` (settings), `ACPCode/Info.plist`, `ACPCode/ACPCodeApp.swift`, `ContentView.swift` (all), `SessionDetailView.swift` (parts: body, transcript, composer, mode picker), `SessionSidebarView.swift`, `SessionWindowStore.swift`, `PromptComposerCommands.swift`, `SettingsView.swift` (parts), `ServerManagementViews.swift` (parts), `SessionSupplementalViews.swift` (parts), `Fork/Gateway/*`, `Fork/Git/GitView.swift` (parts), `Fork/MCP/MCPEntryPoint.swift`, `Fork/Skills/SkillsEditorView.swift` (start), `Fork/Elicitation/ElicitationFormView.swift` (start), `ChatRendering/ChatTranscriptContainerView.swift`, `ChatHeightCache.swift`, `HighPerformanceChatListView.swift` (parts), `UserRows.swift`, `RowViewSupport.swift`, `ACPClient/.../Gateway/GatewayClient.swift` (function list), `Assets.xcassets/AccentColor`. Contrast arithmetic: `scratchpad/contrast.py`.

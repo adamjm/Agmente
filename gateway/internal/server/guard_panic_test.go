@@ -15,10 +15,10 @@ import (
 
 	"github.com/coder/websocket"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 type syncBuffer struct {

@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/config"
 )
 
 var bearer = regexp.MustCompile(`(?i)^Bearer\s+([A-Za-z0-9._~+/=-]{16,512})\s*$`)

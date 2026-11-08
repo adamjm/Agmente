@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/store"
 )
 
 func gitTestServer(t *testing.T) (*Server, store.Project) {
@@ -194,8 +194,8 @@ func TestGitFailureKeepsStderrOffTheError(t *testing.T) {
 func TestPodmanGitArgs(t *testing.T) {
 	cfg := &config.Config{Runner: config.Runner{Kind: "podman", Image: "img:1", Podman: "podman"}}
 	t.Setenv("BOB_API_KEY", "must-not-appear")
-	args := strings.Join(podmanRunner{cfg: cfg}.gitArgs("agmente-git-x", store.Project{ID: "p", Path: "/srv/p"}, "/h", gitCommand("/srv/p", "status"), []string{"GIT_INDEX_FILE=/h/i"}), " ")
-	for _, want := range []string{"run --rm -i --name agmente-git-x --pull=never --init --network=none --userns=keep-id:uid=10001,gid=10001 --user 10001:10001", "-v /h:/h -v /srv/p:/srv/p -w /srv/p", "-e GIT_CONFIG_NOSYSTEM=1", "-e GIT_INDEX_FILE=/h/i", "--entrypoint git img:1 --no-pager --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null -c safe.directory=/srv/p status"} {
+	args := strings.Join(podmanRunner{cfg: cfg}.gitArgs("acpcode-git-x", store.Project{ID: "p", Path: "/srv/p"}, "/h", gitCommand("/srv/p", "status"), []string{"GIT_INDEX_FILE=/h/i"}), " ")
+	for _, want := range []string{"run --rm -i --name acpcode-git-x --pull=never --init --network=none --userns=keep-id:uid=10001,gid=10001 --user 10001:10001", "-v /h:/h -v /srv/p:/srv/p -w /srv/p", "-e GIT_CONFIG_NOSYSTEM=1", "-e GIT_INDEX_FILE=/h/i", "--entrypoint git img:1 --no-pager --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null -c safe.directory=/srv/p status"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("missing %q in:\n%s", want, args)
 		}
@@ -203,7 +203,7 @@ func TestPodmanGitArgs(t *testing.T) {
 	if strings.Contains(args, "must-not-appear") || strings.Contains(args, "BOB_API_KEY") {
 		t.Fatal("a secret reached the git container")
 	}
-	if strings.Contains(args, "--name agmente-0") {
+	if strings.Contains(args, "--name acpcode-0") {
 		t.Fatal("git must not take the agent's lock name")
 	}
 }
@@ -216,12 +216,12 @@ func TestCleanFilterRunsOnlyInsideTheContainer(t *testing.T) {
 	if err != nil {
 		t.Skip("T-27 skipped: podman is not installed")
 	}
-	image := os.Getenv("AGMENTE_TEST_IMAGE")
+	image := os.Getenv("ACPCODE_TEST_IMAGE")
 	if image == "" {
-		image = "localhost/agmente-bob:2.0.9"
+		image = "localhost/acpcode-bob:2.0.9"
 	}
 	if exec.Command(podman, "image", "exists", image).Run() != nil {
-		t.Skipf("T-27 skipped: image %s is not available (set AGMENTE_TEST_IMAGE)", image)
+		t.Skipf("T-27 skipped: image %s is not available (set ACPCODE_TEST_IMAGE)", image)
 	}
 	s, p := gitTestServer(t)
 	s.cfg.Runner = config.Runner{Kind: "podman", Image: image, Podman: podman}
@@ -241,7 +241,7 @@ func TestCleanFilterRunsOnlyInsideTheContainer(t *testing.T) {
 	_ = os.WriteFile(file, []byte("two\n"), 0o644)
 	// The filter fails (required) after touching a marker at a fixed path; inside the container
 	// that path is the container's own, so the host path below never appears.
-	filter := "touch " + hostMarker + " /tmp/agmente-marker; false"
+	filter := "touch " + hostMarker + " /tmp/acpcode-marker; false"
 	mustGit(t, p.Path, "config", "filter.evil.clean", filter)
 	mustGit(t, p.Path, "config", "filter.evil.required", "true")
 

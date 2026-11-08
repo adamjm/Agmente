@@ -49,7 +49,7 @@ test('T-21: reopening a session while its turn runs: no load reaches the agent, 
   try {
     const a = (await connect(gw.url, auth())).ws;
     const { sessionId, newResult } = await (async () => {
-      await rpc(a, '_agmente/projects/create', { name: 'test', path: gw.dirs.project });
+      await rpc(a, '_acpcode/projects/create', { name: 'test', path: gw.dirs.project });
       const res = await rpc(a, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
       return { sessionId: res.result.sessionId, newResult: res.result };
     })();
@@ -108,7 +108,7 @@ test('T-21: reopening an idle session: answered with the current mode, history f
       assert.deepEqual(updates(seen, sessionId), expectedHistory(before));
       assert.deepEqual(updates(seen, sessionId).map((u) => u.sessionUpdate),
         ['user_message_chunk', 'agent_message_chunk', 'agent_message_chunk', 'agent_message_chunk', 'session_info_update', 'current_mode_update']);
-      assert.equal(seen.some((m) => m.method?.startsWith('_agmente/')), false, 'no gateway turn markers on a plain socket');
+      assert.equal(seen.some((m) => m.method?.startsWith('_acpcode/')), false, 'no gateway turn markers on a plain socket');
       ws.close();
     }
     // A load sent as a notification has nothing to answer and is dropped.
@@ -116,7 +116,7 @@ test('T-21: reopening an idle session: answered with the current mode, history f
     // A subscriber already has the events: it gets the response and no plain history.
     const s = (await connect(gw.url, auth())).ws;
     const seenS = collect(s);
-    await rpc(s, '_agmente/sessions/subscribe', { sessionId, afterSeq: 7 });
+    await rpc(s, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 7 });
     assert.equal((await rpc(s, 'session/load', loadParams(gw, sessionId))).result.modes.currentModeId, 'plan');
     // The reopened socket gets live updates as plain messages, and the prompt works.
     const b = (await connect(gw.url, auth())).ws;
@@ -126,7 +126,7 @@ test('T-21: reopening an idle session: answered with the current mode, history f
     await until(() => textOf(updates(seenB, sessionId), 'agent_message_chunk').endsWith('echo: again'), 'live reply on B');
     await sleep(100);
     assert.equal(updates(seenS, sessionId).length, 0, 'the subscriber got no plain copies');
-    assert.equal(seenS.filter((m) => m.method === '_agmente/event').length, 3, 'the subscriber got the new turn as events');
+    assert.equal(seenS.filter((m) => m.method === '_acpcode/event').length, 3, 'the subscriber got the new turn as events');
 
     assert.deepEqual(reopens(await received(a)), [], 'the agent received no session/load or session/resume');
     assert.equal(readEvents(gw.config.stateDir, sessionId).length, 10, 'the 7 events and the new turn only');

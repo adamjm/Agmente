@@ -32,4 +32,4 @@ tags: [acp, onboarding, persistence]
 # Cleanup
 
 - Stop the chosen backend.
-- Uninstall Agmente from the simulator.
+- Uninstall ACP Code from the simulator.

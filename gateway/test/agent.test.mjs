@@ -6,18 +6,18 @@ import { auth, connect, FAKE_AGENT, nextClose, rpc, sleep, startGateway, TOKEN, 
 
 test('the agent environment holds only allow-listed variables, and HOME is the project home', async () => {
   const gw = await startGateway(
-    { agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'HOME', 'AGMENTE_TEST_PASSED'] } },
-    { env: { AGMENTE_TEST_SECRET: 'must-not-leak', AGMENTE_TEST_PASSED: 'yes' } },
+    { agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'HOME', 'ACPCODE_TEST_PASSED'] } },
+    { env: { ACPCODE_TEST_SECRET: 'must-not-leak', ACPCODE_TEST_PASSED: 'yes' } },
   );
   try {
     const { ws } = await connect(gw.url, auth());
     const { project } = await useProject(gw, ws);
     const res = await rpc(ws, '_test/env', {});
-    assert.equal(res.result.names.includes('AGMENTE_TEST_SECRET'), false);
-    assert.equal(res.result.values.AGMENTE_TEST_PASSED, 'yes');
+    assert.equal(res.result.names.includes('ACPCODE_TEST_SECRET'), false);
+    assert.equal(res.result.values.ACPCODE_TEST_PASSED, 'yes');
     // D-012: macOS adds __CF_USER_TEXT_ENCODING to every child process; the gateway does not pass it.
     const osSet = process.platform === 'darwin' ? ['__CF_USER_TEXT_ENCODING'] : [];
-    assert.ok(res.result.names.every((n) => ['PATH', 'HOME', 'AGMENTE_TEST_PASSED'].includes(n) || osSet.includes(n)), res.result.names.join(','));
+    assert.ok(res.result.names.every((n) => ['PATH', 'HOME', 'ACPCODE_TEST_PASSED'].includes(n) || osSet.includes(n)), res.result.names.join(','));
     const state = (await rpc(ws, '_test/state', {})).result;
     assert.equal(state.home, join(gw.config.stateDir, 'homes', project.id), 'HOME is the project home, never the gateway HOME');
     assert.equal(state.cwd, gw.dirs.project, 'the agent runs in the project folder');
@@ -163,12 +163,12 @@ test('output written just before the agent exits still reaches the phone', async
 
 test('an agent command that cannot start gives a JSON-RPC error and frees its slot', async () => {
   const gw = await startGateway({
-    agent: { command: ['/nonexistent/agmente-agent'], envPassthrough: ['PATH'] },
+    agent: { command: ['/nonexistent/acpcode-agent'], envPassthrough: ['PATH'] },
     limits: { maxAgentsPerIdentity: 1, maxAgentsTotal: 1 },
   });
   try {
     const { ws } = await connect(gw.url, auth());
-    assert.ok((await rpc(ws, '_agmente/projects/create', { name: 'p', path: gw.dirs.project })).result);
+    assert.ok((await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project })).result);
     for (let i = 0; i < 2; i++) {
       const res = await rpc(ws, 'session/new', { cwd: gw.dirs.project, mcpServers: [] });
       assert.deepEqual(res.error, { code: -32000, message: 'agent failed to start' }, `attempt ${i + 1}`);

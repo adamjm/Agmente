@@ -223,7 +223,7 @@ func (f *fakeAPNs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func newTestClient(t *testing.T, srv *httptest.Server, key *ecdsa.PrivateKey) *Client {
 	t.Helper()
 	return &Client{
-		topic:   "com.example.agmente",
+		topic:   "com.example.acpcode",
 		urls:    map[string]string{"sandbox": srv.URL, "production": srv.URL},
 		signer:  NewSigner(key, "TESTKEY123", "TEAM123456"),
 		http:    srv.Client(),
@@ -246,7 +246,7 @@ func TestDeliverRetriesThenSucceeds(t *testing.T) {
 		t.Errorf("want 3 requests (1 + 2 retries), got %d", len(f.requests))
 	}
 	for _, r := range f.requests {
-		if r.topic != "com.example.agmente" || r.pushType != "alert" || !strings.HasPrefix(r.auth, "bearer ") {
+		if r.topic != "com.example.acpcode" || r.pushType != "alert" || !strings.HasPrefix(r.auth, "bearer ") {
 			t.Errorf("headers wrong: %+v", r)
 		}
 	}

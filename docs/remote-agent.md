@@ -1,6 +1,6 @@
 # Start a Remote Agent
 
-This is a short guide to run an agent on a remote host and connect it to Agmente.
+This is a short guide to run an agent on a remote host and connect it to ACP Code.
 
 ## Quick Checklist
 - Your agent exposes a WebSocket endpoint (ACP or Codex app-server).
@@ -29,7 +29,7 @@ npx -y @rebornix/stdio-to-ws --persist --grace-period 604800 "codex app-server" 
 - Put a reverse proxy or Cloudflare Tunnel in front of the agent.
 - Use `wss://` for remote access.
 
-## Add the Server in Agmente
+## Add the Server in ACP Code
 1. Open **Add Server**.
 2. Pick the server type (ACP or Codex app-server).
 3. Set **Protocol** to `wss`.

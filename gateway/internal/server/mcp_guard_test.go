@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/jsonv"
 )
 
 func parseMCP(t *testing.T, s string) *jsonv.Value {

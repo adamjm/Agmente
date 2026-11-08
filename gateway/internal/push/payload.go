@@ -63,7 +63,7 @@ func Build(event Event, projectName, sessionID string) ([]byte, error) {
 	}
 	name := clean(projectName)
 	if name == "" {
-		name = "Agmente"
+		name = "ACP Code"
 	}
 	p := payload{Aps: aps{Alert: alert{Body: body}, Sound: "default", ThreadID: sessionID}, SessionID: sessionID, Event: event}
 	for {

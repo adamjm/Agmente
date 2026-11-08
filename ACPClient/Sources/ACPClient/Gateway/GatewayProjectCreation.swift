@@ -1,6 +1,6 @@
 import Foundation
 
-/// The answer of `_agmente/projects/roots` (D-091).
+/// The answer of `_acpcode/projects/roots` (D-091).
 struct GatewayRootsResult: Decodable, Equatable, Sendable {
     let roots: [String]
 }

@@ -25,7 +25,7 @@ const log = (...a) => console.log(...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 log(`bob: ${bobPath} (${bobVersion}); BOB_API_KEY set: ${!!process.env.BOB_API_KEY}`);
 
-const base = await realpath(await mkdtemp(join(tmpdir(), 'agmente-bob-race-')));
+const base = await realpath(await mkdtemp(join(tmpdir(), 'acpcode-bob-race-')));
 const root = join(base, 'root');
 const project = join(root, 'project');
 const stateDir = join(base, 'state');
@@ -108,8 +108,8 @@ let a;
 let sessionId;
 try {
   a = await client('A');
-  const registered = await a.rpc('_agmente/projects/create', { name: 'race', path: project });
-  a.show('_agmente/projects/create', registered);
+  const registered = await a.rpc('_acpcode/projects/create', { name: 'race', path: project });
+  a.show('_acpcode/projects/create', registered);
   home = join(stateDir, 'homes', registered.result.project.id);
   const created = await a.rpc('session/new', { cwd: project, mcpServers: [] });
   a.show('session/new', created);

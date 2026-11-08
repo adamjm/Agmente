@@ -15,7 +15,7 @@
 //     [image]         send a 160x100 PNG as an image content block
 //     [link]          send a resource_link block
 //   The reply text is "echo: <prompt text>". session/cancel ends a running turn with "cancelled".
-// - AGMENTE_TEST_USAGE (opt-in, usage tests only): a JSON array of usage_update payloads, such as
+// - ACPCODE_TEST_USAGE (opt-in, usage tests only): a JSON array of usage_update payloads, such as
 //   [{"used":1200,"size":200000,"cost":{"amount":0.42,"currency":"USD"}}]. Every turn sends them in
 //   order, after the reply text and before the turn ends. Unset: no usage_update is sent.
 // - session/load and session/resume (F-12): while a turn runs in this process, they are refused with
@@ -43,7 +43,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { createInterface } from 'node:readline';
 
 const fixture = JSON.parse(readFileSync(new URL('./bob-initialize-2.0.9.json', import.meta.url), 'utf8'));
-const usageUpdates = process.env.AGMENTE_TEST_USAGE ? JSON.parse(process.env.AGMENTE_TEST_USAGE) : [];
+const usageUpdates = process.env.ACPCODE_TEST_USAGE ? JSON.parse(process.env.ACPCODE_TEST_USAGE) : [];
 
 // --- arguments ----------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -197,10 +197,10 @@ async function runTurn(msg, entry) {
     }
     if (d.image) update(record.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'image', mimeType: 'image/png', data: samplePng() } });
     if (d.link) update(record.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'resource_link', name: 'report.html', uri: 'https://example.com/report.html', mimeType: 'text/html' } });
-    // Test-only (6C.2): when AGMENTE_TEST_ELICITATION names a file, every turn first sends the client
+    // Test-only (6C.2): when ACPCODE_TEST_ELICITATION names a file, every turn first sends the client
     // an elicitation/create form, waits for the client's whole answer, and appends that answer to the
     // file as one JSON line. Nothing else changes, and the variable is never set in other tests.
-    const elicitationRecord = process.env.AGMENTE_TEST_ELICITATION;
+    const elicitationRecord = process.env.ACPCODE_TEST_ELICITATION;
     if (elicitationRecord) {
       const req = requestClient('elicitation/create', {
         sessionId: record.sessionId,
@@ -349,10 +349,10 @@ const handlers = {
 
   // Test-only methods.
   '_test/echo': (msg) => reply(msg.id, msg.params ?? null),
-  // Names of every variable, and values only for AGMENTE_TEST_* names.
+  // Names of every variable, and values only for ACPCODE_TEST_* names.
   '_test/env': (msg) => reply(msg.id, {
     names: Object.keys(process.env).sort(),
-    values: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('AGMENTE_TEST_'))),
+    values: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('ACPCODE_TEST_'))),
   }),
   '_test/argv': (msg) => reply(msg.id, { args: process.argv.slice(2) }),
   // The value of one named variable, for the secrets-file test (PLAN 4.2). Present is false when unset.
@@ -403,10 +403,10 @@ const handlers = {
   },
 };
 
-// Test hook (mcp-guard.test.mjs): when AGMENTE_TEST_RECORD_DIR names a folder, the params of the
+// Test hook (mcp-guard.test.mjs): when ACPCODE_TEST_RECORD_DIR names a folder, the params of the
 // last session/new, session/load and session/resume are written there as <method>.json. Nothing
 // else changes; the gateway passes the variable to this process only when the config names it.
-const recordDir = process.env.AGMENTE_TEST_RECORD_DIR;
+const recordDir = process.env.ACPCODE_TEST_RECORD_DIR;
 function recordParams(msg) {
   if (!recordDir || !['session/new', 'session/load', 'session/resume'].includes(msg.method)) return;
   mkdirSync(recordDir, { recursive: true });

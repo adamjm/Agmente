@@ -139,7 +139,7 @@ test('a pairing approved on the phone issues a usable token, and the audit never
     const init = await call(gw, bearer, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 't', version: '1' } });
     assert.equal(init.status, 200);
     assert.equal(init.json.result.protocolVersion, '2025-11-25');
-    assert.equal(init.json.result.serverInfo.name, 'agmente-connector');
+    assert.equal(init.json.result.serverInfo.name, 'acpcode-connector');
 
     const tools = await call(gw, bearer, 'tools/list', {});
     assert.deepEqual(tools.json.result.tools.map((t) => t.name).sort(), ['get_context', 'get_turn', 'list_projects', 'list_sessions', 'send_prompt']);
@@ -170,9 +170,9 @@ test('a denied pairing redirects with access_denied and issues no code', async (
     assert.equal(redirect.searchParams.get('error'), 'access_denied');
     assert.equal(redirect.searchParams.get('code'), null);
     assert.equal(redirect.searchParams.get('state'), 'st-123');
-    const pending = await rpc(ws, '_agmente/connector/pending', {});
+    const pending = await rpc(ws, '_acpcode/connector/pending', {});
     assert.deepEqual(pending.result.pairings, []);
-    const grants = await rpc(ws, '_agmente/connector/grants', {});
+    const grants = await rpc(ws, '_acpcode/connector/grants', {});
     assert.deepEqual(grants.result.grants, [], 'a denied pairing makes no grant');
   } finally {
     ws.close();
@@ -192,9 +192,9 @@ test('a pairing the phone never answers times out as denied', async () => {
     assert.equal(redirect.searchParams.get('error'), 'access_denied');
     assert.equal(redirect.searchParams.get('code'), null);
     assert.ok(Date.now() - started < 10_000, 'the page ends at the timeout');
-    const pending = await rpc(ws, '_agmente/connector/pending', {});
+    const pending = await rpc(ws, '_acpcode/connector/pending', {});
     assert.deepEqual(pending.result.pairings, []);
-    const late = await rpc(ws, '_agmente/connector/approve', { pairingId: 'expired', scope: { projects: 'all' } });
+    const late = await rpc(ws, '_acpcode/connector/approve', { pairingId: 'expired', scope: { projects: 'all' } });
     assert.equal(late.error.code, -32602, 'an answer after the timeout is refused');
   } finally {
     ws.close();
@@ -206,9 +206,9 @@ test('an unknown pairing id is refused by the phone', async () => {
   const gw = await startConnectorGateway();
   const ws = await phone(gw);
   try {
-    const res = await rpc(ws, '_agmente/connector/approve', { pairingId: 'nope', scope: { projects: 'all' } });
+    const res = await rpc(ws, '_acpcode/connector/approve', { pairingId: 'nope', scope: { projects: 'all' } });
     assert.equal(res.error.code, -32602);
-    const deny = await rpc(ws, '_agmente/connector/deny', { pairingId: 'nope' });
+    const deny = await rpc(ws, '_acpcode/connector/deny', { pairingId: 'nope' });
     assert.equal(deny.error.code, -32602);
   } finally {
     ws.close();
@@ -279,18 +279,18 @@ test('revoke stops a token working at once', async () => {
     const { token, grantId } = await grantToken(gw, ws, { projects: 'all' });
     const before = await call(gw, token, 'ping', {});
     assert.equal(before.status, 200);
-    const grants = await rpc(ws, '_agmente/connector/grants', {});
+    const grants = await rpc(ws, '_acpcode/connector/grants', {});
     const row = grants.result.grants.find((g) => g.grantId === grantId);
     assert.equal(row.label, CLIENT_ID.slice(0, 120));
     assert.deepEqual(row.scope, { projects: 'all' });
     assert.equal(JSON.stringify(grants).includes(token), false, 'the grant list never holds a token');
 
-    const revoked = await rpc(ws, '_agmente/connector/revoke', { grantId });
+    const revoked = await rpc(ws, '_acpcode/connector/revoke', { grantId });
     assert.deepEqual(revoked.result, {});
     const after = await call(gw, token, 'ping', {});
     assert.equal(after.status, 401);
     assert.match(after.headers.get('www-authenticate'), /invalid_token/);
-    const again = await rpc(ws, '_agmente/connector/revoke', { grantId });
+    const again = await rpc(ws, '_acpcode/connector/revoke', { grantId });
     assert.equal(again.error.code, -32602);
   } finally {
     ws.close();
@@ -373,15 +373,15 @@ test('the phone refuses a scope that names an unknown project or a session outsi
 
     const held = await pairOnPhone(gw, { ws, scope: { projects: ['no-such-project'] } });
     assert.equal(held.answer.error.code, -32602, 'an unknown project is refused');
-    const pending = await rpc(ws, '_agmente/connector/pending', {});
+    const pending = await rpc(ws, '_acpcode/connector/pending', {});
     assert.equal(pending.result.pairings.length, 1, 'a refused approve leaves the pairing open');
     const pairingId = pending.result.pairings[0].pairingId;
 
-    const crossed = await rpc(ws, '_agmente/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [b.sessionId] } });
+    const crossed = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [b.sessionId] } });
     assert.equal(crossed.error.code, -32602, 'a session outside the listed projects is refused');
-    const empty = await rpc(ws, '_agmente/connector/approve', { pairingId, scope: { projects: [] } });
+    const empty = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [] } });
     assert.equal(empty.error.code, -32602);
-    const ok = await rpc(ws, '_agmente/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [a.sessionId] } });
+    const ok = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [a.sessionId] } });
     assert.equal(typeof ok.result.grantId, 'string');
     const page = await held.page.finished;
     assert.match(page.body, /location\.replace/, 'the held page finishes when the approve succeeds');

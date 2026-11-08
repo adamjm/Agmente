@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/jsonv"
 )
 
 func parseFiles(t *testing.T, src string) (*Files, []string) {
@@ -45,7 +45,7 @@ func TestFilesRefusesBadValues(t *testing.T) {
 		"key inline":      `{"host":"f.test","key":"abc"}`,
 		"secret inline":   `{"host":"f.test","secret":"abc"}`,
 		"relative key":    `{"host":"f.test","secretFile":"key"}`,
-		"missing keyfile": `{"host":"f.test","secretFile":"/nonexistent/agmente-key"}`,
+		"missing keyfile": `{"host":"f.test","secretFile":"/nonexistent/acpcode-key"}`,
 	}
 	for name, src := range cases {
 		if f, errs := parseFiles(t, src); f != nil || len(errs) == 0 {

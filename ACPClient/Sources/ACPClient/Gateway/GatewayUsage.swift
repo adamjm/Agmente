@@ -3,7 +3,7 @@ import ACP
 
 // The context and cost figures of one session (contract C1, D-093). The gateway stores the last
 // `usage_update` Bob sent for each session and returns it as an optional `usage` object on each row of
-// `_agmente/sessions/index`. Agmente never estimates these numbers: each one is a number Bob sent.
+// `_acpcode/sessions/index`. ACPCode never estimates these numbers: each one is a number Bob sent.
 
 /// Context and cost figures for one session.
 public struct GatewayUsage: Equatable, Hashable, Sendable {

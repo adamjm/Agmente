@@ -53,7 +53,7 @@ public struct GatewayConnectorScope: Codable, Equatable, Hashable, Sendable {
         GatewayConnectorScope(projects: .some([session.projectId]), sessions: [session.sessionId])
     }
 
-    /// The scope as the `scope` parameter of `_agmente/connector/approve`.
+    /// The scope as the `scope` parameter of `_acpcode/connector/approve`.
     public var value: ACP.Value {
         var object: [String: ACP.Value] = [:]
         switch projects {

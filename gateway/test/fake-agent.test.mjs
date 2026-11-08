@@ -54,7 +54,7 @@ function startAgent(args = []) {
 const prompt = (text) => [{ type: 'text', text }];
 
 async function withStore(fn) {
-  const dir = await mkdtemp(join(tmpdir(), 'agmente-fake-'));
+  const dir = await mkdtemp(join(tmpdir(), 'acpcode-fake-'));
   try {
     await fn(join(dir, 'store.json'));
   } finally {
@@ -236,7 +236,7 @@ test('F-21: two processes on one store lose the earlier writer\'s turn, with no 
 });
 
 test('the default store is $HOME/.fake-agent/store.json; without HOME it is memory only', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agmente-fake-home-'));
+  const home = await mkdtemp(join(tmpdir(), 'acpcode-fake-home-'));
   try {
     const child = spawn(process.execPath, [FAKE_AGENT], { stdio: ['pipe', 'pipe', 'inherit'], env: { PATH: process.env.PATH, HOME: home } });
     const rl = createInterface({ input: child.stdout });

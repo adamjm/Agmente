@@ -1,4 +1,4 @@
-// The project agent state notification (C2, D-092): `_agmente/project/state`. Change-only, at most
+// The project agent state notification (C2, D-092): `_acpcode/project/state`. Change-only, at most
 // two per second per project, never in the event log, and only to sockets that listed the project.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,7 @@ function stateFeed(ws) {
   ws.setMaxListeners(100); // rpc() adds one close listener per call
   ws.on('message', (data) => {
     const msg = JSON.parse(data.toString());
-    if (msg.method === '_agmente/project/state') seen.push({ ...msg.params, at: Date.now() });
+    if (msg.method === '_acpcode/project/state') seen.push({ ...msg.params, at: Date.now() });
   });
   return seen;
 }
@@ -27,8 +27,8 @@ test('a listing socket sees starting, running, stopping and stopped once each, a
   const gw = await startGateway({ limits: { idleSeconds: 1 } });
   try {
     const ws = (await connect(gw.url, auth())).ws;
-    const { project } = (await rpc(ws, '_agmente/projects/create', { name: 'test', path: gw.dirs.project })).result;
-    await rpc(ws, '_agmente/sessions/index', { projectId: project.id }); // this socket now lists the project
+    const { project } = (await rpc(ws, '_acpcode/projects/create', { name: 'test', path: gw.dirs.project })).result;
+    await rpc(ws, '_acpcode/sessions/index', { projectId: project.id }); // this socket now lists the project
     const feed = stateFeed(ws);
     const { sessionId } = (await newSession(ws, gw)).result;
 
@@ -44,7 +44,7 @@ test('a listing socket sees starting, running, stopping and stopped once each, a
     await until(() => agents(feed).includes('stopped'), 'the idle stop', 10000);
     assert.deepEqual(agents(feed), ['starting', 'running', 'stopping', 'stopped']);
 
-    const [session] = (await rpc(ws, '_agmente/sessions/index', { projectId: project.id })).result.sessions;
+    const [session] = (await rpc(ws, '_acpcode/sessions/index', { projectId: project.id })).result.sessions;
     assert.equal(session.headSeq, 4, 'the event log holds only the turn: started, chunk, title, ended');
     ws.close();
   } finally {
@@ -58,8 +58,8 @@ test('only sockets that listed the project get its state; a socket that never li
     const listing = (await connect(gw.url, auth())).ws;
     const quiet = (await connect(gw.url, auth(OTHER_TOKEN))).ws;
     const unlisted = stateFeed(quiet);
-    const { project } = (await rpc(quiet, '_agmente/projects/create', { name: 'test', path: gw.dirs.project })).result;
-    await rpc(listing, '_agmente/sessions/index', { projectId: project.id });
+    const { project } = (await rpc(quiet, '_acpcode/projects/create', { name: 'test', path: gw.dirs.project })).result;
+    await rpc(listing, '_acpcode/sessions/index', { projectId: project.id });
     const listed = stateFeed(listing);
     await newSession(quiet, gw); // the agent starts for the quiet socket's request
     await until(() => agents(listed).at(-1) === 'running', 'running');
@@ -82,8 +82,8 @@ test('a burst of agent restarts is rate limited to two notifications a second an
   const gw = await startGateway({ limits: { idleSeconds: 60 } });
   try {
     const ws = (await connect(gw.url, auth())).ws;
-    const { project } = (await rpc(ws, '_agmente/projects/create', { name: 'test', path: gw.dirs.project })).result;
-    await rpc(ws, '_agmente/sessions/index', { projectId: project.id });
+    const { project } = (await rpc(ws, '_acpcode/projects/create', { name: 'test', path: gw.dirs.project })).result;
+    await rpc(ws, '_acpcode/sessions/index', { projectId: project.id });
     const feed = stateFeed(ws);
     const cycles = 6;
     for (let i = 0; i < cycles; i += 1) {
@@ -107,12 +107,12 @@ test('a burst of agent restarts is rate limited to two notifications a second an
   }
 });
 
-test('a socket that called _agmente/projects/list gets the state of the projects it listed', async () => {
+test('a socket that called _acpcode/projects/list gets the state of the projects it listed', async () => {
   const gw = await startGateway({ limits: { idleSeconds: 60 } });
   try {
     const ws = (await connect(gw.url, auth())).ws;
-    const { project } = (await rpc(ws, '_agmente/projects/create', { name: 'test', path: gw.dirs.project })).result;
-    await rpc(ws, '_agmente/projects/list', {}); // this socket now lists the projects, so it is told their state
+    const { project } = (await rpc(ws, '_acpcode/projects/create', { name: 'test', path: gw.dirs.project })).result;
+    await rpc(ws, '_acpcode/projects/list', {}); // this socket now lists the projects, so it is told their state
     const feed = stateFeed(ws);
     await newSession(ws, gw);
     await until(() => agents(feed).includes('running'), 'running');

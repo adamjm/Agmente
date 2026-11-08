@@ -1,11 +1,11 @@
-# Agmente
+# ACP Code
 
-Agmente is an iOS client for coding agents. It connects to servers that speak ACP (Agent Client Protocol) or the Codex app-server protocol and shows tool calls, results, and conversation history on device.
+ACP Code is an iOS client for coding agents. It connects to servers that speak ACP (Agent Client Protocol) or the Codex app-server protocol and shows tool calls, results, and conversation history on device.
 
-![Agmente screenshot](docs/app-preview-wide.jpg)
+![ACP Code screenshot](docs/app-preview-wide.jpg)
 
 **Download**
-- [Agmente on the App Store](https://apps.apple.com/us/app/agmente/id6756249477)
+- [ACP Code on the App Store](https://apps.apple.com/us/app/agmente/id6756249477)
 
 **Key capabilities**
 - Connect to ACP agents (Copilot CLI, Gemini CLI, Claude Code adapters, Qwen, Mistral Vibe, and others)
@@ -26,10 +26,10 @@ npx -y @rebornix/stdio-to-ws --persist --grace-period 604800 "copilot --acp" --p
 ```bash
 pkill -9 -f "stdio-to-ws.*8765"
 ```
-- Expose the port behind TLS and connect from Agmente using `wss://<your-host>` (see `docs/remote-agent.md`).
+- Expose the port behind TLS and connect from ACP Code using `wss://<your-host>` (see `docs/remote-agent.md`).
 
 ## Repository layout
-- `Agmente/` iOS app source
+- `ACPCode/` iOS app source
 - `ACPClient/` Swift package used by the app
 - `AppServerClient/` Codex app-server client support
 
@@ -38,18 +38,18 @@ pkill -9 -f "stdio-to-ws.*8765"
 - macOS for iOS builds
 
 ## Build (iOS)
-Open `Agmente.xcodeproj` in Xcode and run the `Agmente` scheme on a simulator or device.
+Open `ACPCode.xcodeproj` in Xcode and run the `ACPCode` scheme on a simulator or device.
 
 CLI build example:
 ```bash
-xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 16'
+xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
 
 ## Tests
 App tests:
 ```bash
-xcodebuild -project Agmente.xcodeproj \
-  -scheme Agmente \
+xcodebuild -project ACPCode.xcodeproj \
+  -scheme ACPCode \
   -destination "platform=iOS Simulator,id=<SIMULATOR_UDID>" \
   test
 ```

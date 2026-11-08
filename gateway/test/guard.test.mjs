@@ -108,7 +108,7 @@ test('T-6: a message over maxMessageBytes closes with 1009', async () => {
   }
 });
 
-test('T-6: a fragmented message over maxMessageBytes closes with 1009', async () => {
+test('T-6: a fracpcoded message over maxMessageBytes closes with 1009', async () => {
   const gw = await startGateway({ limits: { maxMessageBytes: 64 * 1024 } });
   try {
     const { ws } = await connect(gw.url, auth());

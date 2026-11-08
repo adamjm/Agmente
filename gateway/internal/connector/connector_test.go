@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/config"
 )
 
 func TestScopeAllows(t *testing.T) {

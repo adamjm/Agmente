@@ -1,5 +1,5 @@
 // Elicitation relay (FR-44, PLAN 6C.2, D-026 elicitation exception). The fake agent asks the client
-// for a form (elicitation/create) on every session/prompt when AGMENTE_TEST_ELICITATION names a file,
+// for a form (elicitation/create) on every session/prompt when ACPCODE_TEST_ELICITATION names a file,
 // and appends the client's whole answer to that file as one JSON line. The gateway relays the request
 // to the session's subscribers and forwards the first answer under the agent's id.
 import { test } from 'node:test';
@@ -32,11 +32,11 @@ async function until(pred, what, ms = 10000) {
 }
 /** The elicitation requests a subscriber has received, as the gateway relayed them. */
 const requests = (seen) => seen
-  .filter((m) => m.method === '_agmente/event' && m.params.message.method === 'elicitation/create')
+  .filter((m) => m.method === '_acpcode/event' && m.params.message.method === 'elicitation/create')
   .map((m) => m.params.message);
 /** The closing events a subscriber has received. */
 const closed = (seen) => seen
-  .filter((m) => m.method === '_agmente/event' && m.params.message.method === '_agmente/elicitation_answered')
+  .filter((m) => m.method === '_acpcode/event' && m.params.message.method === '_acpcode/elicitation_answered')
   .map((m) => m.params.message.params);
 /** Every answer the fake agent recorded, one per line. */
 const recorded = (file) => (existsSync(file)
@@ -44,12 +44,12 @@ const recorded = (file) => (existsSync(file)
   : []);
 
 async function startElicitation(limits = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'agmente-elic-'));
+  const dir = await mkdtemp(join(tmpdir(), 'acpcode-elic-'));
   const record = join(dir, 'answers.jsonl');
   const gw = await startGateway({
-    agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'AGMENTE_TEST_ELICITATION'] },
+    agent: { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'ACPCODE_TEST_ELICITATION'] },
     limits,
-  }, { env: { AGMENTE_TEST_ELICITATION: record } });
+  }, { env: { ACPCODE_TEST_ELICITATION: record } });
   const stop = gw.stop;
   gw.stop = async () => {
     await stop();
@@ -63,7 +63,7 @@ async function subscribed(gw) {
   const a = (await connect(gw.url, auth())).ws;
   const { sessionId } = await useProject(gw, a);
   const seen = collect(a);
-  await rpc(a, '_agmente/sessions/subscribe', { sessionId, afterSeq: 0 });
+  await rpc(a, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
   return { a, sessionId, seen };
 }
 
@@ -75,7 +75,7 @@ async function prompt(a, sessionId, seen) {
   return { turn, req: requests(seen).at(-1) };
 }
 
-const answer = (ws, params) => rpc(ws, '_agmente/elicitation/answer', params);
+const answer = (ws, params) => rpc(ws, '_acpcode/elicitation/answer', params);
 
 test('(a) an elicitation is relayed to a subscriber with its requestedSchema', async () => {
   const { gw } = await startElicitation();
@@ -83,7 +83,7 @@ test('(a) an elicitation is relayed to a subscriber with its requestedSchema', a
     const { a, sessionId, seen } = await subscribed(gw);
     const { turn, req } = await prompt(a, sessionId, seen);
     assert.equal(req.jsonrpc, '2.0');
-    assert.match(req.id, /^agmente-elic-/, 'a gateway id, not the agent id');
+    assert.match(req.id, /^acpcode-elic-/, 'a gateway id, not the agent id');
     assert.deepEqual(req.params, {
       sessionId, mode: 'form', message: 'Accept the licence to continue', requestedSchema: SCHEMA,
     });

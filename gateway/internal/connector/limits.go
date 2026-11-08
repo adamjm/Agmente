@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/config"
 )
 
 // limits holds the connector's running counts (C6): prompts per grant in the last hour, the running

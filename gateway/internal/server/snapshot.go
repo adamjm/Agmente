@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const (
@@ -282,7 +282,7 @@ func (s *Server) gitTreeDiff(ctx context.Context, p store.Project, from, to stri
 	return out, nil
 }
 
-// gitTurnDiff answers _agmente/git/turnDiff {sessionId, turn}.
+// gitTurnDiff answers _acpcode/git/turnDiff {sessionId, turn}.
 func (s *Server) gitTurnDiff(ctx context.Context, params *jsonv.Value) (any, *rpcError) {
 	sid, ok := params.Get("sessionId").StringValue()
 	if !ok || sid == "" {

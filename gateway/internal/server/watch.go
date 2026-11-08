@@ -1,7 +1,7 @@
 package server
 
 // git/changed (PLAN 3.16, FR-27, NFR-9, D-037). A socket that has asked for a project's git status
-// gets `_agmente/git/changed {projectId, hash}` when that status changes, debounced 500 ms and at
+// gets `_acpcode/git/changed {projectId, hash}` when that status changes, debounced 500 ms and at
 // most twice a second. While at least one socket is watching a project, the gateway looks at the
 // project's files every 500 ms; with none, it looks at nothing.
 //
@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
 )
 
 const (
@@ -164,7 +164,7 @@ func (s *Server) watchLoop(projectID string, w *gitWatch, baseline uint64) {
 		}
 		msg := jsonv.Obj()
 		msg.Set("jsonrpc", jsonv.Str("2.0"))
-		msg.Set("method", jsonv.Str("_agmente/git/changed"))
+		msg.Set("method", jsonv.Str("_acpcode/git/changed"))
 		params := jsonv.Obj()
 		params.Set("projectId", jsonv.Str(projectID))
 		params.Set("hash", jsonv.Str(hash))
@@ -173,7 +173,7 @@ func (s *Server) watchLoop(projectID string, w *gitWatch, baseline uint64) {
 		for _, c := range w.live() {
 			c.send(line)
 		}
-		s.audit.Log("rpc", audit.Fields{Dir: "out", Method: "_agmente/git/changed", Project: projectID})
+		s.audit.Log("rpc", audit.Fields{Dir: "out", Method: "_acpcode/git/changed", Project: projectID})
 	}
 }
 

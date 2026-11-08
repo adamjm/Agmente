@@ -2,7 +2,7 @@ package server
 
 // Signed file URLs (FR-38, NFR-12, PLAN 5.3, ARCHITECTURE 2.5, D-061 to D-064).
 //
-// _agmente/files/url {projectId, path} returns https://<files.host>/f/<token>. The token is
+// _acpcode/files/url {projectId, path} returns https://<files.host>/f/<token>. The token is
 // base64url(payload) "." base64url(HMAC-SHA256(key, payload)), where the payload is the JSON
 // {p: projectId, r: relative path, e: expiry in Unix seconds}. GET and HEAD /f/<token> are answered
 // only on the files host. Every serve verifies the token and resolves the path again: a symlink
@@ -25,9 +25,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const (
@@ -170,7 +170,7 @@ func (s *Server) projectFile(p *store.Project, rel string) (string, os.FileInfo,
 	return real, info, ""
 }
 
-// fileURL answers _agmente/files/url (FR-38). The phone may name any file that passes projectFile.
+// fileURL answers _acpcode/files/url (FR-38). The phone may name any file that passes projectFile.
 func (s *Server) fileURL(ctx context.Context, who audit.Who, params *jsonv.Value) (any, *rpcError) {
 	if s.cfg.Files == nil {
 		return nil, &rpcError{Code: rpcFilesOff, Message: "file URLs are not enabled (config files)"}

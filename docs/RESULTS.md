@@ -48,7 +48,7 @@
 
 ### 2026-11-05 — T-1 check gate (scaffold build)
 - **Environment:** Linux 6.18, Node v22.23.4, npm 10.9.9, `ws` 8.22.1, no Swift toolchain.
-- **Command:** `scripts/check.sh`, run twice: in the overlay alone, and after applying the overlay to upstream Agmente `87f224e`.
+- **Command:** `scripts/check.sh`, run twice: in the overlay alone, and after applying the overlay to upstream ACP Code `87f224e`.
 - **Output (trimmed):**
   ```
   == Gateway tests
@@ -263,8 +263,8 @@
 - **Notes:** The fixture `gateway/test/fixtures/slow-exit-agent.mjs` keeps running 600 ms after `SIGTERM`, as Bob may while it saves. On the first try the test closed the socket about 10 ms after spawn, before the fixture had installed its `SIGTERM` handler, so the fixture died at once. The test now waits 300 ms first. `config.example.json` now sets both agent caps to 1. The code defaults stay at NFR-4 (4 and 16), so a config that leaves them out still gets 4 and 16 (see D-015).
 
 ### 2026-11-06 — Project start time: Bob on the host vs a fresh container (start on demand)
-- **Environment:** MacBook (Darwin 27.0.0, arm64). Podman 5.6.2, `podman-machine-default` (libkrun VM, 2 CPUs, 3.6 GiB). Image `agmente-bob:2.0.9` from the draft `deploy/bob-project.Containerfile` (`node:22-bookworm-slim`, Node 22.23.4, `@ibm/bob@2.0.9`, user uid 10001, 413 MB). Named volumes for `HOME` (with a `TRUST_FOLDER` entry for `/work`) and for the project. Host runs used Bob 2.0.9 with a disposable `HOME`. Image and VM already up and cached.
-- **Command:** `set -a; . ./.env; set +a; node gateway/scripts/bench-start.mjs --runs 5`. Each run starts a new Bob (host) or a new `podman run --rm -i --name agmente-bench-<tag>` container, then sends `initialize`, `session/load` of a seeded session (one prompt of history), and `session/new`, then stops it. ACP goes straight over stdio; the gateway adds under 1 ms (T-12).
+- **Environment:** MacBook (Darwin 27.0.0, arm64). Podman 5.6.2, `podman-machine-default` (libkrun VM, 2 CPUs, 3.6 GiB). Image `acpcode-bob:2.0.9` from the draft `deploy/bob-project.Containerfile` (`node:22-bookworm-slim`, Node 22.23.4, `@ibm/bob@2.0.9`, user uid 10001, 413 MB). Named volumes for `HOME` (with a `TRUST_FOLDER` entry for `/work`) and for the project. Host runs used Bob 2.0.9 with a disposable `HOME`. Image and VM already up and cached.
+- **Command:** `set -a; . ./.env; set +a; node gateway/scripts/bench-start.mjs --runs 5`. Each run starts a new Bob (host) or a new `podman run --rm -i --name acpcode-bench-<tag>` container, then sends `initialize`, `session/load` of a seeded session (one prompt of history), and `session/new`, then stops it. ACP goes straight over stdio; the gateway adds under 1 ms (T-12).
 - **Output (ms from the start command):**
   ```
   host bob 2.0.9 (5 runs)
@@ -277,7 +277,7 @@
     load        median   1518  max   1638   (replay done by 1519)
     sessionNew  median   2257  max   2426
     stopMs      median    263  max    277
-  same-name second container while one runs: refused: ... the container name "agmente-bench-0222ea" is already in use ...
+  same-name second container while one runs: refused: ... the container name "acpcode-bench-0222ea" is already in use ...
   ```
 - **Result:** Recorded (no NFR covers start time yet).
 - **Notes:**
@@ -288,49 +288,49 @@
 
 ### 2026-11-06 — T-1 and PLAN 0.5 with Xcode; app unit tests
 - **Environment:** macOS (Darwin 27.0.0, arm64), Xcode 27.2 (27B52) selected at `/Applications/Xcode.app/Contents/Developer`, iOS 27.2 simulator runtime, Node v24.5.0. Simulator "iPhone 17" (there is no "iPhone 16" in this Xcode; the test command in `CLAUDE.md` now names iPhone 17).
-- **Command:** `scripts/check.sh`; then `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:AgmenteTests test`.
+- **Command:** `scripts/check.sh`; then `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:ACPCodeTests test`.
 - **Output (trimmed):**
   ```
   ACPClient:       Executed 156 tests, with 0 failures; Test run with 9 tests in 2 suites passed
   AppServerClient: Executed 9 tests, with 0 failures
   check.sh: exit 0, "All checks passed."
-  AgmenteTests:    Test Suite 'All tests' passed; Executed 121 tests, with 0 failures (0 unexpected);
+  ACPCodeTests:    Test Suite 'All tests' passed; Executed 121 tests, with 0 failures (0 unexpected);
                    Test run with 10 tests in 2 suites passed
   ** TEST SUCCEEDED **
   ```
 - **Result:** T-1 PASS. PLAN 0.5 PASS. App unit tests PASS.
-- **Notes:** `CodexThreadReadMergeFixtureTests` reads its fixtures from the source tree (`#filePath`) under `~/Documents`. The first run blocked in `open()` for about 20 minutes until the owner allowed macOS file access for the Simulator. A stack sample showed `loadFixtureURLs` → `contentsOfDirectory` → `open`. The 1,474 s run time includes that wait. The UI tests (`AgmenteUITests`) were not run.
+- **Notes:** `CodexThreadReadMergeFixtureTests` reads its fixtures from the source tree (`#filePath`) under `~/Documents`. The first run blocked in `open()` for about 20 minutes until the owner allowed macOS file access for the Simulator. A stack sample showed `loadFixtureURLs` → `contentsOfDirectory` → `open`. The 1,474 s run time includes that wait. The UI tests (`ACPCodeUITests`) were not run.
 
 ### 2026-11-06 — Phase 2: 2.5, 2.1, 2.2, 2.8, 2.3, 2.4 (T-14, T-15, T-16)
 - **Environment:** macOS, Xcode 27.2, iOS 27.2 simulator "iPhone 17".
-- **Commands:** `swift test --package-path AgmenteTransport|ACPClient|AppServerClient`; `xcodebuild ... -only-testing:AgmenteTests test`; `xcodebuild ... -only-testing:AgmenteUITests test`.
+- **Commands:** `swift test --package-path ACPCodeTransport|ACPClient|AppServerClient`; `xcodebuild ... -only-testing:ACPCodeTests test`; `xcodebuild ... -only-testing:ACPCodeUITests test`.
 - **Output (trimmed):**
   ```
-  AgmenteTransport: Executed 7 tests, with 0 failures (3 runs in a row)
+  ACP CodeTransport: Executed 7 tests, with 0 failures (3 runs in a row)
   ACPClient:        Executed 158 tests, with 0 failures   (156 before, plus 2 EndpointPolicyTests)
   AppServerClient:  Executed 9 tests, with 0 failures
-  AgmenteTests:     Executed 133 tests, with 0 failures  (121 before, plus KeychainStore 4, ServerSecretMigration 2,
+  ACPCodeTests:     Executed 133 tests, with 0 failures  (121 before, plus KeychainStore 4, ServerSecretMigration 2,
                     StoreProtection 2, TransportPolicy 4); includes CodexServerViewModelTests and ViewModelSyncTests
-  AgmenteUITests:   ** TEST SUCCEEDED **; testExample, testLaunchPerformance, testLaunch x4 passed;
+  ACPCodeUITests:   ** TEST SUCCEEDED **; testExample, testLaunchPerformance, testLaunch x4 passed;
                     testCodexDirectWebSocketConnectInitializeAndSessionFlow skipped (opt-in E2E)
   store protection attribute on this platform: nil   (the simulator does not report data protection)
   ```
 - **Result:** T-14 PASS, T-15 PASS, T-16 PASS. PLAN 2.1 to 2.5 and 2.8 done.
 - **Notes:**
-  - **2.5:** new local package `AgmenteTransport` (`NativeWebSocketConnection`). The two `URLSessionWebSocketProvider.swift` files are now adapters, and neither package's public API changed. `AppServerClient` raised its macOS minimum from 10.15 to 13 to match. `scripts/check.sh` tests the new package. The Xcode project needed no edit: `AgmenteTransport` resolves as a path dependency of the two local packages.
+  - **2.5:** new local package `ACPCodeTransport` (`NativeWebSocketConnection`). The two `URLSessionWebSocketProvider.swift` files are now adapters, and neither package's public API changed. `AppServerClient` raised its macOS minimum from 10.15 to 13 to match. `scripts/check.sh` tests the new package. The Xcode project needed no edit: `ACPCodeTransport` resolves as a path dependency of the two local packages.
   - **2.2:** `ServerSecretMigration` runs on every `fetchServers`. `SessionStorage` reads secrets from the Keychain, writes them there, stores nil in Core Data, and deletes Keychain items with the server. `SessionStorage.inMemory()` uses its own Keychain service.
   - **2.8:** `NSPersistentStoreFileProtectionKey = .complete`, SQLite `secure_delete = ON`, and `isExcludedFromBackup` on the `.sqlite`, `-wal` and `-shm` files at each launch. A store that fails to load now falls back to memory (`PersistenceController.loadError`) instead of `fatalError`. No screen shows that error yet. The erased-bytes test passes, but it also passed with `secure_delete` set to `OFF`, because migration overwrites the row in place and the checkpoint replaces the page. So the test confirms that no token bytes remain after migration, and does not show the effect of `secure_delete`. `secure_delete` protects deleted rows. It does not clean free pages that older app versions left; a one-time `VACUUM` would (not done).
-  - **2.3:** `TransportPolicy` (D-018, D-019); model version `Agmente 2` adds `localOnly` (Boolean, default NO) and `spkiPins` (String, optional), and the `scheme` default becomes `wss`. `ACPClientManager.endpointPolicy` checks every connect and reconnect: a refused endpoint makes no connection and is not retried. `validateServerConfiguration` checks the policy before it builds a client. The add-server form has a "Local only" toggle (`LocalOnlyToggle`) and a warning (`LocalOnlyWarning`), and offers `ws` only when "Local only" is on or in Debug builds. No existing test needed a change: they use mocks, or `ws://127.0.0.1`, which Debug builds still allow. The sidebar's connection picker still lists `ws`; the policy refuses it at connect time.
+  - **2.3:** `TransportPolicy` (D-018, D-019); model version `ACPCode 2` adds `localOnly` (Boolean, default NO) and `spkiPins` (String, optional), and the `scheme` default becomes `wss`. `ACPClientManager.endpointPolicy` checks every connect and reconnect: a refused endpoint makes no connection and is not retried. `validateServerConfiguration` checks the policy before it builds a client. The add-server form has a "Local only" toggle (`LocalOnlyToggle`) and a warning (`LocalOnlyWarning`), and offers `ws` only when "Local only" is on or in Debug builds. No existing test needed a change: they use mocks, or `ws://127.0.0.1`, which Debug builds still allow. The sidebar's connection picker still lists `ws`; the policy refuses it at connect time.
   - **2.4:** the cap is checked on the declared frame length (and the reassembled length for continuation frames) before the payload is buffered. Control frames are not counted. On overflow the client sends close 1009, half-closes, cancels after 250 ms and returns `.closed(1009)`. Before that half-close, the test showed that cancelling at once could lose the close frame at the peer (a TCP reset with unread data).
   - **Upstream bug found and fixed:** `receive()` read the network after a ping, pong or non-final fragment even when the next frame was already buffered. Back-to-back frames, for example a ping followed by a message, could then stall until more data arrived. `testControlFramesAreNotCountedAgainstTheCap` hung on the old loop and passes on the new one. T-16 also hangs, rather than failing, against code without the cap (the client waits for the 17 MiB payload).
 
 ### 2026-11-06 — Phase 2: 2.6 (T-17), 1.10, 2.7, and the full regression
 - **Environment:** macOS, Xcode 27.2, iOS 27.2 simulator "iPhone 17", LibreSSL 3.3.6 (`/usr/bin/openssl`), Caddy v2.11.9 (Homebrew), Node v24.5.0.
 - **Commands:**
-  - `swift test --package-path AgmenteTransport` (two runs in a row)
+  - `swift test --package-path ACPCodeTransport` (two runs in a row)
   - `scripts/make-client-cert.sh --dry-run iphone`; `scripts/make-client-cert.sh --out <scratch>/ca testphone`; `openssl verify -CAfile <scratch>/ca/ca.pem <scratch>/ca/testphone.pem`
-  - Local stack, all on loopback: gateway (`--config <scratch>/gateway.json`, fake agent, port 18787, `trustProxy` true, caps 1); `caddy run` with `skip_install_trust`, `tls internal`, `client_auth { mode require_and_verify; trust_pool file <scratch>/ca/ca.pem }`, site `https://localhost:18443`. Then `AGMENTE_MTLS_*=... xcrun xctest -XCTest AgmenteTransportTests.MutualTLSLiveTests`.
-  - `scripts/check.sh`; `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test`
+  - Local stack, all on loopback: gateway (`--config <scratch>/gateway.json`, fake agent, port 18787, `trustProxy` true, caps 1); `caddy run` with `skip_install_trust`, `tls internal`, `client_auth { mode require_and_verify; trust_pool file <scratch>/ca/ca.pem }`, site `https://localhost:18443`. Then `ACPCODE_MTLS_*=... xcrun xctest -XCTest ACPCodeTransportTests.MutualTLSLiveTests`.
+  - `scripts/check.sh`; `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test`
 - **Output (trimmed):**
   ```
   SPKIPinTests: testPinMatchesOpenSSLForEachKeyType passed (RSA 2048, RSA 4096, P-256, P-384)
@@ -341,16 +341,16 @@
   local Caddy, curl:  no client cert -> handshake failure (000); cert + upgrade, no token -> HTTP/1.1 401 (Via: 1.1 Caddy)
   MutualTLSLiveTests: no identity -> tlsRefused; identity, no token -> http(401); identity + token -> connected
                 (ACP initialize round trip through Caddy, gateway and fake agent)
-  AgmenteTransport: Executed 12 tests, with 1 test skipped (the opt-in live test) and 0 failures
-  check.sh: gateway 37/37, docs ok, AgmenteTransport 12 (1 skipped), ACPClient 158, AppServerClient 9; "All checks passed."
+  ACP CodeTransport: Executed 12 tests, with 1 test skipped (the opt-in live test) and 0 failures
+  check.sh: gateway 37/37, docs ok, ACP CodeTransport 12 (1 skipped), ACPClient 158, AppServerClient 9; "All checks passed."
   App:      Executed 137 tests, with 0 failures; ** TEST SUCCEEDED ** (UI tests included; the Codex E2E test skipped, opt-in)
   ```
 - **Result:** T-17 PASS. PLAN 1.10 PASS. PLAN 2.6 and 2.7 done; the 2.7 check passed against a local Caddy. Repeat it on the host after PLAN 1.11.
 - **Notes:**
-  - **2.6:** `TransportTLSOptions` (pins, trust anchors, client identity) sits in `AgmenteTransport` and is passed from `ACPConnectionConfig` through `ACPClientConfiguration` to the provider. `ACPClient` re-exports `AgmenteTransport`. The verify block runs only when pins or anchors are set: it runs `SecTrustEvaluateWithError` first, and then needs one certificate in the chain to match a pin. Pins are base64 SHA-256 SPKI values (an optional `sha256/` prefix is accepted). The pin value equals `openssl x509 -pubkey | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`. The form has a "Certificate pins" field (`SPKIPinsField`), stored in Core Data `spkiPins` (not a secret).
-  - **2.7:** `ClientIdentityStore` imports a `.p12` (`SecPKCS12Import`; the passphrase is not stored) and keeps the identity in the Keychain, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, one per server. The form has import and remove buttons (`ImportClientCertificateButton`, `RemoveClientCertificateButton`). The identity is deleted with the server. `ClientIdentityStoreTests` embeds a throwaway self-signed test `.p12` (CN=agmente-test-client, passphrase in the test). It is not a credential for any server. `scripts/check.sh` looks only for PEM private keys, so it does not flag this base64 test fixture.
+  - **2.6:** `TransportTLSOptions` (pins, trust anchors, client identity) sits in `ACPCodeTransport` and is passed from `ACPConnectionConfig` through `ACPClientConfiguration` to the provider. `ACPClient` re-exports `ACPCodeTransport`. The verify block runs only when pins or anchors are set: it runs `SecTrustEvaluateWithError` first, and then needs one certificate in the chain to match a pin. Pins are base64 SHA-256 SPKI values (an optional `sha256/` prefix is accepted). The pin value equals `openssl x509 -pubkey | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`. The form has a "Certificate pins" field (`SPKIPinsField`), stored in Core Data `spkiPins` (not a secret).
+  - **2.7:** `ClientIdentityStore` imports a `.p12` (`SecPKCS12Import`; the passphrase is not stored) and keeps the identity in the Keychain, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, one per server. The form has import and remove buttons (`ImportClientCertificateButton`, `RemoveClientCertificateButton`). The identity is deleted with the server. `ClientIdentityStoreTests` embeds a throwaway self-signed test `.p12` (CN=acpcode-test-client, passphrase in the test). It is not a credential for any server. `scripts/check.sh` looks only for PEM private keys, so it does not flag this base64 test fixture.
   - **1.10:** output goes to `secrets/client-ca/` by default, which is now in `.gitignore`. The `.p12` passphrase is random and printed once to stderr. The `.p12` uses PBE-SHA1-3DES so that iOS can import it (verify on new iOS releases).
-  - **Found while testing, all fixed in `AgmenteTransport`:**
+  - **Found while testing, all fixed in `ACPCodeTransport`:**
     1. LibreSSL writes EC keys with explicit curve parameters (`-newkey ec -pkeyopt ec_paramgen_curve`), and signs with SHA-1 by default. Apple's Security framework rejects both (`SecCertificateCopyKey` returns nil; "broken signature algorithm"). The script and the tests use `ecparam -param_enc named_curve` and `-sha256`. LibreSSL `req -x509 -key` without `-new` reads a request from stdin and hangs.
     2. Upstream `connect()` had no deadline. There is now one (15 s by default) over TCP, TLS and the WebSocket handshake. Test: `testConnectTimesOutWhenTheServerNeverAnswers`.
     3. With TLS 1.3, a server that rejects a missing client certificate does so after the client reports `.ready`. The pending handshake read then never returned. A `.failed` state after `.ready` now cancels the connection, so pending reads end.
@@ -362,34 +362,34 @@
 - **Environment:** macOS, Node v24.5.0, Go 1.27.3 (Homebrew), `github.com/coder/websocket` v1.8.15.
 - **Commands:**
   - `npm test --prefix gateway` (Node gateway, the default target), three runs
-  - `go vet ./... && go test ./... && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway` (in `gateway/`)
-  - `AGMENTE_GATEWAY_CMD='["<abs>/gateway/bin/agmente-gateway"]' npm test --prefix gateway`, four runs
-  - `node gateway/test/bench.mjs` with and without `AGMENTE_GATEWAY_CMD`
+  - `go vet ./... && go test ./... && go build -trimpath -o bin/acpcode-gateway ./cmd/acpcode-gateway` (in `gateway/`)
+  - `ACPCODE_GATEWAY_CMD='["<abs>/gateway/bin/acpcode-gateway"]' npm test --prefix gateway`, four runs
+  - `node gateway/test/bench.mjs` with and without `ACPCODE_GATEWAY_CMD`
   - Idle RSS: each gateway started on the example config (port 0, one empty root), `ps -o rss` after 2 s, no connections
   - `scripts/check.sh`
 - **Output (trimmed):**
   ```
   Node gateway: tests 53, pass 53, fail 0   (before the U+2028 fix: 52/53, see notes)
   Go gateway:   tests 53, pass 53, fail 0   (4 runs in a row; about 5.4 s each)
-  go test:      ok agmente/gateway/internal/jsonv; ok agmente/gateway/internal/server
+  go test:      ok acpcode/gateway/internal/jsonv; ok acpcode/gateway/internal/server
   bench, 2000 calls, 1 KiB:   Go   gateway p95 0.163 ms, direct p95 0.143 ms, overhead p95 0.020 ms; reject p95 0.348 ms (n=500)
                               Node gateway p95 0.177 ms, direct p95 0.044 ms, overhead p95 0.133 ms; reject p95 0.358 ms
                               spawnedDuringRejects 0; nfr1 PASS, nfr2 PASS (both)
   idle RSS:     Go 12.9 MB; Node 58.1 MB
   check.sh:     Go vet/test/build ok; wire suite 53/53 on Go and on Node; docs ok;
-                AgmenteTransport 12 (1 skipped), ACPClient 158, AppServerClient 9; "All checks passed."
+                ACP CodeTransport 12 (1 skipped), ACPClient 158, AppServerClient 9; "All checks passed."
   ```
 - **Result:** T-2 to T-10 and T-13 PASS on both gateways, over the wire. T-11 and T-12 PASS on both. T-5 is checked through the CLI.
 - **Notes:**
-  - **The suite is wire-level now (D-021).** `gateway/test/helpers.mjs` starts the gateway from `AGMENTE_GATEWAY_CMD` (a JSON array; default the Node gateway), writes a real config file, and reads the audit log from stderr. Agent spawn counts come from `connect` audit lines; the old in-process `stats` counters are gone. Config checks run through `--dry-run` and the exit code.
+  - **The suite is wire-level now (D-021).** `gateway/test/helpers.mjs` starts the gateway from `ACPCODE_GATEWAY_CMD` (a JSON array; default the Node gateway), writes a real config file, and reads the audit log from stderr. Agent spawn counts come from `connect` audit lines; the old in-process `stats` counters are gone. Config checks run through `--dry-run` and the exit code.
   - **Old tests and what replaced them** (none was dropped or loosened):
     - Unit tests of `parseBearer`, `findTokenEntry`, `FailureLimiter`, `LineSplitter`, `isInsideRoots`, `parseClientMessage`, `isLoopbackAddress` and `validateConfig` became wire tests of the same cases: header variants at the upgrade, lockout expiry with `lockoutSeconds: 1`, chunked agent output (`_test/chunks`), a `<root>-evil` sibling, each bad message shape, each listen host through `--dry-run`, and each config error through stderr.
     - `buildAgentEnv` is covered by the env test: one passed variable with its value, and an unlisted secret that must be absent.
     - "a valid config is normalized and frozen": the defaults are checked in the dry-run summary. Freezing is a JavaScript detail and is not observable over the wire.
     - The backpressure test now checks for a `backpressure` audit line (`dir: "in"`) instead of an in-process counter. Both gateways write that line.
-  - **New cases:** argv passed without a shell; ids, values, client responses and notifications pass through; CRLF and blank agent lines; last output before exit; a command that cannot start (1011, slot freed); SIGKILL after the grace period for an agent that ignores SIGTERM; shutdown on SIGTERM; audit fields limited to the allow-list with an ISO timestamp; no project path in the audit; bare CR, two trailing newlines, trailing data, a non-string `jsonrpc`, the empty message, invalid UTF-8 (1007); a fragmented message over the cap (1009); a message of exactly the cap (accepted); refusal ids echoed unchanged; a missing root allows nothing; U+2028 and U+2029; port, token entry, agent, roots and limit errors; unreadable and non-JSON config files; usage exit code 2; the example config.
+  - **New cases:** argv passed without a shell; ids, values, client responses and notifications pass through; CRLF and blank agent lines; last output before exit; a command that cannot start (1011, slot freed); SIGKILL after the grace period for an agent that ignores SIGTERM; shutdown on SIGTERM; audit fields limited to the allow-list with an ISO timestamp; no project path in the audit; bare CR, two trailing newlines, trailing data, a non-string `jsonrpc`, the empty message, invalid UTF-8 (1007); a fracpcoded message over the cap (1009); a message of exactly the cap (accepted); refusal ids echoed unchanged; a missing root allows nothing; U+2028 and U+2029; port, token entry, agent, roots and limit errors; unreadable and non-JSON config files; usage exit code 2; the example config.
   - **Bug found, fixed in the Node gateway:** Node's `readline` ends a line at U+2028 and U+2029 (checked: `printf '{"a":"x\xe2\x80\xa8y"}\n' | node -e '...readline...'` prints two lines). The Node gateway re-serialized with `JSON.stringify`, which leaves both raw, so a phone message containing U+2028 reached the fake agent as two lines and got no reply. The Node gateway now escapes both characters; the Go encoder always escapes them. Test: "U+2028 and U+2029 in a message cannot split it into two agent lines". Not verified: whether Bob's stdin reader splits on them.
-  - The bench now measures the gateway named by `AGMENTE_GATEWAY_CMD`.
+  - The bench now measures the gateway named by `ACPCODE_GATEWAY_CMD`.
   - The old in-process figure of 75 MB idle for the Node gateway (Phase 3 planning) and today's 58 MB differ in setup; both are this Mac, idle, no agent.
 
 ### 2026-11-06 — Node gateway removed (D-022); Bob probes through the Go gateway
@@ -412,7 +412,7 @@
   wrapper:   stdout passed through; the stderr line landed in the file
   ```
 - **Result:** T-32, T-33 and T-34 PASS again through the Go gateway, with the same Bob behaviour as through the Node gateway (F-12). F-21 reproduces through the Go gateway: the second process's completed prompt is missing from the history, and Bob logs no lock error.
-- **Notes:** `gateway/src/` and `gateway/scripts/new-token.mjs` are deleted. The wire suite and the bench default to `gateway/bin/agmente-gateway`. Both probes now start the gateway as a process (`spawnGateway` in `gateway/test/helpers.mjs`), with the agent's working directory and a disposable `HOME`. The race probe keeps Bob's stderr with an `sh -c 'exec "$@" 2>>file'` wrapper in its own config, checked above.
+- **Notes:** `gateway/src/` and `gateway/scripts/new-token.mjs` are deleted. The wire suite and the bench default to `gateway/bin/acpcode-gateway`. Both probes now start the gateway as a process (`spawnGateway` in `gateway/test/helpers.mjs`), with the agent's working directory and a disposable `HOME`. The race probe keeps Bob's stderr with an `sh -c 'exec "$@" 2>>file'` wrapper in its own config, checked above.
 
 ### 2026-11-06 — Phase 3 task 3.1: the fake agent copies Bob's behaviour
 - **Environment:** macOS, Node v24.5.0, Go 1.27.3.
@@ -447,7 +447,7 @@
   size probe: store + driver alone 8.8 MB; gateway today 9.8 MB (store not linked in yet)
   ```
 - **Result:** PLAN 3.2 done: `modernc.org/sqlite` chosen by the owner (D-023). The new `gateway/internal/store` package opens `gateway.db`, creates schema version 1, appends events with `seq` starting at 1 per session, and reads them back in order.
-- **Notes:** The store-level SIGKILL test is not T-20: T-20 kills the gateway itself and is checked in task 3.5. The 10,000-event read is not T-19 either; T-19 replays through `_agmente/sessions/subscribe` in task 3.6. The child process wrote one event past the last one the parent counted ("present 501") because the kill came after that commit; nothing acknowledged was lost.
+- **Notes:** The store-level SIGKILL test is not T-20: T-20 kills the gateway itself and is checked in task 3.5. The 10,000-event read is not T-19 either; T-19 replays through `_acpcode/sessions/subscribe` in task 3.6. The child process wrote one event past the last one the parent counted ("present 501") because the kill came after that commit; nothing acknowledged was lost.
 
 ### 2026-11-06 — Phase 3 task 3.3: project registry (T-25, D-024)
 - **Environment:** macOS, Go 1.27.3, Node v24.5.0.
@@ -457,7 +457,7 @@
   ✔ T-25: a project outside the roots, or reached through a symlink that leaves them, is refused
   ✔ names and default modes are checked
   ✔ a project inside a root is registered with its realpath, a HOME and a trust entry
-  ✔ _agmente/* requests are answered by the gateway and never reach the agent
+  ✔ _acpcode/* requests are answered by the gateway and never reach the agent
   ✔ projects persist across a gateway restart
   ✔ stateDir is required and must be absolute
   ✔ the gateway refuses to start when it cannot open its database
@@ -468,7 +468,7 @@
 - **Notes:**
   - T-25 cases, each refused with `-32602` and with no project home created: a folder outside the roots; a symlink inside a root that points outside (with and without a trailing slash); a `<root>-evil` sibling; `../..` out of a project; `/`; a missing path; a file; a relative path; the empty string; a number; null.
   - Accepted: a symlink that stays inside the root, stored as the target's realpath; a root itself. A second registration of the same folder, by either path, is refused with the existing project's id.
-  - `config.example.json` gains `"stateDir": "/var/lib/agmente/state"`, which the systemd unit already allows to be written (`ReadWritePaths=/var/lib/agmente`).
+  - `config.example.json` gains `"stateDir": "/var/lib/acpcode/state"`, which the systemd unit already allows to be written (`ReadWritePaths=/var/lib/acpcode`).
   - Still in the phase 1 model: every socket spawns its own agent (D-006). Task 3.4 replaces that with one agent per project.
 
 ### 2026-11-06 — Phase 3 task 3.5: event log (T-20, D-027)
@@ -544,10 +544,10 @@
   ```
 - **Result:** T-22 PASS. T-23 PASS (timeout 1 s in the test; the agent got `cancel` (reject_once), or `cancelled` for a request with only allow options, after 1.0 to 1.1 s; no allow in any case). PLAN 3.9 done.
 - **Notes:**
-  - T-22 method: two identities on two sockets. Method then method; method then plain response (the plain one gets `_agmente/notice` "answered elsewhere"); then 10 rounds of both answering at once. Each round has exactly one winner, and the agent received exactly one answer per request (12 in all).
+  - T-22 method: two identities on two sockets. Method then method; method then plain response (the plain one gets `_acpcode/notice` "answered elsewhere"); then 10 rounds of both answering at once. Each round has exactly one winner, and the agent received exactly one answer per request (12 in all).
   - T-23 method: `limits.approvalTimeoutSeconds: 1`, one `[permission]` request and one `[permission:allow-only]` request (new fake-agent directive: only allow options), no answer. The agent's answer is checked against the request's options: never an `allow_*` kind. A late answer gets "timed out", and the `approvals` row shows `answered_by` `timeout`.
   - Gateway race found by the full check: the first `check.sh` runs failed T-22, in the concurrent rounds. The losing answer got "unknown approval" because the winner had not stored its answer yet. The gateway now keeps who claimed an approval in memory until it is stored (D-031). Two `check.sh` runs and 10 runs of the file then passed.
-  - Gateway bug found while writing the tests: `_agmente/approvals/answer` without `cancelled` dereferenced a nil value and panicked. The panic did not stop the gateway, but that socket never got an answer. Fixed. A guard was also added in the history replay (`subscribe.go`) for a logged prompt with no `prompt` field, which the gateway never writes. The socket handler has no recover of its own, so a future panic would again leave a socket hanging.
+  - Gateway bug found while writing the tests: `_acpcode/approvals/answer` without `cancelled` dereferenced a nil value and panicked. The panic did not stop the gateway, but that socket never got an answer. Fixed. A guard was also added in the history replay (`subscribe.go`) for a logged prompt with no `prompt` field, which the gateway never writes. The socket handler has no recover of its own, so a future panic would again leave a socket hanging.
   - My test errors, corrected and not loosened: T-23 first expected `end_turn` after a `cancelled` outcome, but under ACP that cancels the turn (`stopReason: cancelled`). The restart test first stopped the gateway with SIGTERM; that closes approvals as `agent_exit`, so it now uses SIGKILL to test `gateway_restart`.
   - Mutation checks: with the timeout sending the first option (an allow), T-23 fails. With the first answer not claiming the approval, T-22 fails.
   - Changed tests: the dry-run defaults now include `approvalTimeoutSeconds: 43200`, and `extensions` is `["projects", "sessions", "approvals"]`.
@@ -607,7 +607,7 @@
   - Not covered: a panic in another goroutine (an agent's read loop, a timer). There `net/http` is not involved, so the gateway process exits, as before.
 
 ### 2026-11-06 — 3.13 Container exec runner for git (D-034)
-- **Environment:** macOS, Go 1.27.3, Podman 5.6.2 (libkrun machine), image `localhost/agmente-bob:2.0.9` (git 2.39.5, user `bob` uid 10001).
+- **Environment:** macOS, Go 1.27.3, Podman 5.6.2 (libkrun machine), image `localhost/acpcode-bob:2.0.9` (git 2.39.5, user `bob` uid 10001).
 - **Commands:** `(cd gateway && go test ./internal/server -run 'Git|Hostile|CleanFilter|Podman' -v)`; `scripts/check.sh`.
 - **Result:** PASS for the runner (T-26, T-27 at runner level, see the summary table). All seven new Go tests pass; check.sh passes.
   - T-26: a repo with `core.fsmonitor`, `diff.external` and a textconv driver, each creating a marker. `status` and `diff` through the runner create none. Control: plain git on the same repo creates all three, so the repo is really hostile.
@@ -619,7 +619,7 @@
 
 ### 2026-11-06 — 3.14 git/status, git/diff, git/log (D-035)
 - **Environment:** macOS, Go 1.27.3, Node v24.5.0, git 2.54.0 (host runner); Podman 5.6.2 machine, image git 2.39.5 (podman measurement).
-- **Commands:** `node --test test/git.test.mjs`; `node test/bench-git.mjs`; `node test/bench-git.mjs --podman localhost/agmente-bob:2.0.9`; `scripts/check.sh`.
+- **Commands:** `node --test test/git.test.mjs`; `node test/bench-git.mjs`; `node test/bench-git.mjs --podman localhost/acpcode-bob:2.0.9`; `scripts/check.sh`.
 - **Result:** check.sh passes, 118 wire tests (8 new in `test/git.test.mjs`). T-26 and T-28 PASS. T-29 PASS. T-30: see below.
   - `bench-git`, host runner, 10,000 files, 20 runs: `{"p50_ms":152.5,"p95_ms":194.6,"max_ms":195.8,"pass":true}`.
   - **T-30 on the podman runner: FAIL on this Mac.** The same status in the Bob image takes about 3.0 s per call (container start alone is 0.4 s). The repository sits on a bind mount through the Podman VM (virtiofs), where git's 10,000 file stats are slow; the same repo on the host takes 0.09 s. `git/status` runs three git commands at once (status and two numstats), so under podman they exceeded the 5 s limit and the bench got "git timeout". I did not change the test or the limit. Not measured: a Linux host with a native bind mount, which is the deployment target (NFR-8 says "10,000-file repository", T-47 is also for Linux).
@@ -645,7 +645,7 @@
   - `update-index -z --index-info` needs `-z` first; the first run failed every snapshot.
   - Under Podman the snapshot failed with git's message "not a git repository". The cause is that the gateway makes its snapshot folder with mode 0700, and the container user (uid 10001) cannot write it, so git cannot create objects. The Go test opens the folders to 0777 as a stand-in. The same mismatch exists for the project home that the agent writes to; the Linux deployment has to map the container user to the host user (PLAN 4.1). Not solved here.
   - The store test counted five tables; it now counts six, and a new test opens a schema 1 database and checks that it keeps its events and gains the table.
-  - The T-46 lifecycle tests counted every container start. Git runs now start their own short-lived containers (`agmente-git-…`), so those tests count only the agent's containers; the one-at-a-time rule is unchanged for the agent.
+  - The T-46 lifecycle tests counted every container start. Git runs now start their own short-lived containers (`acpcode-git-…`), so those tests count only the agent's containers; the one-at-a-time rule is unchanged for the agent.
   - The first end-of-turn test edited a file right after the response, and the edit landed in the turn's diff: the end snapshot is taken after `turn_ended` is sent. The test now waits for the diff first. This is a real limit: an edit made in the seconds after a turn ends can count as part of that turn.
 - **Not tested:** timing under Podman (7 container runs per snapshot, and 10,000 files over the VM mount were slow in 3.14, so the start snapshot would delay the prompt by seconds or fail at the 5 s limit); a repository with symlinks inside tracked directories; submodules (skipped); two sessions in one project at once (their diffs include each other's changes); more than about 50,000 files (the 2 MiB list cap makes the snapshot fail).
 
@@ -683,10 +683,10 @@
 
 ### 2026-11-06 — 3.17 Projects and sessions home (app, D-039)
 - **Environment:** macOS, Xcode 27.2, iPhone 17 simulator (iOS 27.2), Swift packages and the app built from this checkout.
-- **Commands:** `(cd ACPClient && swift test)`; `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test` (the app's unit and UI tests); `scripts/check.sh`.
+- **Commands:** `(cd ACPClient && swift test)`; `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test` (the app's unit and UI tests); `scripts/check.sh`.
 - **Result:** PASS for the code and unit tests; the simulator run is in the end-to-end entry below.
-  - The app reads `_meta["agmente/gateway"]` from `initialize` (`GatewayInfo`: version and extensions). A server without it behaves as before (5 parse cases).
-  - `GatewayClient` (new, in the ACPClient package) calls `_agmente/projects/list` and `_agmente/sessions/index` and decodes them; a status the app does not know decodes as `unknown`, so the list still shows.
+  - The app reads `_meta["acpcode/gateway"]` from `initialize` (`GatewayInfo`: version and extensions). A server without it behaves as before (5 parse cases).
+  - `GatewayClient` (new, in the ACPClient package) calls `_acpcode/projects/list` and `_acpcode/sessions/index` and decodes them; a status the app does not know decodes as `unknown`, so the list still shows.
   - The home shows sessions grouped by project, newest first, with a status badge and an unread count; the new-session sheet picks a project and sends `session/new` with its path. Layout rules are pure code with 6 tests (section and session order, ties, empty projects, orphans, search, totals); the model has 4 tests (load, a failed refresh keeps the list and says why, a late answer from the old server is dropped, no client).
   - Totals: ACPClient package 171 tests pass; the app 158 unit tests pass; `scripts/check.sh` passes (130 wire tests); full `xcodebuild test` including the UI tests: TEST SUCCEEDED.
 - **Mutation checks:** removing the stale-answer guard fails the reconfigure test; reversing the section order fails the order test.
@@ -695,8 +695,8 @@
 ### 2026-11-06 — 3.18 Open by subscribing; X-Client-Id removed (app, D-039)
 - **Commands:** as for 3.17.
 - **Result:** PASS for the code and unit tests; the simulator run is in the end-to-end entry below.
-  - A gateway server opens a session with `_agmente/sessions/subscribe {sessionId, afterSeq}` and never sends `session/load` or `session/resume`, not even in the prompt preflight. A plain ACP server is unchanged (it sends no `_agmente` call).
-  - `_agmente/event` notifications are applied for the open session in `seq` order, each once: `session/update` and permission requests through the existing paths, `turn_started` as the user's message, `turn_ended` as the stop reason, `approval_answered` clears the options. A repeat is dropped; a gap resubscribes from the last event applied; a reopen of a session continues from its last event; a finished turn is marked read through `_agmente/sessions/read`.
+  - A gateway server opens a session with `_acpcode/sessions/subscribe {sessionId, afterSeq}` and never sends `session/load` or `session/resume`, not even in the prompt preflight. A plain ACP server is unchanged (it sends no `_acpcode` call).
+  - `_acpcode/event` notifications are applied for the open session in `seq` order, each once: `session/update` and permission requests through the existing paths, `turn_started` as the user's message, `turn_ended` as the stop reason, `approval_answered` clears the options. A repeat is dropped; a gap resubscribes from the last event applied; a reopen of a session continues from its last event; a finished turn is marked read through `_acpcode/sessions/read`.
   - This device's own prompt, which the gateway sends back as `turn_started`, is skipped once.
   - New tests: 9 in `GatewayEventTests` (package) and 11 in `GatewayOpenTests` (app) .
   - `X-Client-Id` is gone: the header, `ACPClientManager.clientId`, its defaults key, the migration, and `Agents.md`'s description. Three tests that tested the persisted client id are replaced by two that check no header is sent and nothing is stored.
@@ -710,14 +710,14 @@
 - **Result:** PASS.
   1. Add Server (`ws`, `127.0.0.1:8799`, token) → the app's capability review showed "Bob v2.0.9", the gateway's own `initialize` answer. Saved. After Refresh the dot went green.
   2. The home showed the gateway layout, not the plain list: a project section "Demo Site" with an unread badge 1, and the session "add a readme [write:README.md]", "2 min., 47 sec.", unread 1.
-  3. Opening the session showed the logged user message and the agent's reply, rebuilt from the gateway log by `_agmente/sessions/subscribe`.
+  3. Opening the session showed the logged user message and the agent's reply, rebuilt from the gateway log by `_acpcode/sessions/subscribe`.
   4. A new prompt ("second question [chunks:3]") appeared once as the user's message (no echo duplicate), "Thinking…" and the stop button showed, then the reply "echo: second question [chunks:3]" arrived through events and the send button came back.
   5. Gateway side, read through a second socket afterwards: the session's unread count was 0 (the app had marked it read) and `headSeq` 9 (two turns). The fake agent had received `initialize`, `session/new`, `session/prompt`, `session/prompt`: no `session/load` and no `session/resume`.
 - **Observations, not fixed:**
   - The "active / idle" counts in the summary card at the top still come from the plain session list, so they read "0 active 0 idle" on a gateway server until a session is opened.
   - After adding a server the dot stays orange until Refresh; the app did not connect by itself (existing behaviour).
   - The session header shows the latest prompt as the title, while the gateway index keeps the first one.
-  - The simulator's Agmente had 11 leftover "Test Server" entries, made by the app's own unit tests, which write to the app's real store. I uninstalled and reinstalled the simulator app to start clean; only that simulator's Agmente data was removed.
+  - The simulator's ACP Code had 11 leftover "Test Server" entries, made by the app's own unit tests, which write to the app's real store. I uninstalled and reinstalled the simulator app to start clean; only that simulator's ACP Code data was removed.
 - **Not covered by this run:** the approvals card on screen, an agent exit mid-turn, a network drop and reconnect, two devices at once, and a gateway behind TLS. Each is covered by unit or wire tests only.
 
 ### 2026-11-06 — Summary counts on a gateway home (fix after 3D stop 1)
@@ -730,7 +730,7 @@
 - **Result:** PASS.
   - New in the package: `GatewayApproval` with its options, `pendingApprovals()`, `answerApproval()`, `cancelApproval()`, and `GatewayError.isAlreadyClosed` for `-32001`. 4 tests; the package has 174 tests.
   - New in the app: `ApprovalsInboxModel` (11 tests), the inbox sheet with a card per approval (title, the command when the tool call has one, project and session, age, one button per option the agent offered, "Cancel request"), and a banner on the home ("N approvals waiting"). 5 new tests in `GatewayOpenTests` for the in-session card.
-  - The in-session card on a gateway server now answers through `_agmente/approvals/answer`, not a plain response. A request that someone else closed first is dropped from the card and the chat says "This request was already closed: <reason>"; any other failure keeps the options so the person can try again.
+  - The in-session card on a gateway server now answers through `_acpcode/approvals/answer`, not a plain response. A request that someone else closed first is dropped from the card and the chat says "This request was already closed: <reason>"; any other failure keeps the options so the person can try again.
   - Nothing answers on its own (D-009): loading, refreshing and receiving a request send no answer, tested in the model and on the card.
   - Refresh: on open, on pull, on a permission or answered event for the open session, and every 15 s while the home is on screen.
 - **End-to-end on the simulator:** a local gateway with the fake agent held one finished session and one running a `[permission]` turn. The home showed the "Needs approval" badge, "1 approval waiting" and "1 active, 1 idle". The banner opened the inbox with the card ("Run echo", `echo fake`, "Demo Site · New Chat", Allow once, Always allow, Reject, Cancel request). I tapped Reject. The inbox then said "No approvals waiting"; the gateway had logged one `approval_answered` by `owner/phone`, no approvals left, and the session idle with its title. Back on the home the banner was gone, "0 active, 2 idle". I chose Reject on purpose and did not test an allow option on screen.
@@ -773,17 +773,17 @@
     - The SIGKILL-after-grace test triggers the stop with an oversize line instead of a socket close.
     - Shutdown now also checks that the agent has exited (`ESRCH`).
     - Tests that call the fake agent first register a project and open a session (`useProject` in `helpers.mjs`).
-  - **New tests** (`gateway/test/supervisor.test.mjs`): sockets and identities share one process; per-socket responses with clashing ids; a closed socket leaves the agent running; exit handling and restart; a second gateway refused (`agent_error` reason `locked`), and it works after the first stops; `initialize` answered by the gateway with `_meta["agmente/gateway"]`, plus capture; permission fan-out with the first answer winning; routing refusals.
+  - **New tests** (`gateway/test/supervisor.test.mjs`): sockets and identities share one process; per-socket responses with clashing ids; a closed socket leaves the agent running; exit handling and restart; a second gateway refused (`agent_error` reason `locked`), and it works after the first stops; `initialize` answered by the gateway with `_meta["acpcode/gateway"]`, plus capture; permission fan-out with the first answer winning; routing refusals.
   - **Harness:** gateway processes are now unreferenced and killed when the test process exits, so a timed-out test no longer keeps the runner alive.
   - **Not yet tested:** the podman runner live (arguments only), and the 1013 slow-client close.
-  - `config.example.json`: `runner: {kind: "podman", image: "agmente-bob:2.0.9"}`, `maxAgentsTotal` 4, `maxConnectionsPerIdentity` 8. `maxAgentsPerIdentity` and `HOME` were removed from it; `HOME` is now always the project home.
+  - `config.example.json`: `runner: {kind: "podman", image: "acpcode-bob:2.0.9"}`, `maxAgentsTotal` 4, `maxConnectionsPerIdentity` 8. `maxAgentsPerIdentity` and `HOME` were removed from it; `HOME` is now always the project home.
 
 ### 2026-11-06 — Phase 3 task 3.6: subscribe and replay (T-18, T-19, D-028)
 - **Environment:** macOS, Go 1.27.3, Node v24.5.0.
 - **Commands:** `node --test --test-concurrency=1 gateway/test/subscribe.test.mjs`; `node gateway/test/bench.mjs`; `scripts/check.sh`.
 - **Output (trimmed):**
   ```
-  ✔ subscribe answers {headSeq} first, then replays each logged event as _agmente/event
+  ✔ subscribe answers {headSeq} first, then replays each logged event as _acpcode/event
   ✔ afterSeq selects where the replay starts; at or past the head nothing is replayed
   ✔ subscribe refuses an unknown session and a bad afterSeq, and starts no agent
   ✔ T-18: disconnect mid-turn, reconnect and subscribe with the last seq: the turn completes with no gap
@@ -808,23 +808,23 @@
   - Not yet tested: the 1013 close when live events pile up during a slow replay, and the 1011 close on a replay read error.
 
 ### 2026-11-06 — 3.20 Deep link and push registration (app, D-041)
-- **Commands:** `scripts/check.sh`; `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test`; `xcrun simctl openurl` on the simulator.
+- **Commands:** `scripts/check.sh`; `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test`; `xcrun simctl openurl` on the simulator.
 - **Result:** PASS for the deep link and for permission and token capture. Push to the gateway and delivery are **BLOCKED**.
-  - `scripts/check.sh`: "All checks passed" (130 gateway wire tests, Go tests, ACPClient 174, AppServerClient, AgmenteTransport).
+  - `scripts/check.sh`: "All checks passed" (130 gateway wire tests, Go tests, ACPClient 174, AppServerClient, ACP CodeTransport).
   - App: 191 unit tests, 0 failures, TEST SUCCEEDED (175 before, plus 16 new in `DeepLinkAndPushTests`: 6 parsing, 4 routing, 6 push registration).
-  - **Simulator, link:** `agmente://session/<Local Gateway id>/<waiting session id>` opened that session, with the permission card still showing its three options and nothing answered (the gateway still listed `agmente-perm-1`). A link with a server id the device does not have showed "Link not opened: That link is for a server this device does not have" and the screen did not change. iOS asks "Open in Agmente?" first; that is the system's prompt.
+  - **Simulator, link:** `acpcode://session/<Local Gateway id>/<waiting session id>` opened that session, with the permission card still showing its three options and nothing answered (the gateway still listed `acpcode-perm-1`). A link with a server id the device does not have showed "Link not opened: That link is for a server this device does not have" and the screen did not change. iOS asks "Open in ACP Code?" first; that is the system's prompt.
   - **Mutation checks:** three were run on the 3.20 code before the incident, and each made a test fail. I no longer have a record of the exact changes, so I do not list them; they were not re-run after the rebuild.
-- **BLOCKED:** `_agmente/push/register` (no gateway method; needs the owner's approval); the `aps-environment` entitlement and Push capability (needs the Apple account and signing); the APNs `.p8` key and a device for delivery (3.11).
+- **BLOCKED:** `_acpcode/push/register` (no gateway method; needs the owner's approval); the `aps-environment` entitlement and Push capability (needs the Apple account and signing); the APNs `.p8` key and a device for delivery (3.11).
 - **Not tested:** a notification tap (no push can reach the simulator build without the entitlement; `simctl push` with the D-038 payload is not run); the Settings row on screen; a link opened while the app is not running.
 - **Incident, same day (my mistake):** while cleaning up a mutation check I ran `git checkout -- .`, which reverted every tracked file to the last commit (0068137) and discarded all uncommitted edits to tracked files from 3A to 3D. Untracked files were not touched. I rebuilt the tracked files by replaying my recorded edits onto the commit, then fixed what the replay missed: the `go.mod` and `go.sum` entries for SQLite, the git, snapshot and watch wiring in `server.go`, the file directives of the fake agent (`[write:]`, `[remove:]`, `[symlink:]`), `markSessionUnmaterialized`, `dismissPermissionRequest`, the gateway sections of `ContentView.swift`, the app delegate hook, the Notifications settings row and the URL scheme in `Info.plist`, and decisions D-025, D-026 and D-028 with the PLAN ticks for 3.4 and 3.6. Checked afterwards by the full suites above (130 wire tests, Go tests, 174, 191 and the simulator run). Not provable: that every line of every document is identical to what it was; I compared behaviour through the tests, not text.
 
 ### 2026-11-06 — Follow-up to 3.14/3.15: per-project deny-list (D-050) and container user under Podman (D-051)
-- **Environment:** macOS, Go 1.27.3, Node v24.5.0, git 2.54.0, Podman 5.6.2 with the running machine `podman-machine-default` (libkrun) and image `localhost/agmente-bob:2.0.9`. The machine was under heavy load from other sessions (load average above 400), which matters for the timing notes below. This worktree was behind `main`; it was fast-forwarded to `81ea3c5` first.
+- **Environment:** macOS, Go 1.27.3, Node v24.5.0, git 2.54.0, Podman 5.6.2 with the running machine `podman-machine-default` (libkrun) and image `localhost/acpcode-bob:2.0.9`. The machine was under heavy load from other sessions (load average above 400), which matters for the timing notes below. This worktree was behind `main`; it was fast-forwarded to `81ea3c5` first.
 - **Commands:** `(cd gateway && go test ./...)`; `node --test test/denypaths.test.mjs test/runner-user.test.mjs test/lifecycle.test.mjs`; `scripts/check.sh`.
 - **Check:** `scripts/check.sh` run after the last change (23:20 to 23:25, after the 23:15 pkill notice): "All checks passed." 137 wire tests (130 before, 7 new), 137 pass, 0 fail; 38 Go tests pass, 0 fail, 0 skipped (Podman was available).
 - **Result:** PASS for tasks 1 and 2; task 3 not done (below).
 - **Task 1, deny-list additions (FR-30):**
-  - `_agmente/projects/create` takes `denyPaths` (max 32 entries, 100 characters each, ASCII letters/digits/space/`. _ - / *`; no absolute path, `..`, `.`, empty component, `**`, `?`, `[]`, `\`, `:`, `!`, non-ASCII). Stored in `projects.deny_paths` (schema version 3). A schema 1 and a schema 2 database open, keep their projects, and take the column (Go tests). `create` and `list` return `denyPaths` only when it is not empty.
+  - `_acpcode/projects/create` takes `denyPaths` (max 32 entries, 100 characters each, ASCII letters/digits/space/`. _ - / *`; no absolute path, `..`, `.`, empty component, `**`, `?`, `[]`, `\`, `:`, `!`, non-ASCII). Stored in `projects.deny_paths` (schema version 3). A schema 1 and a schema 2 database open, keep their projects, and take the column (Go tests). `create` and `list` return `denyPaths` only when it is not empty.
   - Applied in `git/diff` (path, whole tree, staged, tree ids) and `git/turnDiff`, with the built-ins always tested first.
   - New tests: 5 wire tests in `gateway/test/denypaths.test.mjs` (validation and boundaries; storage and output shape; diff path/whole-tree/staged with `*.db`, `config/prod.yml`, `vault/*`; turnDiff and tree diff; built-ins stay while additions exist and another project is unaffected), Go `TestValidateDenyPaths`, `TestIsSecretForAddsToTheBuiltInsAndNeverRemovesThem`, `TestProjectDenyPathsRoundTripAndSchema2Migration`.
   - **Mutation checks (each fails the tests named):** (a) `isSecretFor` skipping the built-ins when a project has entries fails the Go test and 2 wire tests (git/diff, built-ins stay); (b) `secretExcludesFor` ignoring project entries fails 2 wire tests (git/diff and turnDiff, content would have shown). Both reverted.
@@ -840,7 +840,7 @@
 
 ### 2026-11-06 — T-36 image decoding limits (PLAN 5.1, 5.2; D-060)
 - **Environment:** macOS, Xcode 27.2, iPhone 17e simulator, `-derivedDataPath /tmp/dd-img`.
-- **Command:** `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17e' -derivedDataPath /tmp/dd-img -only-testing:AgmenteTests/ForkMediaTests test`, and `swift test --package-path ACPClient`.
+- **Command:** `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17e' -derivedDataPath /tmp/dd-img -only-testing:ACPCodeTests/ForkMediaTests test`, and `swift test --package-path ACPClient`.
 - **Output (trimmed):**
   ```
   T-36 50MP PNG: encoded 231825 bytes, output 2048x1600, peak increase 17 MiB
@@ -855,7 +855,7 @@
 
 
 ### 2026-11-06 — 3.21 Branch chip, Git tab and turn diff in the app (D-042)
-- **Commands:** `scripts/check.sh`; `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath /tmp/dd-git -only-testing:AgmenteTests test`.
+- **Commands:** `scripts/check.sh`; `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath /tmp/dd-git -only-testing:ACPCodeTests test`.
 - **Result:** PASS for the unit tests. Not run against a live gateway.
   - `scripts/check.sh`: "All checks passed" (ACPClient 182 tests, 8 new in `GatewayGitTests`: status, diff by path and by trees, log cursor, turn diff and its error mapping, `git/changed` parsing).
   - App: 219 unit tests, 0 failures (191 before, plus 28 new in `GitModelTests.swift`: diff splitting, turn numbering, project model, turn model, store). The runs reported here started after another agent's `pkill xcodebuild` at about 23:15.
@@ -872,7 +872,7 @@
   - History tab lists both commits.
   - Image: a 160x100 PNG sent as an `image` block renders as an image; a `resource_link` renders as a plain row with its URI and is not fetched.
   - Turn diff: "Turn 1 changes" shows only the file the agent wrote in that turn (`made-by-agent.txt`, +1); `a.txt`, modified before the turn, is correctly absent.
-  - Deep link `agmente://session/<server>/<session>` opened the session (iOS first asks "Open in Agmente?").
+  - Deep link `acpcode://session/<server>/<session>` opened the session (iOS first asks "Open in ACP Code?").
 - **Two defects found by this run and fixed:**
   1. The "Turn diff" button was built into the SwiftUI file-change card, but iOS draws the chat with the UIKit list (`FileChangesRows.swift`), so the button never appeared. It is now in the UIKit row, shown only when the gateway offers git and the turn number is known.
   2. "Review" opened an empty "File Changes" sheet (a sheet driven by two state values read before the second was set; upstream behaviour). `SessionDetailView` now uses `.sheet(item:)`, as the Codex view already did.
@@ -881,13 +881,13 @@
 - **Not tested:** no unit test and no mutation check for the new Turn diff button wiring (found and verified on screen only); "no snapshot for this turn" and "not a repository" states on screen; many files or a long history; Dynamic Type and dark mode; a real Bob session. The 3.21 note about counting user messages for the turn number held in this run (turn 1).
 
 ## 2026-11-07 Turn diff button test (FR-31)
-- Added `AgmenteTests/TurnDiffButtonTests.swift`: the UIKit `FileChangesRowView` hides "Turn diff" without a handler, shows it and fires the handler with one, and hides it again on reconfigure.
-- Command: `xcodebuild ... test -only-testing:AgmenteTests/TurnDiffButtonTests` → 3 tests pass.
+- Added `ACPCodeTests/TurnDiffButtonTests.swift`: the UIKit `FileChangesRowView` hides "Turn diff" without a handler, shows it and fires the handler with one, and hides it again on reconfigure.
+- Command: `xcodebuild ... test -only-testing:ACPCodeTests/TurnDiffButtonTests` → 3 tests pass.
 - Mutation check: forcing `turnDiffButton.isHidden = true` in `FileChangesRows.swift` made `buttonIsVisibleAndFiresHandler` fail; source restored.
 - Not covered: the closure chain in `HighPerformanceChatListView` and `SessionDetailView` (`canTurnDiff`/`onTurnDiff`); still checked on screen only.
 
 ## 2026-11-07 Push token registration, gateway and app (3.11 first half, D-052)
-- **Done:** `_agmente/push/register` and `unregister`, schema version 4 (`push_tokens`), `push` extension; app `GatewayClient.registerPush`, `PushGatewaySync`, `AppViewModel+Push`.
+- **Done:** `_acpcode/push/register` and `unregister`, schema version 4 (`push_tokens`), `push` extension; app `GatewayClient.registerPush`, `PushGatewaySync`, `AppViewModel+Push`.
 - **Result:** PASS for the tests; nothing sent to Apple, nothing run on a device.
   - `scripts/check.sh`: "All checks passed". Wire tests 142 (was 137; 5 new in `test/push.test.mjs`: extension advertised, register and replace, bad tokens and environments refused with nothing stored, unregister removes only the caller's token, token absent from audit and responses). Go store tests: replace and delete, schema 3 migration; two older migration tests now also drop `push_tokens` when they rebuild an old shape, and one table count went from 6 to 7.
   - ACPClient: 3 new `GatewayPushTests`. App: 3 new `PushGatewaySyncTests` (sends token and environment; sends nothing without a token, permission or the `push` extension; a refusal is reported without the token). Full app run: TEST SUCCEEDED.
@@ -896,22 +896,22 @@
 - **Unverified:** that `sandbox` for Debug and `production` otherwise matches the real signing; that the app's token reaches the gateway on a real device (the simulator cannot register for remote notifications).
 
 ## 2026-11-07 Real Bob behind the gateway: host runner and Podman container
-- **Environment:** this Mac, Bob 2.0.9, Podman 5.6.2 (libkrun VM), image `agmente-bob:2.0.9`, `BOB_API_KEY` from the gitignored `.env`, loaded into the environment of the test process only and never printed. Scratch git project under `~/.agmente-live/`. Fake agent not involved.
-- **Command:** `set -a; . ./.env; set +a; AGMENTE_GATEWAY_CMD='["<abs>/gateway/bin/agmente-gateway"]' node gateway/scripts/live-bob.mjs --runner host|podman [--no-key]`. The script's client allows the one scratch-file edit and rejects everything else; the gateway approves nothing (D-009). About 5 short prompts per run.
+- **Environment:** this Mac, Bob 2.0.9, Podman 5.6.2 (libkrun VM), image `acpcode-bob:2.0.9`, `BOB_API_KEY` from the gitignored `.env`, loaded into the environment of the test process only and never printed. Scratch git project under `~/.acpcode-live/`. Fake agent not involved.
+- **Command:** `set -a; . ./.env; set +a; ACPCODE_GATEWAY_CMD='["<abs>/gateway/bin/acpcode-gateway"]' node gateway/scripts/live-bob.mjs --runner host|podman [--no-key]`. The script's client allows the one scratch-file edit and rejects everything else; the gateway approves nothing (D-009). About 5 short prompts per run.
 - **Host runner: 24/24** on the final run (one earlier failure was a wrong assumption in the script: Bob sends `available_commands_update` before the turn starts).
 - **Podman container: 24/24 on three runs in a row** after the fix below; before it, 3 earlier runs had 23/24 or 24/24 with random `snapshot_failed` lines.
-- **What was shown on real Bob (both runners):** `session/new` with modes agent/plan/ask; a turn is logged in order with contiguous seq; the index gives idle, unread 1 and Bob's own title; T-18 on real Bob (drop after seq 6, resubscribe, events 7 to the end, no gap); FR-20 (load of a live session answered by the gateway, no `session/load` to Bob, history replayed from the log); a real `session/request_permission` (kind `edit`, "Writing file ...") reached the queue, the index showed `awaiting_approval`, and an answer through `_agmente/approvals/answer` let Bob write the file; a rejected shell command (kind `execute`) did not run; `git/status` and `git/turnDiff` list the file Bob wrote and the text-only turn's diff is empty; idle stop then a new prompt made the gateway start a new Bob and load the session itself (D-032), and Bob still knew the earlier conversation.
+- **What was shown on real Bob (both runners):** `session/new` with modes agent/plan/ask; a turn is logged in order with contiguous seq; the index gives idle, unread 1 and Bob's own title; T-18 on real Bob (drop after seq 6, resubscribe, events 7 to the end, no gap); FR-20 (load of a live session answered by the gateway, no `session/load` to Bob, history replayed from the log); a real `session/request_permission` (kind `edit`, "Writing file ...") reached the queue, the index showed `awaiting_approval`, and an answer through `_acpcode/approvals/answer` let Bob write the file; a rejected shell command (kind `execute`) did not run; `git/status` and `git/turnDiff` list the file Bob wrote and the text-only turn's diff is empty; idle stop then a new prompt made the gateway start a new Bob and load the session itself (D-032), and Bob still knew the earlier conversation.
 - **T-35 PASS:** with no `BOB_API_KEY` and no stored login, real Bob answers `session/new` with `-32000 "Authentication required"` (both runners). It is `session/new`, not `session/prompt`, that fails. (A first attempt was invalid: the gateway still inherited the key from the shell; the script now starts it with a replaced environment.)
 - **Defect found and fixed (Podman only):** about 1 in 25 git container starts failed with `crun: write to /proc/sys/net/ipv4/ping_group_range ... Invalid argument: OCI runtime error`, exit 126, when several git containers started at once with `--userns=keep-id` and `--network=none`. Git never ran, so the turn snapshot failed and `git/turnDiff` said "no snapshot for this turn". Reproduced directly with 24 parallel starts (1 failure). `--sysctl net.ipv4.ping_group_range=0 0` made all 24 fail and was dropped. Fix: `podmanRunner.exec` retries up to 3 times, only for exit 126 with "OCI runtime error" (`containerNeverStarted`). Three unit tests (retry then success, stop after 3, no retry for other failures); mutation check (condition disabled) fails two of them. The `snapshot_failed` audit line now carries the gateway's own error text (`start: ...`, `end: ...`), never git output. **Cause not confirmed on Linux;** the retry is a mitigation.
 - **Not tested here:** real Bob on Linux, T-47, the app against real Bob (simulator pass still to do), Q-2, Q-3, Q-4, Bob's `session/close` on idle close (the project went down by idle stop instead), more than one device, long histories.
 
 ### 2026-11-07 — Watch skip list and additive list updates (D-065, D-066, D-067)
-- **Done:** `watchSkip` at create, stored in schema 5 (`watch_skip`); `_agmente/projects/addDenyPaths` and `addWatchSkip` (merge, 32 in total, never remove); the watcher reads the project each tick and starts from a baseline taken before `git/status`; the root folder is never skipped by name.
+- **Done:** `watchSkip` at create, stored in schema 5 (`watch_skip`); `_acpcode/projects/addDenyPaths` and `addWatchSkip` (merge, 32 in total, never remove); the watcher reads the project each tick and starts from a baseline taken before `git/status`; the root folder is never skipped by name.
 - **Commands and results:**
   - `go vet ./...`, `go test ./...`: pass. New Go tests: `store/store_watch_test.go` (schema 4 to 5 migration, round trip, all-or-nothing update), `server/watchskip_test.go` (validator, merge cap, fingerprint skip). Three older migration tests now also drop `watch_skip` when they rebuild an old shape.
   - New wire tests: `test/watchskip.test.mjs` (5) and `test/projectlists.test.mjs` (6). All 11 pass on their own, and the git watch tests still pass (`gitchanged.test.mjs` 5/5, three runs).
   - `scripts/check.sh` as a whole: **not green in four runs.** Each run reached the wire suite and stopped there. Run 1: T-46 idle stop and turn-diff "each turn has its own diff" (17 s). Run 2: `gitchanged` "changes under node_modules are not watched" (1 of 4 full runs; 3 of 3 standalone passes). The test writes an untracked, non-ignored `node_modules/pkg/index.js`, so a status run that a neighbouring `ignored.log` write triggers late would list it. The same test design is in HEAD. Runs 3 and 4: T-46 "a subscriber keeps the container running; it stops once the subscriber leaves". Wire suite in run 4: 152 pass, 1 fail, 153 total.
-  - Checks that ran outside the gate, after the wire suite failed: `scripts/check-docs.mjs` ok (49 decisions, all tests scheduled); the `--dry-run` of `config.example.json` ok; the private-key and raw-secret-key scans found nothing; `swift test` for `AgmenteTransport` (exit 0), `ACPClient` (192 tests, 0 failures) and `AppServerClient` (9 tests, 0 failures).
+  - Checks that ran outside the gate, after the wire suite failed: `scripts/check-docs.mjs` ok (49 decisions, all tests scheduled); the `--dry-run` of `config.example.json` ok; the private-key and raw-secret-key scans found nothing; `swift test` for `ACPCodeTransport` (exit 0), `ACPClient` (192 tests, 0 failures) and `AppServerClient` (9 tests, 0 failures).
 - **Mutation checks** (each reverted, then the file compared with its backup):
   - Watcher ignores the project's `watchSkip` (`WatchSkip` replaced by nil in `watch.go`): 3 wire tests fail (skip, anchored and bare names, restart).
   - Update drops a built-in once a project has additions (`isSecretFor` skips the built-ins when `extra` is non-empty): `addDenyPaths ... built-ins stay active` fails.
@@ -931,7 +931,7 @@
   1. Suppression skipped (`subscribedDevice` result ignored): "a device with a live subscriber ... gets no push" **FAILS** ("the foreground device gets no push").
   2. Token removal on 410 skipped: "410 Gone removes the token at once and is not retried" **FAILS** (no `push_token_removed` within the wait).
 - **Gate run 1 (`scripts/check.sh` as written):** stops at its first check, "JSON files parse": `.claude/settings.json` is missing from this worktree. The file has never been committed on this branch (`git log --all -- .claude/settings.json` is empty), so it is not a result of this change. Not fixed here.
-- **Gate run 2 (the same script with only that one file removed from its JSON list, ROOT set to this worktree):** `All checks passed`, exit 0. Wire suite 159 of 159 pass. Go `vet`, unit tests and build pass. Dry run of `config.example.json` passes. No secrets found. Docs cross-check passes (`scripts/check-docs.mjs`). Swift packages (`AgmenteTransport`, `ACPClient`, `AppServerClient`) pass.
+- **Gate run 2 (the same script with only that one file removed from its JSON list, ROOT set to this worktree):** `All checks passed`, exit 0. Wire suite 159 of 159 pass. Go `vet`, unit tests and build pass. Dry run of `config.example.json` passes. No secrets found. Docs cross-check passes (`scripts/check-docs.mjs`). Swift packages (`ACPCodeTransport`, `ACPClient`, `AppServerClient`) pass.
 - **Load flakes (run 1 only):** `denypaths.test.mjs` "additions never remove built-ins" (TypeError on an undefined response) and `gitchanged.test.mjs` "a change to an ignored file sends nothing" each failed once, at about 13 s, while other worktrees ran the same suite. Both pass when run alone (10 of 10 in the two files), and both passed in run 2. Nothing was changed for them.
 - **Defects found and fixed while building (not behaviour changes):** the test certificate and key made with LibreSSL 3.3.6 do not parse in Go (`unknown elliptic curve` for the PKCS#8 key, `invalid ECDSA parameters` for the certificate, both from explicit curve parameters). The test now makes both keys with Node's OpenSSL and uses `openssl req -key` only for the certificate. Note for the owner: keys generated with LibreSSL are not usable here; Apple's `.p8` files were not tested (no key).
 - **BLOCKED:** `BLOCKED: needs a real APNs .p8 key (Apple Developer account, key id, team id) and an iPhone`. The device part of T-48 (`docs/PUSH-TESTING.md` Part E.2, steps 2 to 9) is not run. The `aps-environment` entitlement is not added (Apple account). PLAN 3.11 is marked `[!]`.
@@ -939,7 +939,7 @@
 - **Not done, on purpose:** `gateway/config.example.json` has no `push` block. Dry run reads the key file, and the example has no key, so a block there would make `check.sh` fail. The block is shown in PUSH-TESTING Part E and described in SPEC 6.3 (D-055).
 
 ### 2026-11-07 — Signed file URLs (PLAN 5.3, D-061 to D-064, T-37)
-- **Done:** `_agmente/files/url`, `GET`/`HEAD /f/<token>` on the `files.host` only, the `files` config block (key file or random key, TTL cap 300 s, size cap), audit events `file_url_issued`, `file_served`, `file_refused`, `extensions` now ends with `files`.
+- **Done:** `_acpcode/files/url`, `GET`/`HEAD /f/<token>` on the `files.host` only, the `files` config block (key file or random key, TTL cap 300 s, size cap), audit events `file_url_issued`, `file_served`, `file_refused`, `extensions` now ends with `files`.
 - **Commands and results:**
   - `(cd gateway && go vet ./... && go test ./...)`: pass (new Go unit tests for token sign/verify, path rules, type allow-list; config key-file tests).
   - `node --test test/files.test.mjs`: 14 of 14 pass (T-37 cases: `../`, absolute, symlink to `/etc/passwd`, folder link to outside, symlink swapped after signing to outside and to `.env`, expired URL with `ttlSeconds: 1`, tampered token, token spliced from another path, `.env` and `denyPaths` entry, secret-named link, folder, named pipe, wrong Host, upgrade on files host (403), POST (405), HEAD, size cap at signing and at serving, nosniff, no-store, CSP on HTML, SVG as text, audit never holds the token, key file never in audit).
@@ -965,8 +965,8 @@
 - **Environment note:** `.claude/settings.json` is untracked in the main checkout, so I copied it into the worktree to run the gate. It is not committed, and I removed it afterwards. `npm ci --prefix gateway` installed from the lockfile in this worktree.
 
 ## 2026-11-07 Open questions on Bob 2.0.9: Q-2 (T-39), Q-3 (T-42), Q-4 (T-43), session/close (D-032)
-- **Command:** `node gateway/scripts/probe-bob-open-questions.mjs --env-file <repo>/Agmente/.env` (run 2, the full set, 7 prompts); `... --only q2 --raw` (run 3, the image question with raw updates, 1 prompt). Run 1 is void (see below). Raw logs kept outside the repo in `~/.agmente-live/openq-run*.log`.
-- **Path:** Bob 2.0.9 on the host runner, run directly as `bob acp --accept-license --log-level warn` over stdio, in a scratch project under `~/.agmente-live/` with a disposable `HOME`. No `--auto-approve`, no `--trust`. Not run through the gateway: the gateway answers `session/load` and `session/resume` itself for a live session (D-029), so it would hide the behaviour under test. Podman was not run: these answers are about Bob's ACP behaviour, and the container path was not part of the question.
+- **Command:** `node gateway/scripts/probe-bob-open-questions.mjs --env-file <repo>/ACPCode/.env` (run 2, the full set, 7 prompts); `... --only q2 --raw` (run 3, the image question with raw updates, 1 prompt). Run 1 is void (see below). Raw logs kept outside the repo in `~/.acpcode-live/openq-run*.log`.
+- **Path:** Bob 2.0.9 on the host runner, run directly as `bob acp --accept-license --log-level warn` over stdio, in a scratch project under `~/.acpcode-live/` with a disposable `HOME`. No `--auto-approve`, no `--trust`. Not run through the gateway: the gateway answers `session/load` and `session/resume` itself for a live session (D-029), so it would hide the behaviour under test. Podman was not run: these answers are about Bob's ACP behaviour, and the container path was not part of the question.
 - **Key:** the shell form `set -a; . .env; set +a` was refused by the sandbox (the file is outside the worktree), so the probe read only the `BOB_API_KEY` line from `--env-file`, in its own process. It printed `set: true`. A search of the saved logs found 0 copies of the value.
 - **Prompts:** 15 in total (run 1: 7, run 2: 7, run 3: 1).
 - **Run 1 is void.** My permission check matched `make_image` and `ping_http`, but Bob titles the calls "Running Make Image (probe-image)" and "Running Ping Http (probe-http)". Both calls were rejected, so the Q-2 and Q-3 "after" results were not valid. The check was fixed and run 2 is reported below. Q-4 and the close probe in run 1 agreed with run 2.
@@ -1007,11 +1007,11 @@ Outcome: the image is dropped before ACP. FR-37 (phase 5 images from tool result
   - 4.10 (FR-36): `initialize` `sessionCapabilities.delete` parsed; "Delete Session" sends `session/delete` first when advertised and the session exists on the agent; local removal only after the agent accepts; errors shown in an alert.
 - **Commands and results:**
   - `swift test --package-path ACPClient` → 210 tests, 0 failures (18 new in `SessionMetaUpdateTests`).
-  - `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/dd-phase4 -only-testing:AgmenteTests test` → TEST SUCCEEDED, 222 tests, 0 failures (new `ForkSessionMetaTests`, 15 tests).
+  - `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/dd-phase4 -only-testing:ACPCodeTests test` → TEST SUCCEEDED, 222 tests, 0 failures (new `ForkSessionMetaTests`, 15 tests).
   - `node --test --test-timeout=30000 test/start-mode.test.mjs` (gateway) → 1 pass (new: `_meta["bob/mode"]` reaches the agent; no `_meta` gives the agent default).
   - `go vet`, `go test ./...`, build of the gateway → pass.
   - `node scripts/check-docs.mjs` → "47 tests, 45 FRs, 15 NFRs, 50 decisions; all tests scheduled".
-  - `swift test` for `AgmenteTransport` and `AppServerClient` → pass. `ACPClient` → pass (above).
+  - `swift test` for `ACPCodeTransport` and `AppServerClient` → pass. `ACPClient` → pass (above).
   - `scripts/check.sh` itself: not green. In this worktree `.claude/settings.json` is not tracked, so its JSON step fails before anything else (pre-existing, not changed here). I ran the same steps without that one file: the wire suite then failed (below), so the gate did not reach its end.
 - **Mutation checks** (each restored, then re-run green):
   - FR-33: removing the `plan_removed` case → `testPlanRemoved` fails (`[]` vs `[planRemoved]`).
@@ -1027,12 +1027,12 @@ Outcome: the image is dropped before ACP. FR-37 (phase 5 images from tool result
 
 
 ## 2026-11-07 HTML preview in a sandboxed WKWebView, T-38 (PLAN 5.4; D-074 to D-077)
-- **Done:** `Agmente/Fork/Preview/` (`AgentHTMLDocument.swift`: policy and sanitizer; `AgentHTMLPreviewController.swift`: the web view, rule list, navigation and UI delegates, scheme handler; `AgentHTMLPreviewSheet.swift`: sheet and representable). Chat: fenced `html` blocks and `resource` blocks with `text/html` get an "HTML preview" row (`ForkMediaRowView`, `ChatEntryMapper`), wired in `SessionDetailView` and `CodexSessionDetailView`. `resource_link` is still never fetched.
+- **Done:** `ACPCode/Fork/Preview/` (`AgentHTMLDocument.swift`: policy and sanitizer; `AgentHTMLPreviewController.swift`: the web view, rule list, navigation and UI delegates, scheme handler; `AgentHTMLPreviewSheet.swift`: sheet and representable). Chat: fenced `html` blocks and `resource` blocks with `text/html` get an "HTML preview" row (`ForkMediaRowView`, `ChatEntryMapper`), wired in `SessionDetailView` and `CodexSessionDetailView`. `resource_link` is still never fetched.
 - **Result: PASS for T-38** (scripts off and on), in a real `WKWebView` in a window in the unit-test host, against a loopback probe on `127.0.0.1` (POSIX socket, no dependency). Both cases: 0 connections. A control test loads the same page in an unrestricted web view and sees at least one connection, so the zero counts are not from a blind probe.
 - **Unit tests:** `AgentHTMLDocumentTests` (policy injected once even with the agent's own meta policy; policy first in the head; `script-src` only when scripts are on; `<base>` and `<meta>` removed; `</head>` trick; nested tags; fence scanner), `AgentHTMLIngestTests` (`text/html` text and blob; malformed and oversize placeholders; `resource_link` stays a link).
 - **Commands:**
-  - `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/dd-preview -only-testing:AgmenteTests/AgentHTMLPreviewTests test`: 4 tests pass (T-38 scripts off, scripts on, control, and a final run with the control poll).
-  - Full app run, `-only-testing:AgmenteTests test`: TEST SUCCEEDED, 222 XCTest cases, 0 failures; Swift Testing run 46 tests passed.
+  - `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/dd-preview -only-testing:ACPCodeTests/AgentHTMLPreviewTests test`: 4 tests pass (T-38 scripts off, scripts on, control, and a final run with the control poll).
+  - Full app run, `-only-testing:ACPCodeTests test`: TEST SUCCEEDED, 222 XCTest cases, 0 failures; Swift Testing run 46 tests passed.
   - `scripts/check.sh`: "All checks passed." (wire suite, Go vet and tests, docs cross-check, Swift packages).
 - **Mutation checks** (one change at a time, source restored after each; the sources were checked against a saved copy):
 
@@ -1056,7 +1056,7 @@ Outcome: the image is dropped before ACP. FR-37 (phase 5 images from tool result
   - Whether a hostile page can make visible content look like a link that navigates (blocked links appear as text only, by design; not tested on screen).
 
 ## 2026-11-07 Apple `container` spike, step 1 of the Podman to Apple migration (no gateway code changed)
-- **Setup:** `container` CLI 1.7.0 (`/opt/homebrew/bin/container`), macOS 27.0.1 arm64. `container system start`; default kernel `kata-static-4.3.1-arm64` installed with `container system kernel set --recommended` (downloaded from the kata-containers GitHub release, approved by the owner). Image: `podman save --format oci-archive` of `localhost/agmente-bob:2.0.9` (Bob 2.0.9), loaded with `container image load`. Scratch files were removed.
+- **Setup:** `container` CLI 1.7.0 (`/opt/homebrew/bin/container`), macOS 27.0.1 arm64. `container system start`; default kernel `kata-static-4.3.1-arm64` installed with `container system kernel set --recommended` (downloaded from the kata-containers GitHub release, approved by the owner). Image: `podman save --format oci-archive` of `localhost/acpcode-bob:2.0.9` (Bob 2.0.9), loaded with `container image load`. Scratch files were removed.
 - **Results (each run once, on this Mac):**
   - Ownership: uid 10001 writes into a host `0700` home and a same-path project folder with `-u 10001:10001 -v P:P` and no `keep-id`. PASS. The host sees the files as the owner's user. The gate for stopping was not hit.
   - Stdio: `run -i` passes a JSON line and a 2 MB stdin through, and exit codes propagate (`exit 7` gives 7). PASS.
@@ -1138,7 +1138,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 
 ## 2026-11-07 Migration step 5: Mac config, setup guide, spec notes
 - **Done:** `gateway/config.mac.example.json` (kind `apple`, full image name, `container` path, placeholder `dns`); `docs/MAC-SETUP.md` (setup on a Mac, with a **verify** mark on each step not confirmed in the records); `docs/SPEC.md` 6.3, 9 and NFR-15; `docs/ARCHITECTURE.md` section 1 (agent control and project runtime rows); D-082.
-- **Dry run:** the Mac example, with paths moved to a temporary folder and `dns` set to the Mac's resolver, runs `agmente-gateway --config <file> --dry-run` → `Config OK (dry run)`, exit 0.
+- **Dry run:** the Mac example, with paths moved to a temporary folder and `dns` set to the Mac's resolver, runs `acpcode-gateway --config <file> --dry-run` → `Config OK (dry run)`, exit 0.
 - **Check:** `scripts/check.sh` → All checks passed (log: scratchpad `check-step5.log`).
 - **Not verified:** the setup guide's **verify** steps (podman build of the image, `container system status`, `container image list`, cleanup of the archive). The guide was not run end to end on a fresh Mac.
 - **Changed files:** `gateway/config.mac.example.json`, `docs/MAC-SETUP.md`, `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` (D-081 wording, D-082), `docs/RESULTS.md`.
@@ -1158,11 +1158,11 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **Changed files:** `docs/SPEC.md` (F-22), `docs/PLAN.md` (5.5 ticked), `docs/RESULTS.md`.
 
 ## 2026-11-07 Mac setup guide verified; test temp folders cleaned
-- **Guide checks on this Mac:** `container --version` → 1.7.0; `container system status` → running; `container image list` → `localhost/agmente-bob 2.0.9` present; `podman build -t agmente-bob:2.0.9 -f deploy/bob-project.Containerfile deploy` → exit 0 (the podman machine was running); the archive save and removal → confirmed on a scratch copy. The verify markers for these steps are removed in `docs/MAC-SETUP.md`.
+- **Guide checks on this Mac:** `container --version` → 1.7.0; `container system status` → running; `container image list` → `localhost/acpcode-bob 2.0.9` present; `podman build -t acpcode-bob:2.0.9 -f deploy/bob-project.Containerfile deploy` → exit 0 (the podman machine was running); the archive save and removal → confirmed on a scratch copy. The verify markers for these steps are removed in `docs/MAC-SETUP.md`.
 - **Not confirmed:** the 401 for a short image name (needs a pull from docker.io, not run). Its marker is kept.
 - **Not run:** `container system kernel set` (changes the kernel; not requested).
 - **Note:** the Apple store holds the image from an earlier load (digest ba754796892d). The new podman build was not loaded into it.
-- **Temp folders:** 912 `agmente-*` test folders in `/var/folders/s9/p3mf8wns41b9c7t5grkl4d5w0000gn/T/` (owner uid 501, modified 2026-11-06 to 2026-11-07) were deleted; 0 failed. Six were kept because each has a `.git` at depth 3 and looks like a gateway test fixture: `agmente-gw-GDddZH`, `-GJrQhr`, `-UxXXjF`, `-e85JJo`, `-n3qHRt`, `-vkd64O`. The owner decides whether they go.
+- **Temp folders:** 912 `acpcode-*` test folders in `/var/folders/s9/p3mf8wns41b9c7t5grkl4d5w0000gn/T/` (owner uid 501, modified 2026-11-06 to 2026-11-07) were deleted; 0 failed. Six were kept because each has a `.git` at depth 3 and looks like a gateway test fixture: `acpcode-gw-GDddZH`, `-GJrQhr`, `-UxXXjF`, `-e85JJo`, `-n3qHRt`, `-vkd64O`. The owner decides whether they go.
 - **Changed files:** `docs/MAC-SETUP.md` (six verify markers removed), `docs/RESULTS.md`.
 
 ## 2026-11-07 Probe P2: does Bob persist an MCP HTTP header value?
@@ -1214,7 +1214,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **Not done:** the live check against Bob (6A.4), and `scripts/check.sh` (app and gateway gate).
 
 ## 2026-11-07 Phase 6A live check: T-40 (new-session part) through the gateway, real Bob 2.0.9
-- **Method:** host runner; project created through `_agmente/projects/create`; the home `mcp.json` written at the project's home path with one HTTP marker server (`marker_tool` → MARKER-OK) enabled; `_agmente/mcp/set` used to toggle it; new `session/new` per case; prompt "Call the tool marker_tool and tell me its exact output." Scratch under `live6a/`.
+- **Method:** host runner; project created through `_acpcode/projects/create`; the home `mcp.json` written at the project's home path with one HTTP marker server (`marker_tool` → MARKER-OK) enabled; `_acpcode/mcp/set` used to toggle it; new `session/new` per case; prompt "Call the tool marker_tool and tell me its exact output." Scratch under `live6a/`.
 - **Case A (`disabled: true`):** no request reached the marker server (0 lines); Bob said no such tool exists; no tool call or permission request. Prompt ended `end_turn`.
 - **Case B (`disabled: false`):** the server was connected (14 requests) and the tool ran; Bob answered MARKER-OK. The test client allowed that one request.
 - **Verdict:** T-40 new-session part passes in both directions. Bob reads the home file per session: case B reused the running Bob process and still loaded the server.
@@ -1223,13 +1223,13 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 
 ## 2026-11-07 Phase 6A gate after D-089 and the T-37 fix
 - **Gate:** `scripts/check.sh` → All checks passed (exit 0). Wire suite 232 of 232 pass (log: scratchpad `gate/check-d089.log`).
-- **D-089:** the phone may send `alwaysAllow` (session list and `_agmente/mcp/set`); shape limits: array of at most 64 non-empty names, each at most 128 characters; explicit null refused. Wire test (b) now expects acceptance; the unit and wire tests that expected a refusal were updated, each for D-089 (listed in the agent's report, scratch `backup-d089/` holds the originals).
+- **D-089:** the phone may send `alwaysAllow` (session list and `_acpcode/mcp/set`); shape limits: array of at most 64 non-empty names, each at most 128 characters; explicit null refused. Wire test (b) now expects acceptance; the unit and wire tests that expected a refusal were updated, each for D-089 (listed in the agent's report, scratch `backup-d089/` holds the originals).
 - **T-37 test race (files.test.mjs):** the earlier gate failure was a timing race in the test: audit lines arrive on stderr, and the test read them right after the RPC response. Fixed by waiting for the same predicate (`waitForAudit`) before each positive assertion; expected values unchanged. 5 of 5 runs of the file pass. Remaining risk: negative checks (asserting absence) cannot wait; they are listed in the agent's report.
 - **6A live check (T-40, new-session part):** passed (entry above). Still open for 6A.4: the container path (P4 shows file visibility) and the resume and load of a session after a changed list (the Q-3 gap).
 - **Changed files:** `gateway/internal/server/mcp_guard.go`, `mcp.go`, `mcp_guard_test.go`, `mcp_test.go`, `gateway/internal/mcpconf/mcpconf.go` and its test, `gateway/test/mcp-guard.test.mjs`, `gateway/test/mcp-config.test.mjs`, `gateway/test/files.test.mjs`; `docs/DECISIONS.md` (D-089), `CLAUDE.md` (approval rule exception), `docs/RESULTS.md`.
 
 ## 2026-11-07 Phase 6A: Q-3 resume case observed; Apple container check not run
-- **Q-3 (resume after a changed list), host runner, real Bob 2.0.9:** an enabled marker entry (home file and session list); turn 1 ran the tool; then `_agmente/mcp/set disabled: true`. Bob reconnected the marker once within 4 s of the file change (the live session kept it). Then:
+- **Q-3 (resume after a changed list), host runner, real Bob 2.0.9:** an enabled marker entry (home file and session list); turn 1 ran the tool; then `_acpcode/mcp/set disabled: true`. Bob reconnected the marker once within 4 s of the file change (the live session kept it). Then:
   - (i) `session/resume` with `mcpServers: []`: 0 marker requests; the gateway answered it from its cache (D-029, audit `reopen_answered`); the next prompt still ran the tool (MARKER-OK).
   - (ii) `session/resume` with the entry as before: 0 marker requests; cache answer; the tool still ran.
   - **Verdict:** on a live session with earlier turns, a changed list and `disabled` do not reach Bob until a new session or an idle reload (F3). The reload path is not covered by this run.
@@ -1246,7 +1246,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **6A status:** the gateway build, Go and wire suites, the gate, the T-40 new-session part on the host runner and on the Apple runner, and the Q-3 resume case are all recorded. 6A can be recorded as passed, with the reload path (idle stop) not covered by a live run.
 
 ## 2026-11-07 Phase 6B app side: built and tested (not yet wired)
-- **Built:** `Agmente/Security/MCPHeaderStore.swift` (header and env values in the Keychain, keyed by entry id; mode kSecAttrAccessibleWhenUnlockedThisDeviceOnly); `Agmente/Fork/MCP/` (`MCPServerEntry`, `MCPServersModel` with a JSON file holding names only, `MCPServersView`, payload builder `mcpServersPayload(for:)`); `Agmente/Fork/Skills/` (`SkillsModel` with the name and 64 KiB checks before any request, `SkillsEditorView`, `SkillBiometricGate` with `.deviceOwnerAuthenticationWithBiometrics`); `Info.plist` gained `NSFaceIDUsageDescription`.
+- **Built:** `ACPCode/Security/MCPHeaderStore.swift` (header and env values in the Keychain, keyed by entry id; mode kSecAttrAccessibleWhenUnlockedThisDeviceOnly); `ACPCode/Fork/MCP/` (`MCPServerEntry`, `MCPServersModel` with a JSON file holding names only, `MCPServersView`, payload builder `mcpServersPayload(for:)`); `ACPCode/Fork/Skills/` (`SkillsModel` with the name and 64 KiB checks before any request, `SkillsEditorView`, `SkillBiometricGate` with `.deviceOwnerAuthenticationWithBiometrics`); `Info.plist` gained `NSFaceIDUsageDescription`.
 - **Tests:** `xcodebuild … test` (iPhone 17 simulator) → TEST SUCCEEDED; XCTest 257 with 0 failures; Swift Testing 61 in 8 suites passed; UI tests passed on re-run (one launch problem in the first run). The app tests added: header store 6, MCP 19, skills 10. A first-run failure in a test I wrote was corrected: an unconfirmed stdio entry is refused on save (the design); the test now checks that. Log: `scratchpad/app6b/xcodebuild-test-2.log`. `scripts/check.sh` → passed.
 - **Not done:** the `ServerViewModel` wiring at the three `mcpServers: []` call sites; the `SessionStorage.deleteServer` header hook; Face ID on a device (the simulator cannot match it; BLOCKED for device run); editing an existing skill needs its content, which the gateway's list does not return (overwrite only, for now).
 - **Decisions taken on the recommendations (non-destructive):** headers and env values in the Keychain; stdio args in the JSON file (must not hold secrets; the warning says so); biometrics only for the skill save gate; `alwaysAllow` settable from the phone (D-089) with a warning in the editor.
@@ -1254,7 +1254,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 ## 2026-11-07 Phase 6B wired; full gate passes
 - **App wiring:** the three `mcpServers` call sites in `ServerViewModel.swift` use `mcpServersForSession()` (gateway servers only; plain ACP servers still send `[]`); HTTP entries only when the agent advertises `mcpCapabilities.http`. The capability is now parsed (both initialize parsers). `SessionStorage.deleteServer` removes the server's MCP entries and header values.
 - **App tests:** `xcodebuild … test` (iPhone 17) → TEST SUCCEEDED; unit tests 262, 0 failures; UI 2 passed, 1 skipped (pre-existing). New wiring tests: plain server sends `[]`; gateway server sends the enabled HTTP entry; no HTTP without the capability; disabled entries not sent; delete removes entries and header values.
-- **Gateway:** `_agmente/skills/read` added (content read for the editor); its tests are in the gate.
+- **Gateway:** `_acpcode/skills/read` added (content read for the editor); its tests are in the gate.
 - **Gate:** `scripts/check.sh` → All checks passed; wire suite 235 of 235 (log: scratchpad `gate/check-6b.log`).
 - **Note:** the gateway accepts `https` to any host for MCP URLs and `http` only to loopback; the app's HTTP entries follow the same rule, so an `https` server on the LAN is allowed.
 - **Still open for 6B:** Face ID on a device (BLOCKED: needs a device run); the three call sites have no direct test (the function they call is tested); the `mcpCapabilities.http` parse has no unit test; no live end-to-end check of the app's MCP list against the gateway.
@@ -1262,13 +1262,13 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 ## 2026-11-07 T-35 (Bob without BOB_API_KEY): gateway and app mapping (partial)
 - **Live (real Bob 2.0.9, host runner, key absent from the environment):** session/new → the phone receives `{"code":-32000,"message":"Authentication required"}`, no data. Two runs: 3374 ms and 3142 ms, including the agent's cold start.
 - **Gateway:** passes the agent's error object unchanged (supervisor.go `agentResponse`; only the id is replaced).
-- **App:** already maps it to the auth text (`ACPClient/.../ACP/AgentErrorText.swift`, decided in D-072), used at `Agmente/ServerViewModel.swift` (create, prompt, load, resume, delete paths).
+- **App:** already maps it to the auth text (`ACPClient/.../ACP/AgentErrorText.swift`, decided in D-072), used at `ACPCode/ServerViewModel.swift` (create, prompt, load, resume, delete paths).
 - **Not done:** a wire test (the fake agent has no failing session/new option; a test with an inline agent is possible); an on-screen check on the simulator with the no-key gateway.
 - **T-35 status:** Partial until the on-screen check is recorded.
 
 ## 2026-11-07 Phase 6C: gateway relay (6C.2) and app form (6C.3) built; live T-45 open
 - **6C.2 gateway:** elicitation relay and answer (D-090). Node `elicitation.test.mjs` 6 of 6 pass (written before the code: all failed). Mutation (timeout sends accept) makes the timeout test fail; restored. Go build, vet and tests pass. The initialize now advertises `clientCapabilities.elicitation.form` to the agent only.
-- **6C.3 app:** `Agmente/Fork/Elicitation/` (request parser, form model, inbox, view, routing) and `ACPClient/.../GatewayElicitation.swift`; hooks at `AppViewModel.swift:215`, `Fork/Gateway/AppViewModel+Gateway.swift:51` and `ContentView.swift:78`. `xcodebuild test` → 281 tests, 0 failures; 19 new elicitation tests.
+- **6C.3 app:** `ACPCode/Fork/Elicitation/` (request parser, form model, inbox, view, routing) and `ACPClient/.../GatewayElicitation.swift`; hooks at `AppViewModel.swift:215`, `Fork/Gateway/AppViewModel+Gateway.swift:51` and `ContentView.swift:78`. `xcodebuild test` → 281 tests, 0 failures; 19 new elicitation tests.
 - **Deviations from PLAN 6C.3 (to confirm):** optional unsupported fields are left out of the content (PLAN said cancel); only required unsupported fields block Accept. Fields are shown in name order (the wire object has no order). The form cannot be dismissed without an answer.
 - **Not done:** live T-45 (needs a Bob account that shows the licence form; the current account is internal, not confirmed); on-screen check of the form; the Swift 6 actor warning on `ElicitationFormModel` Identifiable (harmless, not fixed).
 - **Phase 6C status:** built and tested at unit and wire level; the live check and the on-screen check are open.
@@ -1288,7 +1288,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **Gap found on the form:** the note "This form is not supported in this app; you can decline or cancel." showed even though only an optional array field was unsupported. It should show only when a required field is unsupported.
 
 ## 2026-11-07 App fixes for the on-screen gaps (unit level)
-- **Session create failure:** `ServerViewModel.sessionCreateError` is set when session/new fails; `ContentView` shows a "Session not created" alert with the mapped text. The transcript cannot hold the message, because the placeholder is removed on failure and an existing test requires that. Tests: `AgmenteTests/SessionCreateAuthErrorTests.swift` (3, incl. the -32000 auth text, another error, and dismiss).
+- **Session create failure:** `ServerViewModel.sessionCreateError` is set when session/new fails; `ContentView` shows a "Session not created" alert with the mapped text. The transcript cannot hold the message, because the placeholder is removed on failure and an existing test requires that. Tests: `ACPCodeTests/SessionCreateAuthErrorTests.swift` (3, incl. the -32000 auth text, another error, and dismiss).
 - **Elicitation note:** the "not supported" note now shows only for a required unsupported field. Tests: `ElicitationTests` `testOnlyOptionalUnsupportedFieldShowsNoNote`, `testRequiredUnsupportedFieldShowsNote`.
 - **xcodebuild test:** TEST SUCCEEDED; 286 passed, 0 failed (unit and UI).
 - **Not yet done:** the on-screen re-check of T-35 with the alert (running). The new tests have not been run against the pre-fix code to confirm they fail before the change. A second send-path message ("Failed to create session") can appear after the alert; left as is.
@@ -1301,7 +1301,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 
 ## 2026-11-07 New-session sheet for gateway servers (project pick, no "/")
 - **Change:** for a gateway server, the new-session sheet picks a registered project (default: the first); Create is off with no project; the sent cwd is the project's path, never blank or "/". The plain free-text path is unchanged. `ServerViewModel.sendNewSession` refuses a gateway send with no project path.
-- **Files:** `Agmente/Fork/Gateway/GatewayNewSessionPick.swift` (new), `Agmente/Fork/Gateway/GatewayHomeView.swift` (lines 134 to 188, the sheet), `Agmente/ContentView.swift` (the sheet's onCreate and two New Session buttons), `Agmente/ServerViewModel.swift` (`sendNewSession`), tests `AgmenteTests/NewSessionProjectPickTests.swift` (6).
+- **Files:** `ACPCode/Fork/Gateway/GatewayNewSessionPick.swift` (new), `ACPCode/Fork/Gateway/GatewayHomeView.swift` (lines 134 to 188, the sheet), `ACPCode/ContentView.swift` (the sheet's onCreate and two New Session buttons), `ACPCode/ServerViewModel.swift` (`sendNewSession`), tests `ACPCodeTests/NewSessionProjectPickTests.swift` (6).
 - **xcodebuild test:** TEST SUCCEEDED; 292 tests, 0 failures. One UI runner launch error appears in the log; not re-run.
 - **Open:** the sheet agent rewrote lines 134 to the end of `GatewayHomeView.swift` after the file had changed on disk, so a concurrent edit may have been overwritten; no copy survives. Lines 1 to 133 are unchanged. Needs owner check. The on-screen check of the sheet is not done.
 
@@ -1319,7 +1319,7 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **Result:** project created; session/new in the registered project ok (T-33 new session); session/prompt "Reply with the word OK." → `end_turn`; session/close ok.
 - **Trust file:** `<stateDir>/homes/<projectId>/.bob/trustedFolders.json` holds the project path as its key.
 - **Audit:** 0 matches of the key (full and the first 8 characters); no `--trust` in the gateway source. The audit line does not carry argv, so `--trust` absence in the live argv rests on the unit test (`trust_test.go`) and the wire test.
-- **Cleanup:** gateway stopped by PID; no agmente containers left; the test folder removed.
+- **Cleanup:** gateway stopped by PID; no acpcode containers left; the test folder removed.
 - **Status:** T-33 (new session, prompt) passes live; 4.2 and 4.3 pass with the wire and live evidence above.
 
 ## 2026-11-07 On-screen: project picker for a gateway server (simulator)
@@ -1332,8 +1332,8 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 
 ## 2026-11-07 Fix: session/list sent with a refused cwd (gateway servers)
 - **Root cause:** `ServerViewModel` built `session/list` from the server's working directory; an empty one became "/", which is outside every gateway root, so the gateway refused it (`cwd_rejected`, guard.go cwdAllowed, checked in server.go before routing).
-- **Fix (app only):** `Agmente/Fork/Gateway/SessionListPayload.swift` (`ACPSessionListPayload.forServer`): a gateway server sends no cwd; a plain ACP server is unchanged. Both request sites in `ServerViewModel.swift` use it. The gateway guard for session/new is unchanged.
-- **Tests:** `AgmenteTests/SessionListCwdTests.swift` (4). xcodebuild → TEST SUCCEEDED, 296 unit tests, 0 failures (re-run without a launch flake; one earlier UI launch flake).
+- **Fix (app only):** `ACPCode/Fork/Gateway/SessionListPayload.swift` (`ACPSessionListPayload.forServer`): a gateway server sends no cwd; a plain ACP server is unchanged. Both request sites in `ServerViewModel.swift` use it. The gateway guard for session/new is unchanged.
+- **Tests:** `ACPCodeTests/SessionListCwdTests.swift` (4). xcodebuild → TEST SUCCEEDED, 296 unit tests, 0 failures (re-run without a launch flake; one earlier UI launch flake).
 - **Caveat:** a gateway socket with no project yet answers `session/list` with -32602 "no project" (by design, supervisor_test.mjs:189), so that call returns no list. The gateway home uses `sessions/index`; the on-screen effect is not yet checked.
 
 ## 2026-11-07 On-screen: gateway home after the session/list fix (partial)
@@ -1343,8 +1343,8 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 
 ## 2026-11-07 Fix: first session/list waits for the gateway flag
 - **Root cause:** the first session/list after Add Server went out before the initialize result was applied, so the gateway flag was still false and the app fell back to "/", which the gateway refused (cwd_rejected).
-- **Fix:** `ACPSessionListPayload.forServerIfKnown` (`Agmente/Fork/Gateway/SessionListPayload.swift`) returns nil until the initialize result is applied; `ServerViewModel` keeps `hasAppliedInitializeResult` (set in `updateGatewayInfo`) and gates both list paths on it. Plain ACP servers also wait for their initialize result before the first list.
-- **Tests:** 3 new in `AgmenteTests/SessionListCwdTests.swift`; xcodebuild → TEST SUCCEEDED, 299 executed, 0 failures (one earlier UI launch flake, re-run passed).
+- **Fix:** `ACPSessionListPayload.forServerIfKnown` (`ACPCode/Fork/Gateway/SessionListPayload.swift`) returns nil until the initialize result is applied; `ServerViewModel` keeps `hasAppliedInitializeResult` (set in `updateGatewayInfo`) and gates both list paths on it. Plain ACP servers also wait for their initialize result before the first list.
+- **Tests:** 3 new in `ACPCodeTests/SessionListCwdTests.swift`; xcodebuild → TEST SUCCEEDED, 299 executed, 0 failures (one earlier UI launch flake, re-run passed).
 - **Still open:** the on-screen re-check of the first connect (no cwd_rejected).
 
 ## 2026-11-07 On-screen: first connect after Add Server (PASS)
@@ -1359,9 +1359,9 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **Next:** add an entry point for gateway servers (recommendation taken: a row in the gateway server's settings opening `MCPServersView`), then re-run the on-screen check.
 
 ## 2026-11-07 MCP servers entry point (6B.2 UI) and bundle ID for device builds
-- **Entry point:** a "MCP Servers" row in the More menu of a gateway server (`ContentView.swift`, identifier `gatewayMCPServers`), presenting `GatewayMCPServersSheet` (`Agmente/Fork/MCP/MCPEntryPoint.swift`). Plain ACP servers are unchanged. Unit tests: `AgmenteTests/MCPEntryPointTests.swift` (2, pass). Reachability is from reading the navigation code; the on-screen check is not yet run.
-- **App unit tests:** 301 executed, 0 failures (both runs). The UI test runner (`com.example.AgmenteUITests.xctrunner` in the old ID) failed to launch in the last run; run 1 reported success. Not yet diagnosed.
-- **Bundle IDs:** now `com.adammakarucha.agmente` (app), `.tests`, `.uitests`, in `Agmente.xcodeproj/project.pbxproj`.
+- **Entry point:** a "MCP Servers" row in the More menu of a gateway server (`ContentView.swift`, identifier `gatewayMCPServers`), presenting `GatewayMCPServersSheet` (`ACPCode/Fork/MCP/MCPEntryPoint.swift`). Plain ACP servers are unchanged. Unit tests: `ACPCodeTests/MCPEntryPointTests.swift` (2, pass). Reachability is from reading the navigation code; the on-screen check is not yet run.
+- **App unit tests:** 301 executed, 0 failures (both runs). The UI test runner (`com.example.ACPCodeUITests.xctrunner` in the old ID) failed to launch in the last run; run 1 reported success. Not yet diagnosed.
+- **Bundle IDs:** now `com.adammakarucha.acpcode` (app), `.tests`, `.uitests`, in `ACPCode.xcodeproj/project.pbxproj`.
 - **Device build:** blocked. Xcode reports the Apple Developer Program License Agreement for team `JNPGD7477Q` must be accepted by the account holder before a profile can be created.
 
 ## 2026-11-07 On-screen end-to-end: app MCP list reaches Bob (6.1)
@@ -1373,8 +1373,8 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 ## 2026-11-07 Fix: More-menu MCP row appears after connect (unit level)
 - **Cause:** `ServerViewModel.gatewayInfo` was not `@Published`, so the More menu did not re-render when the gateway flag arrived.
 - **Fix:** `ServerViewModel.swift:118` now `@Published private(set) var gatewayInfo`.
-- **Test:** `AgmenteTests/MCPEntryPointTests.swift` `testUpdateGatewayInfoPublishesChangeSoMenuRefreshes` (failed before, passes after). Unit tests: 302 executed, 0 failures.
-- **UI tests:** `AgmenteUITests.testExample` and `testLaunchPerformance` fail at app launch ("does not have a process ID"; "Failed to get background assertion") in both runs. Not yet diagnosed; the base code is not checked the same way.
+- **Test:** `ACPCodeTests/MCPEntryPointTests.swift` `testUpdateGatewayInfoPublishesChangeSoMenuRefreshes` (failed before, passes after). Unit tests: 302 executed, 0 failures.
+- **UI tests:** `ACPCodeUITests.testExample` and `testLaunchPerformance` fail at app launch ("does not have a process ID"; "Failed to get background assertion") in both runs. Not yet diagnosed; the base code is not checked the same way.
 - **Not checked on screen yet.**
 
 ## 2026-11-07 On-screen: More-menu MCP row after first connect (PASS)
@@ -1382,24 +1382,24 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 - **Screenshots:** scratchpad `morerow/more-menu-first-connect.png`, `morerow/more-menu-attempt2.png`.
 
 ## 2026-11-07 UI test launch failures: diagnosis
-- **Wiring:** the app, unit tests and UI tests use the new bundle IDs consistently (`com.adammakarucha.agmente`, `.tests`, `.uitests`); the UI tests target the app.
+- **Wiring:** the app, unit tests and UI tests use the new bundle IDs consistently (`com.adammakarucha.acpcode`, `.tests`, `.uitests`); the UI tests target the app.
 - **Runs:** UI-only runs passed twice (exit 0). Each first logged a transient launch failure on a simulator clone (`Code=-308 (ipc/mig) server died` in one; `RequestDenied`/`launch-failed` in the other), then retried and passed.
 - **Not established:** the cause of the transient launch failure. Not a signing or DerivedData issue (the build succeeded). It looks like a simulator launch-service flake.
 - **Next:** if the failures recur, capture the `.xcresult`. A simulator reset would erase its data and needs confirmation first.
 
 ## 2026-11-07 Device build, install and launch (iPhone 14 Pro, Debug)
-- **Build:** `xcodebuild … -destination id=00008120-0009751A0A33401E -allowProvisioningUpdates AGMENTE_DEVELOPMENT_TEAM=JNPGD7477Q` → BUILD SUCCEEDED, after the Apple license agreement was accepted by the account holder.
-- **Install:** `xcrun devicectl device install app` → installed (bundle `com.adammakarucha.agmente`).
+- **Build:** `xcodebuild … -destination id=00008120-0009751A0A33401E -allowProvisioningUpdates ACPCODE_DEVELOPMENT_TEAM=JNPGD7477Q` → BUILD SUCCEEDED, after the Apple license agreement was accepted by the account holder.
+- **Install:** `xcrun devicectl device install app` → installed (bundle `com.adammakarucha.acpcode`).
 - **Launch:** `xcrun devicectl device process launch` → launched.
 - **Still to do on the phone:** the Face ID check (skill save gate). Not run yet.
 
 ## 2026-11-07 Phone to Mac gateway over mutual TLS (user test, real device)
-- **Path:** iPhone 14 Pro, Agmente Debug build → `wss://adams-mac-studio.local:8443` (Caddy, client certificate required, `tls internal`) → gateway on 127.0.0.1:8788 (host runner, test mode; Bob runs on the Mac).
+- **Path:** iPhone 14 Pro, ACP Code Debug build → `wss://adams-mac-studio.local:8443` (Caddy, client certificate required, `tls internal`) → gateway on 127.0.0.1:8788 (host runner, test mode; Bob runs on the Mac).
 - **Result:** the first attempt returned 401 (certificate accepted, bearer token missing from the form). With the token entered, the app connected. The user confirmed the server works from the phone.
 - **Not yet covered:** a session from the phone, the Face ID check, the switch to the Apple container runner before real use.
 
 ## 2026-11-07 Phone: project list over mutual TLS (user test)
-- **Result:** after the token was entered, the phone connected, but the project list was empty because the local gateway had no project registered. Registered "Phone test" (scratch folder) with `_agmente/projects/create`; the user confirmed the project now appears on the phone.
+- **Result:** after the token was entered, the phone connected, but the project list was empty because the local gateway had no project registered. Registered "Phone test" (scratch folder) with `_acpcode/projects/create`; the user confirmed the project now appears on the phone.
 - **Session from the phone (user test):** a prompt sent from the phone to the "Phone test" project got a reply. End-to-end path confirmed: phone → Caddy (mutual TLS) → gateway → Bob on the Mac.
 
 ## 2026-11-07 Wave 1 task notes and integration (feat/integration-2026-11-07)
@@ -1407,9 +1407,9 @@ N=2: 2/2 loaded; load median 1753 ms max 1811; turn median 1079 ms max 1786; hos
 ### A1 gateway usage and project state (D-092)
 
 - **Branch:** `feat/a1-gateway-usage` from `db08383`. Worktree: `scratchpad/wt/a1-gateway-usage`.
-- **Built:** C1 usage per session (schema 6, table `session_usage`; `usage` on `_agmente/sessions/index`, left out when none is stored). C2 `_agmente/project/state` (change-only, at most one per project every 500 ms, audit event `project_state`, never in the event log, sent to sockets that listed the project).
+- **Built:** C1 usage per session (schema 6, table `session_usage`; `usage` on `_acpcode/sessions/index`, left out when none is stored). C2 `_acpcode/project/state` (change-only, at most one per project every 500 ms, audit event `project_state`, never in the event log, sent to sockets that listed the project).
 - **Hooks:** every agent transition goes through `setState` in `supervisor.go`, so `idle.go` needed no edit (its stop goes through `setState`).
-- **Not done (coordinator decision):** `_agmente/projects/list` does not subscribe its socket to C2 yet. The hook is one line in `projects.go` (owned by F1): `s.watchProjectStates(ctx, who.Conn, "")` in the `_agmente/projects/list` case. `watchProjectStates` exists in `projectstate.go`.
+- **Not done (coordinator decision):** `_acpcode/projects/list` does not subscribe its socket to C2 yet. The hook is one line in `projects.go` (owned by F1): `s.watchProjectStates(ctx, who.Conn, "")` in the `_acpcode/projects/list` case. `watchProjectStates` exists in `projectstate.go`.
 - **Go:** `go vet ./...` and `go test ./...` pass. New: `server/usage_test.go` (parser), `store/store_usage_test.go` (replace, index, delete, migration from schema 5). Older migration tests drop `session_usage` when they simulate an older schema.
 - **Node, new:** `usage.test.mjs` (5 tests) and `usage-project-state.test.mjs` (3 tests), all passing. Covers: index shows the last usage; survives restart and starts no agent; no field when none seen; partial update not stored; cost omitted when absent; state change-only through start, run, idle stop; only listing sockets get state; a burst is rate limited to two a second and ends on the true state.
 - **Mutation check:** store write removed (`SetUsage` call in `server/usage.go`). `usage.test.mjs`: 3 of 5 failed (the three that need a stored value). The two negative tests passed. Source restored and verified.
@@ -1423,24 +1423,24 @@ Date: 2026-11-07. Worktree: scratchpad/wt/b1-app-usage. Contract: C1 (usage on t
 
 ### Built
 
-- ACPClient: `GatewayUsage` (decode of the C1 `usage` object, derived `left` and `percent`, live conversion from `ACPSessionUsage`) and `GatewayClient.sessionsWithUsage(projectId:)`, one `_agmente/sessions/index` call returning sessions and usage.
-- App, `Agmente/Fork/Usage/`: `UsageUpdateThrottle` (pure, one shown update per second, last value wins), `ContextUsageFormat` (chip text, bar fraction, compact counts), `ContextUsageChip` with `ContextUsageFeed` (throttled live values), `GatewayUsageSheet` with `UsageSheetContent` (sheet rows as data), `GatewayContextBar`.
+- ACPClient: `GatewayUsage` (decode of the C1 `usage` object, derived `left` and `percent`, live conversion from `ACPSessionUsage`) and `GatewayClient.sessionsWithUsage(projectId:)`, one `_acpcode/sessions/index` call returning sessions and usage.
+- App, `ACPCode/Fork/Usage/`: `UsageUpdateThrottle` (pure, one shown update per second, last value wins), `ContextUsageFormat` (chip text, bar fraction, compact counts), `ContextUsageChip` with `ContextUsageFeed` (throttled live values), `GatewayUsageSheet` with `UsageSheetContent` (sheet rows as data), `GatewayContextBar`.
 - Hooks: `SessionDetailView.swift` one line (chip above the plan and transcript); `GatewayHomeView.swift` one line (the existing row call now overlays the bar).
 
 ### Deviation for the coordinator to accept or reverse
 
-`Agmente/Fork/Gateway/GatewayHomeModel.swift` is edited (about six lines): it publishes `usage` and calls `sessionsWithUsage()` in `refresh()` instead of `sessions()`. Reason: the row bar needs the usage, and the model is the only place that holds the gateway client's answer. The model is not in B1's owned list and no other task in the table owns it. Integration should expect it to be untouched by the other branches. If the coordinator prefers another route, the bar and chip do not depend on it.
+`ACPCode/Fork/Gateway/GatewayHomeModel.swift` is edited (about six lines): it publishes `usage` and calls `sessionsWithUsage()` in `refresh()` instead of `sessions()`. Reason: the row bar needs the usage, and the model is the only place that holds the gateway client's answer. The model is not in B1's owned list and no other task in the table owns it. Integration should expect it to be untouched by the other branches. If the coordinator prefers another route, the bar and chip do not depend on it.
 
 ### Tests
 
 - `swift test --package-path ACPClient` (full suite, second run): XCTest 232 tests, 0 failures. Swift Testing 9 tests in 2 suites, all passed. `GatewayUsageDecodingTests` (11 tests) cover: rows with and without usage; cost present and absent; currency without amount; malformed usage ignored while the session still decodes (eight malformed shapes); a malformed cost dropped with the rest kept; timestamps with and without milliseconds; left and percent rules; live usage needs both used and size.
 - A first full run stalled inside the Swift Testing `ACPServiceTests` path and was killed. It did not reproduce: `--skip ACPServiceTests` passed, `--filter ACPServiceTests` passed (4 tests), and the second full run passed. Not investigated further; it looks environmental (other swift-test processes were running on this Mac).
-- App tests: `AgmenteTests/UsageChipTests.swift`, `UsageSheetTests.swift`, `UsageThrottleTests.swift` (throttle suite plus `ContextUsageFeedTests`). Compiled by `build-for-testing`. Not executed in this task (rule: no `xcodebuild test`).
+- App tests: `ACPCodeTests/UsageChipTests.swift`, `UsageSheetTests.swift`, `UsageThrottleTests.swift` (throttle suite plus `ContextUsageFeedTests`). Compiled by `build-for-testing`. Not executed in this task (rule: no `xcodebuild test`).
 - Mutation check: the throttle suite (6 tests) was copied into a scratch package outside the repo (`scratchpad/b1-mutation`), because the app test target cannot run here. Real throttle: 6 of 6 pass. Mutant (`flush` drops the waiting value): `theLastValueInTheWindowIsTheOneShownWhenItEnds` and `atMostOneShownValuePerSecondOverABurst` fail (3 issues). Restored throttle: 6 of 6 pass.
 
 ### Build
 
-- `xcodebuild build-for-testing -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath scratchpad/dd/b1-app-usage`: TEST BUILD SUCCEEDED. Log: `scratchpad/b1-build.log`. No warnings in the new or touched files.
+- `xcodebuild build-for-testing -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath scratchpad/dd/b1-app-usage`: TEST BUILD SUCCEEDED. Log: `scratchpad/b1-build.log`. No warnings in the new or touched files.
 
 ### scripts/check.sh (not a clean pass)
 
@@ -1450,7 +1450,7 @@ Date: 2026-11-07. Worktree: scratchpad/wt/b1-app-usage. Contract: C1 (usage on t
   2. Run alone: 256 of 256 pass.
   3. Inside check.sh: 255 of 256 pass; `apple-runner.test.mjs` "git gets a one-off container with no network when no agent container is up" fails with `TypeError: Cannot read properties of undefined (reading 'branch')`. That test drives the Apple `container` CLI (present at `/opt/homebrew/bin/container`).
   - `gateway/` is identical to base commit db08383 (zero diff lines). The failures are flaky environment-dependent tests in code this task did not touch.
-- Steps after the wire tests, run by hand because check.sh stopped: dry run of `gateway/config.example.json` passed; private-key and raw-secret scans clean; `node scripts/check-docs.mjs` OK (48 tests, 45 FRs, 15 NFRs, 78 decisions); ACPClient Swift tests passed (above). `AgmenteTransport` and `AppServerClient` package tests were not run (not touched by this task).
+- Steps after the wire tests, run by hand because check.sh stopped: dry run of `gateway/config.example.json` passed; private-key and raw-secret scans clean; `node scripts/check-docs.mjs` OK (48 tests, 45 FRs, 15 NFRs, 78 decisions); ACPClient Swift tests passed (above). `ACPCodeTransport` and `AppServerClient` package tests were not run (not touched by this task).
 
 ### Not verified
 
@@ -1466,12 +1466,12 @@ Branch: feat/b2-app-running (worktree scratchpad/wt/b2-app-running). Decision: D
 
 ### Tests
 
-- Pure logic, scratch SwiftPM harness with Swift Testing (copy of Agmente/Fork/Running/RunningWork.swift and AgmenteTests/RunningWorkTests.swift, not in the repo): 15 tests passed.
+- Pure logic, scratch SwiftPM harness with Swift Testing (copy of ACPCode/Fork/Running/RunningWork.swift and ACPCodeTests/RunningWorkTests.swift, not in the repo): 15 tests passed.
 - Mutation check (completed no longer terminal, in the harness copy): 5 issues in 4 tests failed (completedUpdateEndsTheToolCall, updateWithoutIdClosesTheLatestOpenCallWithoutId, terminalUpdateWithAnotherIdDoesNotEndThisToolCall, noRunningWorkGivesAnEmptyStrip). Restored code: 15 passed.
-- AgmenteTests/RunningWorkEventsTests.swift (transcript adapter, 9 tests): compiled, NOT executed (xcodebuild test is not run in this task).
+- ACPCodeTests/RunningWorkEventsTests.swift (transcript adapter, 9 tests): compiled, NOT executed (xcodebuild test is not run in this task).
 - xcodebuild build-for-testing (iPhone 17 simulator, -derivedDataPath scratchpad/dd/b2-app-running): TEST BUILD SUCCEEDED.
-- scripts/check.sh: FAILS at the gateway wire-test step. Earlier steps pass (Node, JSON, Go vet/test/build, syntax). Gateway wire tests are timing-flaky here: run 1 had one failure (T-22, closed 1006) and 31 cancelled tests; run 2 had 256 tests, 254 pass, 2 fail (FR-24 idle session timing). No gateway file is changed on this branch (diff touches only Agmente/ files).
-- Steps after the wire tests, run by hand: gateway dry run OK; scripts/check-docs.mjs OK (48 tests, 45 FRs, 78 decisions); swift test AgmenteTransport (12, 1 skipped, 0 failures), ACPClient (221, 0 failures), AppServerClient (9, 0 failures). Secrets grep not run separately.
+- scripts/check.sh: FAILS at the gateway wire-test step. Earlier steps pass (Node, JSON, Go vet/test/build, syntax). Gateway wire tests are timing-flaky here: run 1 had one failure (T-22, closed 1006) and 31 cancelled tests; run 2 had 256 tests, 254 pass, 2 fail (FR-24 idle session timing). No gateway file is changed on this branch (diff touches only ACPCode/ files).
+- Steps after the wire tests, run by hand: gateway dry run OK; scripts/check-docs.mjs OK (48 tests, 45 FRs, 78 decisions); swift test ACP CodeTransport (12, 1 skipped, 0 failures), ACPClient (221, 0 failures), AppServerClient (9, 0 failures). Secrets grep not run separately.
 - Needed `npm ci --prefix gateway` in the worktree (node_modules was missing; gitignored).
 
 ### Not verified
@@ -1488,7 +1488,7 @@ Branch `feat/d1-connector-core` (from db08383). Decision text: `<scratchpad>/dec
 What is built
 - `gateway/internal/connector/` (new): the public listener on 127.0.0.1:connector.port, the five C4 routes (metadata, authorize, token, mcp), Origin check, PKCE pairing with phone approve/deny/grants/revoke (C5), grants file with token hashes (0600, atomic), scope gate, limits (promptsPerHour, maxPromptBytes, turn slots), and the five C7 tools declared and gated but returning "not implemented" until D2.
 - `gateway/internal/config/config.go`: connector block only (defaults, ranges, unknown-key errors, publicOrigin required when enabled).
-- `gateway/internal/server/server.go`: five small hooks (struct field and construction, Listen, Serve, Shutdown, and one dispatch block for `_agmente/connector/*`).
+- `gateway/internal/server/server.go`: five small hooks (struct field and construction, Listen, Serve, Shutdown, and one dispatch block for `_acpcode/connector/*`).
 
 Spec choices (details in D-095): RFC 9728 and RFC 8414 served; PKCE S256 required; resource indicators bound; no dynamic registration and no client ID metadata documents (the spec makes both optional). The client registration choice is the owner probe's question.
 
@@ -1524,10 +1524,10 @@ Notes for the coordinator
 - **Mutation check:** `GatewayConnectorScope.oneSession` changed to return `.allProjects` (one-session sends "all"). `swift test --filter GatewayConnector`: 5 failures, including `testApproveSendsOneProjectAndOneSessionAndReturnsTheGrantId` and `testOneSessionScopeIsOneProjectAndOneSession`. Restored; the file matches the committed version.
   - The mutation is at the shared scope helper, not in the app model. The app test `ConnectorConnectionsTests.testOneSessionIsTheDefaultAndApproveSendsExactlyOneProjectAndOneSession` runs through the same helper, so it would also fail, but it was not run (see below).
 - **App build:** `xcodebuild build-for-testing` with `-derivedDataPath <scratchpad>/dd/e1-connector-app`, iPhone 17 simulator: TEST BUILD SUCCEEDED. No warnings from the new files.
-- **App tests:** `AgmenteTests/ConnectorConnectionsTests.swift`, 12 tests (pending code shown, time left, one-session default and send, picked session, all projects, no session to pick sends nothing, approved grant appears, deny, revoke, failed approve keeps row and says why, row answered here does not return, no gateway). Compiled, **not run**: the brief forbids `xcodebuild test` in this task. They run in the integration task.
+- **App tests:** `ACPCodeTests/ConnectorConnectionsTests.swift`, 12 tests (pending code shown, time left, one-session default and send, picked session, all projects, no session to pick sends nothing, approved grant appears, deny, revoke, failed approve keeps row and says why, row answered here does not return, no gateway). Compiled, **not run**: the brief forbids `xcodebuild test` in this task. They run in the integration task.
 - **scripts/check.sh:**
   - Run 1: EXIT 1. Two gateway wire tests failed under load from other tasks' suites running at the same time: `eventlog.test.mjs` "a permission request is logged as phones see it" (a two-second poll for the request) and `lifecycle.test.mjs` "FR-24" (closed with 1006). Both files were re-run alone: 11 of 11 pass (EXIT 0). The branch changes no gateway code.
-  - Run 2 (full, clean): **EXIT 0, "All checks passed."** Wire tests 256 pass, 0 fail. Dry run, secrets check, docs cross-check, and Swift packages (AgmenteTransport, ACPClient, AppServerClient) all pass.
+  - Run 2 (full, clean): **EXIT 0, "All checks passed."** Wire tests 256 pass, 0 fail. Dry run, secrets check, docs cross-check, and Swift packages (ACP CodeTransport, ACPClient, AppServerClient) all pass.
 - **Not verified:** the screens on a simulator (layout, sheet presentation from the toolbar, the 5-second refresh). The toolbar button is in a sheet inside a toolbar item; not seen on screen.
 
 # F1 add-project review (D-091) RESULTS
@@ -1540,11 +1540,11 @@ Branch `feat/f1-add-project-review`, from db08383. Decision D-099 is in `<scratc
 2. Gateway: `os.Chmod` followed a link placed at the new name, so a folder outside the roots went from 700 to 755. Test `TestFolderModeNeverChangesAFolderOutsideTheRoots` (failed: mode 755).
 3. Gateway: a parent swapped for a link after the check let the mkdir create a folder outside the roots (removed again a moment later). Test `TestAParentSwappedForALinkMakesNothingOutsideTheRoots` (failed: folder made outside the roots).
 4. Gateway: the rollback used `os.Remove`, which unlinks a file, so a file at the name was deleted when registration was refused. Test `TestRegistrationRefusalKeepsAFileAtTheName` (failed: file removed).
-5. Gateway: `_agmente/projects/roots` listed a root removed after start, and listed a root twice when configured twice. Tests `TestProjectRootsListsOnlyRootsThatStillExist` (Go) and the roots case in `gateway/test/create-folder.test.mjs` (failed: removed root listed).
+5. Gateway: `_acpcode/projects/roots` listed a root removed after start, and listed a root twice when configured twice. Tests `TestProjectRootsListsOnlyRootsThatStillExist` (Go) and the roots case in `gateway/test/create-folder.test.mjs` (failed: removed root listed).
 6. App: a refusal stayed on screen after the root was changed. Test `testChangingTheRootClearsAGatewayRefusal` (failed).
 7. App: a refusal for the name that was sent was shown after the name had been retyped while Create was in flight. Test `testARefusalThatArrivesAfterTheNameChangedIsNotShown` (failed).
 
-Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, removeOwnFolder, projectRoots); `Agmente/Fork/Gateway/GatewayNewProjectModel.swift` (selectedRoot didSet, sentName check).
+Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, removeOwnFolder, projectRoots); `ACPCode/Fork/Gateway/GatewayNewProjectModel.swift` (selectedRoot didSet, sentName check).
 
 ### Checked, no defect (one line each)
 
@@ -1567,16 +1567,16 @@ Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, r
 
 - `go vet ./...` clean; `go test ./...` all packages ok (server package includes the 6 new Go tests).
 - `node --test test/create-folder.test.mjs`: 9 of 9 pass (was 9 before; the roots case now also checks a removed root).
-- App model tests: `AgmenteTests/GatewayNewProjectTests.swift` (now 14 model tests) cannot be run through `xcodebuild test` in this task, so they were run in a scratch SwiftPM package at `<scratchpad>/verify-f1` that links the real `GatewayNewProjectModel.swift` and a copy of the test file without the home-selection class: 2 failed before the fix, 14 of 14 pass after.
-- `xcodebuild build-for-testing` (scheme Agmente, iPhone 17 simulator, derived data under `<scratchpad>/dd/f1-add-project-review`): TEST BUILD SUCCEEDED.
+- App model tests: `ACPCodeTests/GatewayNewProjectTests.swift` (now 14 model tests) cannot be run through `xcodebuild test` in this task, so they were run in a scratch SwiftPM package at `<scratchpad>/verify-f1` that links the real `GatewayNewProjectModel.swift` and a copy of the test file without the home-selection class: 2 failed before the fix, 14 of 14 pass after.
+- `xcodebuild build-for-testing` (scheme ACP Code, iPhone 17 simulator, derived data under `<scratchpad>/dd/f1-add-project-review`): TEST BUILD SUCCEEDED.
 - `scripts/check.sh` in one run did not finish clean. Its wire-test step failed in two runs on different tests (`eventlog` permission request; `gitchanged` ignored file; then `lifecycle` FR-24 idle session). Each of those files passes alone (10/10, 6/6). A later full wire run (`npm test`, 256 tests) passed 256/256. The failing set moves from run to run, which points to timing under load. These files do not reach the folder or roots code. I did not prove they fail on db08383 too.
-- The rest of check.sh, run directly: gateway dry run ok; `scripts/check-docs.mjs` ok (48 tests, 45 FRs, 15 NFRs, 78 decisions); Swift packages AgmenteTransport (12, 1 skipped), ACPClient (221), AppServerClient (9) all pass; `go vet` clean.
+- The rest of check.sh, run directly: gateway dry run ok; `scripts/check-docs.mjs` ok (48 tests, 45 FRs, 15 NFRs, 78 decisions); Swift packages ACP CodeTransport (12, 1 skipped), ACPClient (221), AppServerClient (9) all pass; `go vet` clean.
 - Secret-scan step: the worktree has no `deploy/` folder, so grep exits 2 and check.sh's branch is skipped. `gateway/test/apns.test.mjs:319` holds a fake PEM marker from base db08383 that the scan would match. Not changed here.
 
 ### G1 public exposure and deployment (2026-11-07, branch `feat/g1-deploy`)
 
-- **Done:** `deploy/Caddyfile.connector` (public connector site, six paths, 404 for the rest, no client certificate, `{$CONNECTOR_HOST}`, automatic public certificate); `deploy/launchd/dev.agmente.gateway.plist` (LaunchAgent template) and `deploy/launchd/dev.agmente.caddy.plist` (LaunchDaemon template, root for 443); `gateway/config.mac.example.json` (`connector` block, `enabled: false`); `docs/MAC-SETUP.md` section 13 (connector: DNS, 443 forward, owner steps, verify, turn off). Decision text in `scratchpad/decisions/g1-deploy.md` (D-098).
-- **Unchanged:** `deploy/Caddyfile` (phone block), `deploy/agmente-gateway.service`, `deploy/bob-project.Containerfile`, all other parts of `docs/MAC-SETUP.md`, `gateway/internal/**`, Swift files. Live Caddy and gateway were not touched.
+- **Done:** `deploy/Caddyfile.connector` (public connector site, six paths, 404 for the rest, no client certificate, `{$CONNECTOR_HOST}`, automatic public certificate); `deploy/launchd/dev.acpcode.gateway.plist` (LaunchAgent template) and `deploy/launchd/dev.acpcode.caddy.plist` (LaunchDaemon template, root for 443); `gateway/config.mac.example.json` (`connector` block, `enabled: false`); `docs/MAC-SETUP.md` section 13 (connector: DNS, 443 forward, owner steps, verify, turn off). Decision text in `scratchpad/decisions/g1-deploy.md` (D-098).
+- **Unchanged:** `deploy/Caddyfile` (phone block), `deploy/acpcode-gateway.service`, `deploy/bob-project.Containerfile`, all other parts of `docs/MAC-SETUP.md`, `gateway/internal/**`, Swift files. Live Caddy and gateway were not touched.
 - **Verified on this Mac:**
   - `caddy validate` (Caddy 2.11.9) on `deploy/Caddyfile.connector` with `CONNECTOR_HOST` set: `Valid configuration`.
   - Route test with a test-only copy on ports 9080 and 8789 (scratchpad, not in repo): the six paths reach the upstream (200), and `/`, `/admin`, `/mcp/extra`, `/.well-known/oauth-protected-resource/mcp` and `/phone` return 404. The request carried no client certificate.
@@ -1584,7 +1584,7 @@ Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, r
   - `plutil -lint` on both plists: OK.
   - `gateway/config.mac.example.json` parses with `JSON.parse`; `connector.enabled` is `false`.
 - **Not verified:**
-  - `caddy validate` of the unmodified `deploy/Caddyfile` fails here only because `/etc/caddy/agmente-client-ca.pem` does not exist on this Mac (it is an existing condition, not caused by this change).
+  - `caddy validate` of the unmodified `deploy/Caddyfile` fails here only because `/etc/caddy/acpcode-client-ca.pem` does not exist on this Mac (it is an existing condition, not caused by this change).
   - Public certificate issuance, DNS, and the 443 forward: not testable without the owner's domain. Port 80 optional (verify on first issue).
   - Launchd install: templates only, not loaded.
   - `scripts/check.sh`: not run (no Go or Swift change; the worktree has no `gateway/node_modules`).
@@ -1599,7 +1599,7 @@ Fixes: `gateway/internal/server/projects_folder.go` (os.Root, folderHook seam, r
 ### I1 integration (feat/integration-2026-11-07): merge and post-merge fixes
 
 - **Merged:** A1, F1, G1, D1, B1, B2, E1 in that order, no-ff. Conflicts: none, so no resolution was needed. The contract spots (`GatewayHomeView.swift`, `ContentView.swift`, `server.go`, `gateway/internal/store`) merged cleanly; the E1 toolbar hook and the F1 New Project button both sit in `ContentView.swift`.
-- **Post-merge:** `_agmente/projects/list` now subscribes its socket to project state (note A1 item above). The metadata matcher has the path-suffixed form. The phone block is `:8443` to `127.0.0.1:8788`. The main Caddy example imports `Caddyfile.connector`. The secret-scan fixture in `apns.test.mjs` uses a neutral PEM label, and the parse branch is covered by a Go unit test. D-092 to D-095 and D-097 to D-099 are in `docs/DECISIONS.md`. The D2 decision is not written yet, so its number is absent there.
+- **Post-merge:** `_acpcode/projects/list` now subscribes its socket to project state (note A1 item above). The metadata matcher has the path-suffixed form. The phone block is `:8443` to `127.0.0.1:8788`. The main Caddy example imports `Caddyfile.connector`. The secret-scan fixture in `apns.test.mjs` uses a neutral PEM label, and the parse branch is covered by a Go unit test. D-092 to D-095 and D-097 to D-099 are in `docs/DECISIONS.md`. The D2 decision is not written yet, so its number is absent there.
 - **Not run in this step:** the node wire suite, `xcodebuild`, and the full `swift test`. Those run in the quiet-machine check (I2). Notes items 8, 9, 14, 16, 25 and 35 are still open until then, and so is the FR-24 question.
 - **Open for I2:** the path-suffixed metadata form returns 404 from the gateway (the challenge names the root form, which is served). The connector's `/mcp` route, the phone `:8443` route and the Caddy `import` have not been run against a live Caddy.
 
@@ -1643,7 +1643,7 @@ Notes for the coordinator
 
 - **Merge:** `feat/d2-connector-tools` (c2781f5) merged with `--no-ff` into the integration branch as 15fc77e. No conflicts. Out-of-list edits reviewed (connector.go, server.go, projects.go, audit.go, events_latest.go, two wire tests): each is minimal, adds nothing to phone lines (audit `source` and `grant` are written only when set), and the prompt text is not audited.
 - **Fixes:** the secret scan in `scripts/check.sh` now puts the excludes before the pattern (`-e`), and grep errors fail the step (exit 2) instead of being hidden. The scan passes on the tree. The apns test marker is `BEGIN TEST BLOB`, which the scan does not match, so no neutral form was needed (note 32). `docs/ARCHITECTURE.md` phone path is Caddy :8443 to 127.0.0.1:8788. `docs/design/ipad-ux-plan.md` manual checklist no longer says "Phase 8". D-096 is appended after D-099 (as the plan says), so the decision file is not in number order.
-- **scripts/check.sh:** exit 0, "All checks passed". Go: connector, server, store, config, jsonv, mcpconf, push all ok. Node wire suite: 295 tests, 295 pass, 0 fail (includes FR-24 `lifecycle.test.mjs`, passed). Swift packages: AgmenteTransport, ACPClient (ACPServiceTests passed), AppServerClient, all pass.
+- **scripts/check.sh:** exit 0, "All checks passed". Go: connector, server, store, config, jsonv, mcpconf, push all ok. Node wire suite: 295 tests, 295 pass, 0 fail (includes FR-24 `lifecycle.test.mjs`, passed). Swift packages: ACP CodeTransport, ACPClient (ACPServiceTests passed), AppServerClient, all pass.
 - **Named connector wire tests (`node --test`, four files):** 30 tests, 30 pass, 0 fail.
 - **`node scripts/check-docs.mjs`:** ok, 48 tests, 45 FRs, 15 NFRs, 86 decisions. **`git diff --check`:** clean.
 - **`xcodebuild ... test` (iPhone 17 simulator, one run):** TEST SUCCEEDED. XCTest: 330 tests, 0 failures, 40 suites passed. Swift Testing (in the same run): 111 passes, 0 failures. The new suites (RunningWork*, Usage*, ConnectorConnectionsModelTests) compiled and ran. No stall. The log is at `<scratchpad>/results/i2-xcodebuild.log`.
@@ -1656,16 +1656,16 @@ Notes for the coordinator
 Branch `feat/p1-public-8443` (based on `feat/integration-2026-11-07` at 31cf6de). Decision text: `<scratchpad>/decisions/p1-public-8443.md`.
 
 ## Changed files
-- `deploy/Caddyfile`: global `auto_https disable_redirects`; header comments; connector import comment. The phone block is unchanged (`agent.example.com:8443`, `client_auth` with `trust_pool file /etc/caddy/agmente-client-ca.pem`, `reverse_proxy 127.0.0.1:8788`).
+- `deploy/Caddyfile`: global `auto_https disable_redirects`; header comments; connector import comment. The phone block is unchanged (`agent.example.com:8443`, `client_auth` with `trust_pool file /etc/caddy/acpcode-client-ca.pem`, `reverse_proxy 127.0.0.1:8788`).
 - `deploy/Caddyfile.connector`: site `{$CONNECTOR_HOST}:8443`; `tls { dns PROVIDER {env.CADDY_DNS_API_TOKEN} }`; seven-path matcher (the path-suffixed metadata form was already present); 404 for the rest; no `client_auth`.
-- `deploy/launchd/dev.agmente.caddy.plist`: LaunchAgent (no root, no LaunchDaemon paths); runs Caddy from `/Users/you/agmente/caddy/bin/caddy` after loading `/Users/you/agmente/secrets.env`; logs and data under the owner's folder.
+- `deploy/launchd/dev.acpcode.caddy.plist`: LaunchAgent (no root, no LaunchDaemon paths); runs Caddy from `/Users/you/acpcode/caddy/bin/caddy` after loading `/Users/you/acpcode/secrets.env`; logs and data under the owner's folder.
 - `gateway/config.mac.example.json`: `publicOrigin` is `https://your-public-name.example:8443`. JSON has no comments, so the note is in MAC-SETUP section 13.
 - `docs/MAC-SETUP.md`: section 13 rewritten. No other section changed.
 
 ## Verification
 - `caddy validate` (Caddy v2.11.9, stock): the config with the DNS line removed, phone trust path pointed at a dummy CA, and `CONNECTOR_HOST` set: **Valid configuration**. With `dns cloudflare` set and the stock build: **fails**, `module not registered: dns.providers.cloudflare`, because the stock build has no DNS module. With the `PROVIDER` placeholder left in, validation fails the same way. Expected until the owner builds with the module.
 - `caddy adapt` of the valid config: one server, `:8443`, `automatic_https: {disable_redirects: true}`. Policies: `sni: agent.example.com` with client authentication; the default (no match) with none. The original committed config has the same structure on its `:8443` server. The original `:443` server is gone.
-- `plutil -lint`: `dev.agmente.caddy.plist` OK, `dev.agmente.gateway.plist` OK.
+- `plutil -lint`: `dev.acpcode.caddy.plist` OK, `dev.acpcode.gateway.plist` OK.
 - JSON parse of `gateway/config.mac.example.json`: OK. The gateway's own loader (`go test ./internal/config`, plus a temporary test removed afterwards) reads `publicOrigin` with the port, and `enabled` is false.
 - Not run: no Caddy or gateway was started against any live config. The live Caddy (PID 72644) and the main checkout were not touched.
 
@@ -1725,15 +1725,15 @@ Branch `feat/b3-app-project-state`, from `feat/integration-2026-11-07` at 31cf6d
 ## Files
 - New: `ACPClient/Sources/ACPClient/Gateway/GatewayProjectState.swift` (decoder: four states, `.unknown` default, `since`).
 - New: `ACPClient/Tests/ACPClientTests/GatewayProjectStateTests.swift` (7 tests).
-- New: `AgmenteTests/ProjectStateTests.swift` (14 app tests: `ProjectStateHomeTests` 8, `ProjectStateRouterTests` 6).
-- Changed: `Agmente/Fork/Gateway/GatewayHomeModel.swift` (per-server states, list filter, pending states before the first list, clear on server change).
-- Changed: `Agmente/Fork/Gateway/GatewayHomeView.swift` (`GatewayAgentStatePresentation`, `GatewayAgentStateLabel`, one line in the section header).
-- Changed: `Agmente/Fork/Gateway/AppViewModel+Gateway.swift` (`handleGatewayProjectState`).
-- Changed outside the owned list: `Agmente/AppViewModel.swift` (router case, `lazy var gatewayHome`, forwarded `objectWillChange`), `Agmente/ContentView.swift` (3 lines in the gateway home wiring), `ACPClient/AGENTS.md` (one doc line).
+- New: `ACPCodeTests/ProjectStateTests.swift` (14 app tests: `ProjectStateHomeTests` 8, `ProjectStateRouterTests` 6).
+- Changed: `ACPCode/Fork/Gateway/GatewayHomeModel.swift` (per-server states, list filter, pending states before the first list, clear on server change).
+- Changed: `ACPCode/Fork/Gateway/GatewayHomeView.swift` (`GatewayAgentStatePresentation`, `GatewayAgentStateLabel`, one line in the section header).
+- Changed: `ACPCode/Fork/Gateway/AppViewModel+Gateway.swift` (`handleGatewayProjectState`).
+- Changed outside the owned list: `ACPCode/AppViewModel.swift` (router case, `lazy var gatewayHome`, forwarded `objectWillChange`), `ACPCode/ContentView.swift` (3 lines in the gateway home wiring), `ACPClient/AGENTS.md` (one doc line).
 
 ## Routing and the other notifications
-- `_agmente/project/state` returns before the log line, like `_agmente/git/changed`. The state is recorded for the selected server: the one live connection belongs to it.
-- `_agmente/event`, `_agmente/git/changed` and `_agmente/notice` are unchanged. Each has a wire test in `ProjectStateRouterTests` (`testAGatewayEventStillAppliesToTheOpenSession`, `testAGitChangedNotificationStillRefreshesTheProjectStatus`, `testAGatewayNoticeStillReachesTheLog`). `_agmente/notice` has no app handler; it still goes to the log.
+- `_acpcode/project/state` returns before the log line, like `_acpcode/git/changed`. The state is recorded for the selected server: the one live connection belongs to it.
+- `_acpcode/event`, `_acpcode/git/changed` and `_acpcode/notice` are unchanged. Each has a wire test in `ProjectStateRouterTests` (`testAGatewayEventStillAppliesToTheOpenSession`, `testAGitChangedNotificationStillRefreshesTheProjectStatus`, `testAGatewayNoticeStillReachesTheLog`). `_acpcode/notice` has no app handler; it still goes to the log.
 
 ## Tests and results
 - `swift test` in ACPClient (full package, by hand; `check.sh` not run because it needs the gateway wire suite and B3 changes no gateway code): 254 tests, 0 failures, exit 0. 7 of them are the new `GatewayProjectStateTests`.
@@ -1787,3 +1787,13 @@ Checks:
 Mutation: with both `a.sendSnapshot(c)` calls removed, test (a) fails ("new socket that lists ... running"). Restored from a backup copy, the file has both calls and test (a) passes.
 
 Not verified: the full wire suite (`scripts/check.sh`), and strict ordering after the response (see D-104).
+
+## 2026-11-08: Apple runner entrypoint fix, production start on the Mac
+
+- **Bug found:** the project image declares `ENTRYPOINT ["bob"]` (`deploy/bob-project.Containerfile`), but the Apple and Podman agent commands ran `bob acp ...` without `--entrypoint`. Bob then ran as an argument of `bob`, never answered `initialize`, and the gateway reported `initialize_timeout` after 60 s. The docs (`docs/MAC-SETUP.md` step 5) already said the first word is the entrypoint.
+- **Fix:** `imageAndCommand` in `gateway/internal/server/runner.go` passes `--entrypoint <argv[0]>` before the image, for both container runners. Tests updated first (red, then green): `runner_test.go`, `runner_apple_test.go`. The fake Podman (`test/fixtures/fake-podman.mjs`) now honours `--entrypoint`, as the fake container already did.
+- **Checks:** `(cd gateway && go test -count=1 ./...)` all packages ok. `npm test --prefix gateway` 305 of 305 pass (exit 0, 263.5 s). Container wire files 20 of 20 pass (`apple-runner`, `lifecycle-apple`, `runner-apple`, `lifecycle`).
+- **Smoke test (throwaway gateway, then removed):** `initialize` ok; `session/new` for a project started `acpcode-<projectId>` in `container list`; stopping the gateway removed the container.
+- **Production start:** config `~/acpcode/config.json` (Apple runner, `runner.image` `localhost/acpcode-bob:2.0.9`, image tagged from `localhost/agmente-bob:2.0.9`, same digest). Gateway and Caddy run under launchd (`dev.acpcode.gateway`, `dev.acpcode.caddy`). Mutual TLS checked through Caddy at `adams-mac-studio.local:8443`: no client certificate gives `000`; with the client certificate and bearer token, `initialize` returns the gateway's extensions.
+- **Note:** a binary copied with `cp` was killed at start (exit 137) until re-signed with `codesign --force --sign -`. The restart script does not copy; re-sign after any copy into `~/acpcode/bin`.
+- **Not verified:** a container start from the iPhone (device test pending), and the connector (not set up).

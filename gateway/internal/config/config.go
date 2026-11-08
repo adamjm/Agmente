@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // Error lists every problem found in a config, so one run reports them all.
@@ -277,7 +277,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 	case "podman", "apple":
 		image, ok := rv.Get("image").StringValue()
 		if !ok || image == "" || strings.HasPrefix(image, "-") {
-			add("runner.image must name the project image, for example \"agmente-bob:2.0.9\"")
+			add("runner.image must name the project image, for example \"acpcode-bob:2.0.9\"")
 		}
 		podman, cli := "podman", "container"
 		if kind == "apple" {

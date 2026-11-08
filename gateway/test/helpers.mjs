@@ -2,9 +2,9 @@
 // separate process, write its config file, talk to it over HTTP and WebSocket, and read its audit
 // log (one JSON line per event on stderr, FR-9). So the same suite checks any implementation.
 //
-// Target: AGMENTE_GATEWAY_CMD, a JSON array (the gateway command; the harness appends
-// `--config <file>`). Default: the Go gateway at gateway/bin/agmente-gateway (D-021). Build it
-// first: (cd gateway && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)
+// Target: ACPCODE_GATEWAY_CMD, a JSON array (the gateway command; the harness appends
+// `--config <file>`). Default: the Go gateway at gateway/bin/acpcode-gateway (D-021). Build it
+// first: (cd gateway && go build -trimpath -o bin/acpcode-gateway ./cmd/acpcode-gateway)
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm, realpath, writeFile } from 'node:fs/promises';
@@ -20,14 +20,14 @@ process.on('exit', () => { for (const child of liveGateways) child.kill('SIGKILL
 export const TOKEN = 'test-token-abcdefghijklmnop';
 export const OTHER_TOKEN = 'other-token-abcdefghijklmnop';
 export const FAKE_AGENT = fileURLToPath(new URL('./fixtures/fake-agent.mjs', import.meta.url));
-const GO_BINARY = fileURLToPath(new URL('../bin/agmente-gateway', import.meta.url));
+const GO_BINARY = fileURLToPath(new URL('../bin/acpcode-gateway', import.meta.url));
 
 /** The gateway command under test, without `--config`. Relative paths resolve from the cwd. */
 export function gatewayCommand() {
-  const raw = process.env.AGMENTE_GATEWAY_CMD;
+  const raw = process.env.ACPCODE_GATEWAY_CMD;
   if (!raw) return [GO_BINARY];
   const cmd = JSON.parse(raw);
-  if (!Array.isArray(cmd) || cmd.length === 0) throw new Error('AGMENTE_GATEWAY_CMD must be a JSON array');
+  if (!Array.isArray(cmd) || cmd.length === 0) throw new Error('ACPCODE_GATEWAY_CMD must be a JSON array');
   return [cmd[0].includes('/') ? resolve(cmd[0]) : cmd[0], ...cmd.slice(1)];
 }
 
@@ -36,7 +36,7 @@ export const hashToken = (token) => createHash('sha256').update(token, 'utf8').d
 
 /** Make temp dirs: <base>/root/project (allowed) and <base>/outside (not allowed). */
 export async function makeDirs() {
-  const base = await realpath(await mkdtemp(join(tmpdir(), 'agmente-gw-')));
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'acpcode-gw-')));
   const root = join(base, 'root');
   const project = join(root, 'project');
   const outside = join(base, 'outside');
@@ -64,7 +64,7 @@ export function rawConfig(root, overrides = {}) {
 
 /** Run the gateway with `--dry-run` on a config object. Returns { status, stdout, stderr }. */
 export async function dryRun(config) {
-  const dir = await mkdtemp(join(tmpdir(), 'agmente-cfg-'));
+  const dir = await mkdtemp(join(tmpdir(), 'acpcode-cfg-'));
   try {
     const file = join(dir, 'config.json');
     await writeFile(file, typeof config === 'string' ? config : JSON.stringify(config));
@@ -111,7 +111,7 @@ export async function startGateway(overrides = {}, { env = {}, configFn } = {}) 
  * Returns { url, httpUrl, audit, pid, spawned(), waitForAudit(), settle(), stop() }.
  */
 export async function spawnGateway(config, { env = {}, replaceEnv = false, cwd, configDir } = {}) {
-  const dir = configDir ?? await mkdtemp(join(tmpdir(), 'agmente-gwcfg-'));
+  const dir = configDir ?? await mkdtemp(join(tmpdir(), 'acpcode-gwcfg-'));
   const file = join(dir, 'config.json');
   await writeFile(file, JSON.stringify(config));
   const removeDir = () => (configDir ? Promise.resolve() : rm(dir, { recursive: true, force: true }));
@@ -242,10 +242,10 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Requests with no cwd or sessionId then go to this project (D-025). Returns { project, sessionId }.
  */
 export async function useProject(gw, ws, path = gw.dirs.project) {
-  let res = await rpc(ws, '_agmente/projects/create', { name: 'test', path });
+  let res = await rpc(ws, '_acpcode/projects/create', { name: 'test', path });
   let project = res.result?.project;
   if (!project) {
-    const list = await rpc(ws, '_agmente/projects/list', {});
+    const list = await rpc(ws, '_acpcode/projects/list', {});
     project = list.result.projects.find((p) => p.path === path);
     if (!project) throw new Error(`cannot use project: ${JSON.stringify(res.error)}`);
   }

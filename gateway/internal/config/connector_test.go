@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/jsonv"
+	"acpcode/gateway/internal/jsonv"
 )
 
 // connectorBlock parses a connector block and runs the connector validation on it.

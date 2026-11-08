@@ -1,6 +1,6 @@
 package server
 
-// Folder creation from the phone (D-091). `_agmente/projects/create` with `createFolder: true`
+// Folder creation from the phone (D-091). `_acpcode/projects/create` with `createFolder: true`
 // makes <path>/<name> and registers it. Picking an existing folder is unchanged (D-024).
 
 import (
@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 const maxFolderName = 64
@@ -20,7 +20,7 @@ const maxFolderName = 64
 // path component inside the window (D-091). It is nil outside the tests.
 var folderHook func(stage, path string)
 
-// projectRoots answers `_agmente/projects/roots` (D-091): the configured roots that exist now, as
+// projectRoots answers `_acpcode/projects/roots` (D-091): the configured roots that exist now, as
 // realpaths, each once. The phone takes its parent folder for a new project from this list. Roots
 // are only listed, never changed, and only an authenticated identity can ask.
 func (s *Server) projectRoots() map[string]any {

@@ -1,15 +1,15 @@
 // Usage on the sessions index (C1, D-092). The fake agent sends the usage_update payloads in
-// AGMENTE_TEST_USAGE after each turn's reply; the gateway keeps the last one per session.
+// ACPCODE_TEST_USAGE after each turn's reply; the gateway keeps the last one per session.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { auth, connect, FAKE_AGENT, makeDirs, rawConfig, rpc, spawnGateway, startGateway, useProject } from './helpers.mjs';
 
 const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
-const usageEnv = (updates) => ({ AGMENTE_TEST_USAGE: JSON.stringify(updates) });
-// The agent gets AGMENTE_TEST_USAGE from the gateway's environment (envPassthrough).
-const usageAgent = { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'AGMENTE_TEST_USAGE'] };
+const usageEnv = (updates) => ({ ACPCODE_TEST_USAGE: JSON.stringify(updates) });
+// The agent gets ACPCODE_TEST_USAGE from the gateway's environment (envPassthrough).
+const usageAgent = { command: [process.execPath, FAKE_AGENT], envPassthrough: ['PATH', 'ACPCODE_TEST_USAGE'] };
 const index = async (ws, params = {}) => {
-  const res = await rpc(ws, '_agmente/sessions/index', params);
+  const res = await rpc(ws, '_acpcode/sessions/index', params);
   if (!res.result) throw new Error(JSON.stringify(res.error));
   return res.result.sessions;
 };

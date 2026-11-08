@@ -4,27 +4,27 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/store"
 )
 
 func appleTestConfig() *config.Config {
 	return &config.Config{
 		AgentCommand:   []string{"bob", "acp", "--accept-license"},
 		EnvPassthrough: []string{"PATH", "HOME", "LANG", "BOB_API_KEY"},
-		Runner:         config.Runner{Kind: "apple", Image: "agmente-bob:2.0.9", Container: "/opt/homebrew/bin/container"},
+		Runner:         config.Runner{Kind: "apple", Image: "acpcode-bob:2.0.9", Container: "/opt/homebrew/bin/container"},
 	}
 }
 
 func TestAppleAgentArgsPassSecretsByNameOnly(t *testing.T) {
 	t.Setenv("BOB_API_KEY", "must-not-appear")
 	r := newAppleRunner(appleTestConfig())
-	args := r.agentArgs(store.Project{ID: "0123456789ab", Path: "/srv/p/x"}, "/var/lib/agmente/state/homes/0123456789ab")
+	args := r.agentArgs(store.Project{ID: "0123456789ab", Path: "/srv/p/x"}, "/var/lib/acpcode/state/homes/0123456789ab")
 	got := strings.Join(args, " ")
-	want := "run -i --rm --progress none --name agmente-0123456789ab --init -u 10001:10001" +
-		" -e HOME=/var/lib/agmente/state/homes/0123456789ab" +
-		" -v /var/lib/agmente/state/homes/0123456789ab:/var/lib/agmente/state/homes/0123456789ab" +
-		" -v /srv/p/x:/srv/p/x -w /srv/p/x -e LANG -e BOB_API_KEY agmente-bob:2.0.9 bob acp --accept-license"
+	want := "run -i --rm --progress none --name acpcode-0123456789ab --init -u 10001:10001" +
+		" -e HOME=/var/lib/acpcode/state/homes/0123456789ab" +
+		" -v /var/lib/acpcode/state/homes/0123456789ab:/var/lib/acpcode/state/homes/0123456789ab" +
+		" -v /srv/p/x:/srv/p/x -w /srv/p/x -e LANG -e BOB_API_KEY --entrypoint bob acpcode-bob:2.0.9 acp --accept-license"
 	if got != want {
 		t.Fatalf("args:\n got  %s\n want %s", got, want)
 	}
@@ -51,13 +51,13 @@ func TestAppleExecRunsGitInTheAgentContainerWithTheGitEnvironmentOnly(t *testing
 	t.Setenv("BOB_API_KEY", "must-not-appear")
 	r := newAppleRunner(appleTestConfig())
 	p := store.Project{ID: "0123456789ab", Path: "/srv/p/x"}
-	home := "/var/lib/agmente/state/homes/0123456789ab"
+	home := "/var/lib/acpcode/state/homes/0123456789ab"
 	argv := gitCommand(p.Path, "status", "--porcelain=v2")
-	got := strings.Join(r.execArgs("agmente-0123456789ab", p, home, argv, []string{"GIT_INDEX_FILE=/tmp/i"}), " ")
+	got := strings.Join(r.execArgs("acpcode-0123456789ab", p, home, argv, []string{"GIT_INDEX_FILE=/tmp/i"}), " ")
 	if !strings.HasPrefix(got, "exec -i -u 10001:10001 -w /srv/p/x ") {
 		t.Fatalf("exec prefix: %s", got)
 	}
-	if !strings.Contains(got, " agmente-0123456789ab git --no-pager ") {
+	if !strings.Contains(got, " acpcode-0123456789ab git --no-pager ") {
 		t.Fatalf("exec must target the agent container and run git: %s", got)
 	}
 	if strings.Contains(got, "BOB_API_KEY") || strings.Contains(got, "must-not-appear") {
@@ -71,12 +71,12 @@ func TestAppleExecRunsGitInTheAgentContainerWithTheGitEnvironmentOnly(t *testing
 func TestAppleGitFallbackHasNoNetwork(t *testing.T) {
 	r := newAppleRunner(appleTestConfig())
 	p := store.Project{ID: "0123456789ab", Path: "/srv/p/x"}
-	home := "/var/lib/agmente/state/homes/0123456789ab"
-	got := strings.Join(r.gitRunArgs("agmente-git-x", p, home, gitCommand(p.Path, "log"), nil), " ")
+	home := "/var/lib/acpcode/state/homes/0123456789ab"
+	got := strings.Join(r.gitRunArgs("acpcode-git-x", p, home, gitCommand(p.Path, "log"), nil), " ")
 	if !strings.Contains(got, "--network none") {
 		t.Fatalf("fallback git container must be off the network: %s", got)
 	}
-	if !strings.Contains(got, "--rm") || !strings.Contains(got, "--entrypoint git agmente-bob:2.0.9") {
+	if !strings.Contains(got, "--rm") || !strings.Contains(got, "--entrypoint git acpcode-bob:2.0.9") {
 		t.Fatalf("fallback git container shape: %s", got)
 	}
 }

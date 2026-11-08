@@ -114,7 +114,7 @@ test('the phone listener does not serve the connector metadata, and the phone st
       assert.equal(res.status, 404, `the phone listener must not serve ${path}`);
     }
     const ws = await phone(gw);
-    const pending = await rpc(ws, '_agmente/connector/pending', {});
+    const pending = await rpc(ws, '_acpcode/connector/pending', {});
     assert.deepEqual(pending.result, { pairings: [] }, 'the phone WebSocket still answers');
     ws.close();
   } finally {

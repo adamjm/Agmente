@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"testing"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 // mcpRig is a gateway server with one registered project whose home exists. It calls the MCP
@@ -84,11 +84,11 @@ func (r *mcpRig) call(method, params string) (any, *rpcError, bool) {
 }
 
 func (r *mcpRig) list(params string) (any, *rpcError, bool) {
-	return r.call("_agmente/mcp/list", params)
+	return r.call("_acpcode/mcp/list", params)
 }
 
 func (r *mcpRig) set(params string) (any, *rpcError, bool) {
-	return r.call("_agmente/mcp/set", params)
+	return r.call("_acpcode/mcp/set", params)
 }
 
 func (r *mcpRig) mustRefuse(res any, rerr *rpcError, handled bool) {
@@ -133,7 +133,7 @@ const mcpFixture = `{
 
 func TestMCPUnknownMethodIsNotHandled(t *testing.T) {
 	r := newMCPRig(t)
-	if _, _, handled := r.call("_agmente/mcp/other", `{}`); handled {
+	if _, _, handled := r.call("_acpcode/mcp/other", `{}`); handled {
 		t.Fatal("an unknown method was handled")
 	}
 }

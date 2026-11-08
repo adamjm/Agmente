@@ -1,6 +1,6 @@
 # ACP Agent Compatibility Matrix
 
-This file tracks the current ACP support surface of external CLI agents that are relevant to Agmente.
+This file tracks the current ACP support surface of external CLI agents that are relevant to ACP Code.
 
 Method:
 - Repos were cloned locally under `/Users/lvpeng/Code/agent-repos`.
@@ -19,7 +19,7 @@ Date checked: 2026-02-28
 | `claude-code-acp` | `1b05792` | Native ACP bridge, code-backed | `initialize`, `authenticate` stub, `session/new`, `session/load`, `session/list`, `session/fork`, `session/resume`, `session/prompt`, `session/cancel`, `session/set_mode`, `session/set_model`, `session/set_config_option` | very rich streaming incl. `config_option_update`, `current_mode_update`, tool updates, plan, usage | Best reference implementation in this set |
 | `auggie` | `87156b2` | Native ACP claimed, docs/changelog-backed | Docs mention `--acp`, terminal auth, model selection, indexing control | Docs mention image/file mention support | ACP server implementation not found in current public repo contents |
 | `factory` | `3d9840a` | ACP supported via CLI docs, docs-backed | Docs show `droid exec --output-format acp` for Zed/JetBrains | Changelog mentions ACP daemon/session loading fixes | ACP implementation source not found in current public repo contents |
-| `junie` | `ace62f2` | No confirmed ACP path found | None found in repo scan | None found | Treat as not currently confirmed ACP-capable for Agmente |
+| `junie` | `ace62f2` | No confirmed ACP path found | None found in repo scan | None found | Treat as not currently confirmed ACP-capable for ACP Code |
 
 ## Repo Notes
 
@@ -120,11 +120,11 @@ Primary file:
 
 Observed support:
 - No ACP method names, ACP transport setup, or ACP integration docs were found in the repo scan.
-- Current repo contents do not provide a confirmed ACP server path for Agmente.
+- Current repo contents do not provide a confirmed ACP server path for ACP Code.
 
-## Agmente Prioritization
+## ACP Code Prioritization
 
-Recommended targets for direct Agmente compatibility testing:
+Recommended targets for direct ACP Code compatibility testing:
 1. `claude-code-acp`
 2. `mistral-vibe`
 3. `opencode`

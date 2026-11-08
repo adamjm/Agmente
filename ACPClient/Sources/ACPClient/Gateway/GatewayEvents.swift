@@ -1,7 +1,7 @@
 import Foundation
 import ACP
 
-/// One `_agmente/event` notification: a logged event of a session, with its sequence number
+/// One `_acpcode/event` notification: a logged event of a session, with its sequence number
 /// (D-028). `message` is the logged JSON-RPC message exactly as the gateway stored it (D-027).
 public struct GatewayEvent: Equatable, Sendable {
     public let sessionId: String
@@ -14,9 +14,9 @@ public struct GatewayEvent: Equatable, Sendable {
         self.message = message
     }
 
-    public static let method = "_agmente/event"
+    public static let method = "_acpcode/event"
 
-    /// Reads the params of an `_agmente/event` notification, or nil when they are not in that shape.
+    /// Reads the params of an `_acpcode/event` notification, or nil when they are not in that shape.
     public static func parse(_ params: ACP.Value?) -> GatewayEvent? {
         guard let object = params?.objectValue,
               let sessionId = object["sessionId"]?.stringValue,
@@ -36,7 +36,7 @@ public struct GatewayEvent: Equatable, Sendable {
         case "session/request_permission":
             guard let idValue = object["id"], let id = Self.requestID(idValue) else { return .other(method: method) }
             return .permissionRequest(ACP.AnyRequest(id: id, method: method, params: params))
-        case "_agmente/turn_started":
+        case "_acpcode/turn_started":
             // Bob does not echo the user's message while a turn runs, so the gateway logs it here.
             // Each block becomes a user_message_chunk, as the gateway itself replays it (D-029).
             let blocks = params.objectValue?["prompt"]?.arrayValue ?? []
@@ -47,11 +47,11 @@ public struct GatewayEvent: Equatable, Sendable {
                 ])
             }
             return .userPrompt(updates)
-        case "_agmente/turn_ended":
+        case "_acpcode/turn_ended":
             let fields = params.objectValue ?? [:]
             return .turnEnded(stopReason: fields["stopReason"]?.stringValue,
                               error: fields["error"]?.objectValue?["message"]?.stringValue)
-        case "_agmente/approval_answered":
+        case "_acpcode/approval_answered":
             guard let approvalId = params.objectValue?["approvalId"]?.stringValue else { return .other(method: method) }
             return .approvalAnswered(approvalId: approvalId)
         default:

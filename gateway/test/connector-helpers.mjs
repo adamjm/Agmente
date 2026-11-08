@@ -126,12 +126,12 @@ export async function pairOnPhone(gw, { ws, scope = { projects: 'all' }, decide 
   const { verifier, challenge } = pkce();
   const page = await openAuthorize(gw.connectorPort, authorizeQuery({ challenge, ...query }));
   if (!page.code) return { verifier, page, answer: null };
-  const pending = await rpc(ws, '_agmente/connector/pending', {});
+  const pending = await rpc(ws, '_acpcode/connector/pending', {});
   const row = pending.result.pairings.find((p) => p.code === page.code);
   if (!row) throw new Error(`pairing ${page.code} not in pending: ${JSON.stringify(pending)}`);
   const answer = decide === 'approve'
-    ? await rpc(ws, '_agmente/connector/approve', { pairingId: row.pairingId, scope })
-    : await rpc(ws, '_agmente/connector/deny', { pairingId: row.pairingId });
+    ? await rpc(ws, '_acpcode/connector/approve', { pairingId: row.pairingId, scope })
+    : await rpc(ws, '_acpcode/connector/deny', { pairingId: row.pairingId });
   return { verifier, page, answer, row };
 }
 

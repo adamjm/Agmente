@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/store"
 )
 
 // errProjectLocked means another process holds the project's lock.
@@ -83,7 +83,7 @@ func secretEnv(cfg *config.Config) ([]string, error) {
 // set to the project (D-013) and HOME set to the project home. For tests and development only:
 // config refuses it unless runner.allowHost is true.
 //
-// Lock: an exclusive flock on <home>/.agmente.lock, taken without waiting. The agent inherits the
+// Lock: an exclusive flock on <home>/.acpcode.lock, taken without waiting. The agent inherits the
 // locked file (fd 3), so the lock lasts while the agent runs, even if the gateway dies first.
 type hostRunner struct{ cfg *config.Config }
 
@@ -113,7 +113,7 @@ func lockHome(home string) (*os.File, error) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(home, ".agmente.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(filepath.Join(home, ".acpcode.lock"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func lockHome(home string) (*os.File, error) {
 	return f, nil
 }
 
-// podmanRunner runs the agent in a container named agmente-<projectId>; Podman refuses a second
+// podmanRunner runs the agent in a container named acpcode-<projectId>; Podman refuses a second
 // container with that name, which is the lock (D-015). The project folder and the project home are
 // mounted at their host paths, so paths in ACP messages mean the same thing on both sides and need
 // no translation. Allow-listed variables are passed by name only (-e NAME): their values never
@@ -154,7 +154,7 @@ func (r podmanRunner) userArgs() []string {
 }
 
 func (r podmanRunner) args(p store.Project, home string) []string {
-	args := []string{"run", "--rm", "-i", "--name", "agmente-" + p.ID, "--pull=never", "--init"}
+	args := []string{"run", "--rm", "-i", "--name", "acpcode-" + p.ID, "--pull=never", "--init"}
 	args = append(args, r.userArgs()...)
 	args = append(args,
 		"-e", "HOME="+home,
@@ -167,8 +167,7 @@ func (r podmanRunner) args(p store.Project, home string) []string {
 			args = append(args, "-e", name)
 		}
 	}
-	args = append(args, r.cfg.Runner.Image)
-	return append(args, r.cfg.AgentCommand...)
+	return append(args, imageAndCommand(r.cfg.Runner.Image, r.cfg.AgentCommand)...)
 }
 
 func (r podmanRunner) start(p store.Project, home string) (*agentProcess, error) {
@@ -186,4 +185,16 @@ func (r podmanRunner) start(p store.Project, home string) (*agentProcess, error)
 		return nil, fmt.Errorf("podman: %w", err)
 	}
 	return proc, nil
+}
+
+// imageAndCommand is the image and the agent command for `run`. The image's own entrypoint is
+// replaced by the command's first word, because the project image declares `bob` as its
+// entrypoint (deploy/bob-project.Containerfile). Without the override, `bob` runs as an argument
+// of `bob` and never starts the agent. The git runner already does the same with `--entrypoint`.
+func imageAndCommand(image string, argv []string) []string {
+	if len(argv) == 0 {
+		return []string{image}
+	}
+	out := []string{"--entrypoint", argv[0], image}
+	return append(out, argv[1:]...)
 }

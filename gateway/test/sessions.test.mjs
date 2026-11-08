@@ -14,7 +14,7 @@ const tokens = [
   { id: 'other', identity: 'guest', sha256: hashToken(OTHER_TOKEN) },
 ];
 const index = async (ws, params = {}) => {
-  const res = await rpc(ws, '_agmente/sessions/index', params);
+  const res = await rpc(ws, '_acpcode/sessions/index', params);
   if (!res.result) throw new Error(JSON.stringify(res.error));
   return res.result.sessions;
 };
@@ -45,7 +45,7 @@ test('index lists every session with project, title, status, last activity and u
     // A second project with a newer session; then the first session gets newer activity again.
     const other = join(gw.dirs.root, 'other');
     await mkdir(other);
-    const p2 = (await rpc(a, '_agmente/projects/create', { name: 'other', path: other })).result.project;
+    const p2 = (await rpc(a, '_acpcode/projects/create', { name: 'other', path: other })).result.project;
     const s2 = (await rpc(a, 'session/new', { cwd: other, mcpServers: [] })).result.sessionId;
     await sleep(5);
     assert.deepEqual((await index(a)).map((s) => s.sessionId), [s2, s1], 'newest first');
@@ -114,10 +114,10 @@ test('read markers are shared by every device of an identity, not by other ident
     const unread = async (ws) => byId(await index(ws), sessionId).unread;
     assert.deepEqual([await unread(phone), await unread(tablet), await unread(guest)], [3, 3, 3]);
 
-    assert.deepEqual((await rpc(phone, '_agmente/sessions/read', { sessionId, seq: 7 })).result, { lastSeenSeq: 7 });
+    assert.deepEqual((await rpc(phone, '_acpcode/sessions/read', { sessionId, seq: 7 })).result, { lastSeenSeq: 7 });
     assert.deepEqual([await unread(phone), await unread(tablet), await unread(guest)], [1, 1, 3], 'FR-25: the tablet sees what the phone read');
-    assert.deepEqual((await rpc(tablet, '_agmente/sessions/read', { sessionId, seq: 2 })).result, { lastSeenSeq: 7 }, 'never moves back');
-    assert.deepEqual((await rpc(tablet, '_agmente/sessions/read', { sessionId, seq: 999 })).result, { lastSeenSeq: 10 }, 'stops at the head');
+    assert.deepEqual((await rpc(tablet, '_acpcode/sessions/read', { sessionId, seq: 2 })).result, { lastSeenSeq: 7 }, 'never moves back');
+    assert.deepEqual((await rpc(tablet, '_acpcode/sessions/read', { sessionId, seq: 999 })).result, { lastSeenSeq: 10 }, 'stops at the head');
     assert.deepEqual([await unread(phone), await unread(guest)], [0, 3]);
     await rpc(phone, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'four' }] });
     assert.equal(await unread(tablet), 1, 'a new turn is unread again');
@@ -131,10 +131,10 @@ test('read markers are shared by every device of an identity, not by other ident
       [{ sessionId: 'sess-nope', seq: 1 }, 'unknown session'],
     ];
     for (const [params, message] of bad) {
-      assert.deepEqual((await rpc(guest, '_agmente/sessions/read', params)).error, { code: -32602, message }, JSON.stringify(params));
+      assert.deepEqual((await rpc(guest, '_acpcode/sessions/read', params)).error, { code: -32602, message }, JSON.stringify(params));
     }
     for (const [params, message] of [[{ projectId: 'nope' }, 'unknown project'], [{ projectId: 7 }, 'projectId must be a project id']]) {
-      assert.deepEqual((await rpc(guest, '_agmente/sessions/index', params)).error, { code: -32602, message });
+      assert.deepEqual((await rpc(guest, '_acpcode/sessions/index', params)).error, { code: -32602, message });
     }
     for (const ws of [phone, tablet, guest]) ws.close();
   } finally {
@@ -151,7 +151,7 @@ test('index survives a gateway restart and starts no agent; a deleted session le
     const { sessionId } = await useProject(gw, ws, dirs.project);
     const keep = (await rpc(ws, 'session/new', { cwd: dirs.project, mcpServers: [] })).result.sessionId;
     await rpc(ws, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] });
-    await rpc(ws, '_agmente/sessions/read', { sessionId, seq: 2 });
+    await rpc(ws, '_acpcode/sessions/read', { sessionId, seq: 2 });
     const before = await index(ws);
     ws.close();
     await gw.stop();
@@ -165,7 +165,7 @@ test('index survives a gateway restart and starts no agent; a deleted session le
     await rpc(ws, 'session/load', { sessionId, cwd: dirs.project, mcpServers: [] });
     assert.deepEqual((await rpc(ws, 'session/delete', { sessionId })).result, {});
     assert.deepEqual((await index(ws)).map((s) => s.sessionId), [keep]);
-    assert.deepEqual((await rpc(ws, '_agmente/sessions/read', { sessionId, seq: 1 })).error.message, 'unknown session');
+    assert.deepEqual((await rpc(ws, '_acpcode/sessions/read', { sessionId, seq: 1 })).error.message, 'unknown session');
     ws.close();
   } finally {
     await gw.stop();

@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"agmente/gateway/internal/config"
+	"acpcode/gateway/internal/config"
 )
 
 func podmanOrSkip(t *testing.T) (podman, image string) {
@@ -21,12 +21,12 @@ func podmanOrSkip(t *testing.T) (podman, image string) {
 	if err != nil {
 		t.Skip("skipped: podman is not installed")
 	}
-	image = os.Getenv("AGMENTE_TEST_IMAGE")
+	image = os.Getenv("ACPCODE_TEST_IMAGE")
 	if image == "" {
-		image = "localhost/agmente-bob:2.0.9"
+		image = "localhost/acpcode-bob:2.0.9"
 	}
 	if exec.Command(podman, "image", "exists", image).Run() != nil {
-		t.Skipf("skipped: image %s is not available (set AGMENTE_TEST_IMAGE)", image)
+		t.Skipf("skipped: image %s is not available (set ACPCODE_TEST_IMAGE)", image)
 	}
 	return podman, image
 }

@@ -5,7 +5,7 @@ import ACP
 // the app. `call` is internal to this module, so the app reaches it through this method.
 
 public extension GatewayClient {
-    /// `_agmente/elicitation/answer {elicitationId, action, content?}`. `action` is `accept`, `decline` or
+    /// `_acpcode/elicitation/answer {elicitationId, action, content?}`. `action` is `accept`, `decline` or
     /// `cancel`. `content` is sent only with `accept`; for any other action it is dropped here as well as
     /// by the gateway. Throws `GatewayError.rpc(-32001, reason)` when the elicitation was closed already.
     func sendElicitationAnswer(elicitationId: String, action: String, content: [String: ACP.Value]? = nil) async throws {
@@ -13,6 +13,6 @@ public extension GatewayClient {
         if action == "accept", let content {
             params["content"] = .object(content)
         }
-        _ = try await call("_agmente/elicitation/answer", .object(params))
+        _ = try await call("_acpcode/elicitation/answer", .object(params))
     }
 }

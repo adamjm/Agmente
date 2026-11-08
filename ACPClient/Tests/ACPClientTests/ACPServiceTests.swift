@@ -55,7 +55,7 @@ struct ACPServiceTests {
             provider.connection.enqueue(.text(text))
         }
 
-        let payload = ACPInitializationPayload(clientName: "Agmente iOS", clientVersion: "0.1.0")
+        let payload = ACPInitializationPayload(clientName: "ACP Code iOS", clientVersion: "0.1.0")
         let response = try await service.initialize(payload)
 
         #expect(response.resultValue == .object(["status": .string("ok")]))

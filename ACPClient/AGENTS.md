@@ -4,8 +4,8 @@
 Typed ACP transport/service package used by the iOS app.
 
 ## External Repo Paths
-- Read `.agmente.paths` (from repo root) before cross-checking ACP upstream docs/spec.
-- ACP upstream reference root: `AGMENTE_ACP_REPO/docs`.
+- Read `.acpcode.paths` (from repo root) before cross-checking ACP upstream docs/spec.
+- ACP upstream reference root: `ACPCODE_ACP_REPO/docs`.
 
 ## Architecture Model
 - Transport concerns, request orchestration, and ACP parsing are separated layers.
@@ -29,9 +29,9 @@ When adding ACP method support:
 ## Tests
 - Run package tests for `ACPClient`.
 
-## Gateway `_agmente/*` methods
+## Gateway `_acpcode/*` methods
 The typed wrappers are in `Sources/ACPClient/Gateway/`. The full list is in `docs/SPEC.md` 6.2. Added 2026-11-07:
-- `_agmente/sessions/index` (`GatewayClient+Usage.swift`): each row may carry `usage` (`used`, `size`, optional `costAmount`/`costCurrency`, `updatedAt`), omitted when Bob has not reported usage (contract C1, D-092). Remaining context is `size - used`, shown only when `size > 0`.
-- `_agmente/projects/list`: the socket is sent one `_agmente/project/state` snapshot per listed project before the response (D-104), then each change (C2). `_agmente/sessions/index` does the same for the project it lists.
-- Notification `_agmente/project/state` `{projectId, agent, since}` (`GatewayProjectState.swift`, D-102), with `agent` one of `stopped`, `starting`, `running`, `stopping`; any other value decodes to `.unknown`, which is never shown. Change-only, at most two per second per project. Not in the event log. `AppViewModel.handleIncoming` sends it to `handleGatewayProjectState` (`Agmente/Fork/Gateway/AppViewModel+Gateway.swift`), which records it in `GatewayHomeModel`; the home shows it on the project header. The listing snapshot gives the current state when a socket starts listing, so a project already running on reconnect is not shown as stopped.
-- Connector (`GatewayConnector.swift`, `GatewayClient+Connector.swift`, D-097; contract C5): `_agmente/connector/pending` (`{pairings}`), `_agmente/connector/approve` (`{pairingId, scope}` returns `{grantId}`), `_agmente/connector/deny` (`{pairingId}`), `_agmente/connector/grants` (`{grants}`), `_agmente/connector/revoke` (`{grantId}`).
+- `_acpcode/sessions/index` (`GatewayClient+Usage.swift`): each row may carry `usage` (`used`, `size`, optional `costAmount`/`costCurrency`, `updatedAt`), omitted when Bob has not reported usage (contract C1, D-092). Remaining context is `size - used`, shown only when `size > 0`.
+- `_acpcode/projects/list`: the socket is sent one `_acpcode/project/state` snapshot per listed project before the response (D-104), then each change (C2). `_acpcode/sessions/index` does the same for the project it lists.
+- Notification `_acpcode/project/state` `{projectId, agent, since}` (`GatewayProjectState.swift`, D-102), with `agent` one of `stopped`, `starting`, `running`, `stopping`; any other value decodes to `.unknown`, which is never shown. Change-only, at most two per second per project. Not in the event log. `AppViewModel.handleIncoming` sends it to `handleGatewayProjectState` (`ACPCode/Fork/Gateway/AppViewModel+Gateway.swift`), which records it in `GatewayHomeModel`; the home shows it on the project header. The listing snapshot gives the current state when a socket starts listing, so a project already running on reconnect is not shown as stopped.
+- Connector (`GatewayConnector.swift`, `GatewayClient+Connector.swift`, D-097; contract C5): `_acpcode/connector/pending` (`{pairings}`), `_acpcode/connector/approve` (`{pairingId, scope}` returns `{grantId}`), `_acpcode/connector/deny` (`{pairingId}`), `_acpcode/connector/grants` (`{grants}`), `_acpcode/connector/revoke` (`{grantId}`).

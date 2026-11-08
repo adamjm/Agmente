@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/config"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/store"
 )
 
 // skillFixture is a gateway with one project folder and a folder outside it (FR-43, D-085).
@@ -89,7 +89,7 @@ func (f *skillFixture) call(method string, params map[string]any) (any, *rpcErro
 // put saves a skill with the project and the project scope, and returns the refusal, if any.
 func (f *skillFixture) put(name, content string) *rpcError {
 	f.t.Helper()
-	_, rerr, handled := f.call("_agmente/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": name, "content": content})
+	_, rerr, handled := f.call("_acpcode/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": name, "content": content})
 	if !handled {
 		f.t.Fatalf("put %q: not handled", name)
 	}
@@ -98,7 +98,7 @@ func (f *skillFixture) put(name, content string) *rpcError {
 
 func (f *skillFixture) del(name string) *rpcError {
 	f.t.Helper()
-	_, rerr, handled := f.call("_agmente/skills/delete", map[string]any{"projectId": f.id, "scope": "project", "name": name})
+	_, rerr, handled := f.call("_acpcode/skills/delete", map[string]any{"projectId": f.id, "scope": "project", "name": name})
 	if !handled {
 		f.t.Fatalf("delete %q: not handled", name)
 	}
@@ -107,7 +107,7 @@ func (f *skillFixture) del(name string) *rpcError {
 
 func (f *skillFixture) list() ([]skillInfo, *rpcError) {
 	f.t.Helper()
-	res, rerr, handled := f.call("_agmente/skills/list", map[string]any{"projectId": f.id, "scope": "project"})
+	res, rerr, handled := f.call("_acpcode/skills/list", map[string]any{"projectId": f.id, "scope": "project"})
 	if !handled {
 		f.t.Fatal("list: not handled")
 	}
@@ -211,7 +211,7 @@ func TestSkillContentCap(t *testing.T) {
 	if _, err := os.Stat(f.bobPath("skills", "big-skill")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("an oversize skill left a folder behind")
 	}
-	_, rerr, _ := f.call("_agmente/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": "no-body"})
+	_, rerr, _ := f.call("_acpcode/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": "no-body"})
 	f.mustInvalid("put without content", rerr)
 }
 
@@ -379,7 +379,7 @@ func TestSymlinkedBobRefused(t *testing.T) {
 }
 
 func listErr(f *skillFixture) *rpcError {
-	_, rerr, _ := f.call("_agmente/skills/list", map[string]any{"projectId": f.id, "scope": "project"})
+	_, rerr, _ := f.call("_acpcode/skills/list", map[string]any{"projectId": f.id, "scope": "project"})
 	return rerr
 }
 
@@ -391,7 +391,7 @@ func TestTempFileAbsentAfterForcedFailure(t *testing.T) {
 	skillFailHook = func() error { return errors.New("forced failure") }
 	defer func() { skillFailHook = nil }()
 
-	_, rerr, _ := f.call("_agmente/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": "stable", "content": "new\n"})
+	_, rerr, _ := f.call("_acpcode/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": "stable", "content": "new\n"})
 	if rerr == nil || rerr.Code != rpcInternal {
 		t.Fatalf("forced failure: got %+v, want -32603", rerr)
 	}
@@ -402,7 +402,7 @@ func TestTempFileAbsentAfterForcedFailure(t *testing.T) {
 		t.Fatalf("temp file left behind: %v", names)
 	}
 
-	_, rerr, _ = f.call("_agmente/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": "fresh", "content": "new\n"})
+	_, rerr, _ = f.call("_acpcode/skills/put", map[string]any{"projectId": f.id, "scope": "project", "name": "fresh", "content": "new\n"})
 	if rerr == nil {
 		t.Fatal("forced failure on a new skill: accepted")
 	}
@@ -420,7 +420,7 @@ func TestTempFileAbsentAfterForcedFailure(t *testing.T) {
 func TestScopeOtherThanProjectRefused(t *testing.T) {
 	f := newSkillFixture(t)
 	for _, scope := range []any{"", "user", "home", "Project", nil, 1} {
-		for _, method := range []string{"_agmente/skills/list", "_agmente/skills/put", "_agmente/skills/delete"} {
+		for _, method := range []string{"_acpcode/skills/list", "_acpcode/skills/put", "_acpcode/skills/delete"} {
 			params := map[string]any{"projectId": f.id, "name": "alpha", "content": "body\n"}
 			if scope != nil {
 				params["scope"] = scope
@@ -432,7 +432,7 @@ func TestScopeOtherThanProjectRefused(t *testing.T) {
 			f.mustInvalid(method+" with scope "+jsonScope(scope), rerr)
 		}
 	}
-	_, rerr, _ := f.call("_agmente/skills/put", map[string]any{"projectId": f.id, "name": "alpha", "content": "body\n"})
+	_, rerr, _ := f.call("_acpcode/skills/put", map[string]any{"projectId": f.id, "name": "alpha", "content": "body\n"})
 	f.mustInvalid("put without scope", rerr)
 	if _, err := os.Stat(f.bobPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("a refused scope created .bob")
@@ -450,12 +450,12 @@ func jsonScope(v any) string {
 // An unknown project is -32602, and the methods outside the skills group are not handled here.
 func TestUnknownProjectAndOtherMethods(t *testing.T) {
 	f := newSkillFixture(t)
-	_, rerr, handled := f.call("_agmente/skills/list", map[string]any{"projectId": "nope", "scope": "project"})
+	_, rerr, handled := f.call("_acpcode/skills/list", map[string]any{"projectId": "nope", "scope": "project"})
 	if !handled {
 		t.Fatal("list not handled")
 	}
 	f.mustInvalid("unknown project", rerr)
-	if _, _, handled := f.call("_agmente/git/status", map[string]any{"projectId": f.id}); handled {
+	if _, _, handled := f.call("_acpcode/git/status", map[string]any{"projectId": f.id}); handled {
 		t.Fatal("a git method was handled by serveSkills")
 	}
 }
@@ -487,10 +487,10 @@ func itoa(n int) string {
 	return string(b)
 }
 
-// read sends _agmente/skills/read and returns the result map, or the refusal.
+// read sends _acpcode/skills/read and returns the result map, or the refusal.
 func (f *skillFixture) read(name string) (map[string]any, *rpcError) {
 	f.t.Helper()
-	res, rerr, handled := f.call("_agmente/skills/read", map[string]any{"projectId": f.id, "scope": "project", "name": name})
+	res, rerr, handled := f.call("_acpcode/skills/read", map[string]any{"projectId": f.id, "scope": "project", "name": name})
 	if !handled {
 		f.t.Fatalf("read %q: not handled", name)
 	}
@@ -605,7 +605,7 @@ func TestReadScopeOtherThanProjectRefused(t *testing.T) {
 		if scope != nil {
 			params["scope"] = scope
 		}
-		_, rerr, handled := f.call("_agmente/skills/read", params)
+		_, rerr, handled := f.call("_acpcode/skills/read", params)
 		if !handled {
 			t.Fatal("read: not handled")
 		}

@@ -54,7 +54,7 @@ fi
 if [ "$DRY" = 1 ] || [ ! -f "$OUT/ca.pem" ]; then
   run openssl ecparam -name prime256v1 -genkey -param_enc named_curve -noout -out "$OUT/ca.key"
   run openssl req -new -x509 -sha256 -key "$OUT/ca.key" -out "$OUT/ca.pem" -days 3650 \
-    -subj "/CN=Agmente client CA" -config "$CNF" -extensions ca
+    -subj "/CN=ACP Code client CA" -config "$CNF" -extensions ca
 fi
 
 run openssl ecparam -name prime256v1 -genkey -param_enc named_curve -noout -out "$OUT/$DEVICE.key"

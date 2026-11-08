@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"agmente/gateway/internal/audit"
-	"agmente/gateway/internal/jsonv"
-	"agmente/gateway/internal/push"
-	"agmente/gateway/internal/store"
+	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/jsonv"
+	"acpcode/gateway/internal/push"
+	"acpcode/gateway/internal/store"
 )
 
 const agentStartTimeout = 60 * time.Second
@@ -338,7 +338,7 @@ func (a *projectAgent) onLine(proc *agentProcess, line []byte) {
 
 // notify sends an agent notification to the sockets attached to its session, or, with no session,
 // to every socket that has used the project. A session notification is logged first, and
-// subscribers get it as `_agmente/event` instead (D-028).
+// subscribers get it as `_acpcode/event` instead (D-028).
 func (a *projectAgent) notify(msg *jsonv.Value) {
 	sid, _ := msg.Get("params").Get("sessionId").StringValue()
 	out := msg.Marshal()
@@ -747,7 +747,7 @@ func (a *projectAgent) logTurnStarted(sessionID string, prompt *jsonv.Value) {
 	if prompt == nil {
 		prompt = &jsonv.Value{Kind: jsonv.Array}
 	}
-	a.logEvent(sessionID, "turn_started", gatewayNotification("_agmente/turn_started", sessionID, map[string]*jsonv.Value{"prompt": prompt}, "prompt"))
+	a.logEvent(sessionID, "turn_started", gatewayNotification("_acpcode/turn_started", sessionID, map[string]*jsonv.Value{"prompt": prompt}, "prompt"))
 }
 
 // logTurnEnded records how a turn ended: the agent's result (stopReason) or its error.
@@ -764,7 +764,7 @@ func (a *projectAgent) logTurnEnded(sessionID string, response *jsonv.Value) {
 	if err := a.s.store.SetSessionStatus(context.Background(), sessionID, status); err != nil {
 		a.s.audit.Log("store_error", a.fields(audit.Fields{Reason: "session_status"}))
 	}
-	a.logEvent(sessionID, "turn_ended", gatewayNotification("_agmente/turn_ended", sessionID, fields, "stopReason", "error"))
+	a.logEvent(sessionID, "turn_ended", gatewayNotification("_acpcode/turn_ended", sessionID, fields, "stopReason", "error"))
 	// FR-23: a finished turn, or a failed one (the agent exited or refused it) pushes once.
 	if status == "error" {
 		a.s.pushNotify(push.SessionFailed, a.id, sessionID)

@@ -1,8 +1,8 @@
 # Mac setup: the gateway with Apple `container`
 
-This guide runs the Agmente gateway on a Mac with Apple's `container` CLI. Bob runs in one container per project. The runner is `runner.kind: "apple"` (D-079, D-080, D-081). For the reasons, see `docs/DECISIONS.md` and the 2026-11-07 entries in `docs/RESULTS.md`.
+This guide runs the ACP Code gateway on a Mac with Apple's `container` CLI. Bob runs in one container per project. The runner is `runner.kind: "apple"` (D-079, D-080, D-081). For the reasons, see `docs/DECISIONS.md` and the 2026-11-07 entries in `docs/RESULTS.md`.
 
-A step marked **verify** was not confirmed in those records. Paths use `~/agmente/` as an example. The config needs absolute paths, because the gateway does not expand `~` in JSON.
+A step marked **verify** was not confirmed in those records. Paths use `~/acpcode/` as an example. The config needs absolute paths, because the gateway does not expand `~` in JSON.
 
 ## 1. Prerequisites
 
@@ -49,26 +49,26 @@ The first use may download a kernel (the spike used `kata-static-4.3.1-arm64`, f
 
 ## 3. Build or obtain the image
 
-The gateway expects the image `agmente-bob:2.0.9`, stored under the **full** name `localhost/agmente-bob:2.0.9`.
+The gateway expects the image `acpcode-bob:2.0.9`, stored under the **full** name `localhost/acpcode-bob:2.0.9`.
 
 Why the full name: Apple `container` treats a short name as a Docker Hub name (`docker.io`), and a short name then fails with a 401 (the 401 detail is **verify**; the docker.io behaviour is in D-080). Put the full name in `runner.image`.
 
 The image is built from `deploy/bob-project.Containerfile`, which is marked "verify". The spike used an image built with Podman (the build command was confirmed on this Mac, 2026-11-07):
 
 ```bash
-podman build -t agmente-bob:2.0.9 -f deploy/bob-project.Containerfile deploy
+podman build -t acpcode-bob:2.0.9 -f deploy/bob-project.Containerfile deploy
 ```
 
 Apple `container` needs the OCI archive format. Export the image from Podman as an OCI archive (RESULTS 2026-11-07, spike). The `-o` flag is from `podman save --help`:
 
 ```bash
-podman save --format oci-archive -o ~/agmente/agmente-bob-2.0.9.oci.tar localhost/agmente-bob:2.0.9
+podman save --format oci-archive -o ~/acpcode/acpcode-bob-2.0.9.oci.tar localhost/acpcode-bob:2.0.9
 ```
 
 Load the archive into Apple `container`. The `--input` flag is from `container image load --help`; the spike used this subcommand (RESULTS 2026-11-07, spike):
 
 ```bash
-container image load --input ~/agmente/agmente-bob-2.0.9.oci.tar
+container image load --input ~/acpcode/acpcode-bob-2.0.9.oci.tar
 ```
 
 Check that the image is listed under the full name. This command was confirmed on this Mac (2026-11-07):
@@ -80,7 +80,7 @@ container image list
 Remove the archive once it is loaded (the spike removed its scratch files; the command was confirmed on this Mac, 2026-11-07):
 
 ```bash
-rm ~/agmente/agmente-bob-2.0.9.oci.tar
+rm ~/acpcode/acpcode-bob-2.0.9.oci.tar
 ```
 
 The first start of a fresh image takes about 15 s (init image download). Later starts take about 1 to 1.3 s.
@@ -110,13 +110,13 @@ A public resolver such as `1.1.1.1` also works, but it receives every container 
 Both folders must exist before the gateway starts. The gateway exits when it cannot open the database in `stateDir` (D-024). The gateway creates each project's home folder under `stateDir/homes/` with mode 0700 (D-024). It does not create the project root or `stateDir` itself.
 
 ```bash
-mkdir -p ~/agmente/projects ~/agmente/state
+mkdir -p ~/acpcode/projects ~/acpcode/state
 ```
 
-Copy the example config out of the repo, then edit the copy (`~/agmente/config.json`):
+Copy the example config out of the repo, then edit the copy (`~/acpcode/config.json`):
 
 ```bash
-cp gateway/config.mac.example.json ~/agmente/config.json
+cp gateway/config.mac.example.json ~/acpcode/config.json
 ```
 
 Set these values:
@@ -124,12 +124,12 @@ Set these values:
 - `tokens`: build the gateway first (step 7), then run the token command. It prints the token once, and a `config entry` line with `id`, `identity` and `sha256`. Put that entry's values into `tokens`, replacing the placeholder hash. Copy the token into the app, and do not keep it in a file. The gateway stores only the hash.
 
   ```bash
-  gateway/bin/agmente-gateway new-token <device-id> <identity>
+  gateway/bin/acpcode-gateway new-token <device-id> <identity>
   ```
-- `projects.roots`: an absolute project root, for example `/Users/<you>/agmente/projects`.
-- `stateDir`: an absolute path, for example `/Users/<you>/agmente/state`. It must not be `/`.
+- `projects.roots`: an absolute project root, for example `/Users/<you>/acpcode/projects`.
+- `stateDir`: an absolute path, for example `/Users/<you>/acpcode/state`. It must not be `/`.
 - `runner.container`: `/opt/homebrew/bin/container`.
-- `runner.image`: `localhost/agmente-bob:2.0.9` (the full name, step 3).
+- `runner.image`: `localhost/acpcode-bob:2.0.9` (the full name, step 3).
 - `runner.dns`: the address from step 4. Replace the placeholder in the example file.
 - `files.host`: the placeholder `files.example.com`. Set it for your deployment (step 11).
 
@@ -148,7 +148,7 @@ export BOB_API_KEY=<your-bob-api-key>
 or load it from a secrets file outside the repo, with `NAME=value` lines:
 
 ```bash
-set -a; . ~/agmente/secrets.env; set +a
+set -a; . ~/acpcode/secrets.env; set +a
 ```
 
 The live check reads the key from the environment and never prints it.
@@ -158,13 +158,13 @@ The live check reads the key from the environment and never prints it.
 Build the gateway from the repo root:
 
 ```bash
-(cd gateway && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)
+(cd gateway && go build -trimpath -o bin/acpcode-gateway ./cmd/acpcode-gateway)
 ```
 
 Validate your config without starting anything:
 
 ```bash
-gateway/bin/agmente-gateway --config ~/agmente/config.json --dry-run
+gateway/bin/acpcode-gateway --config ~/acpcode/config.json --dry-run
 ```
 
 Expected output ends with:
@@ -180,10 +180,10 @@ If the dry run fails, fix the reported problem and run it again before starting 
 Start the gateway in the foreground:
 
 ```bash
-gateway/bin/agmente-gateway --config ~/agmente/config.json
+gateway/bin/acpcode-gateway --config ~/acpcode/config.json
 ```
 
-Run the live check for the apple runner. It starts its own gateway on a free port, uses a scratch project under `~/.agmente-live/`, needs `BOB_API_KEY` (step 6), and uses the Mac's resolver unless you pass `--dns`:
+Run the live check for the apple runner. It starts its own gateway on a free port, uses a scratch project under `~/.acpcode-live/`, needs `BOB_API_KEY` (step 6), and uses the Mac's resolver unless you pass `--dns`:
 
 ```bash
 node gateway/scripts/live-bob.mjs --runner apple
@@ -230,7 +230,7 @@ container system status
 container system kernel set --recommended
 ```
 
-**Image not found.** Check that the image is listed under the full name, and that `runner.image` is `localhost/agmente-bob:2.0.9` (step 3). The list command was confirmed on this Mac (2026-11-07):
+**Image not found.** Check that the image is listed under the full name, and that `runner.image` is `localhost/acpcode-bob:2.0.9` (step 3). The list command was confirmed on this Mac (2026-11-07):
 
 ```bash
 container image list
@@ -244,10 +244,10 @@ container image list
 container list --quiet
 ```
 
-Delete only a container whose name starts with `agmente-`, with the command the gateway itself uses (`runner_apple.go`):
+Delete only a container whose name starts with `acpcode-`, with the command the gateway itself uses (`runner_apple.go`):
 
 ```bash
-container delete --force agmente-<projectId>
+container delete --force acpcode-<projectId>
 ```
 
 Do not use `container inspect` or `container list --format json`. Both print environment values (D-079).
@@ -255,7 +255,7 @@ Do not use `container inspect` or `container list --format json`. Both print env
 ## 12. Not covered
 
 - The public connector's deployment (Caddy on public port 8443 as your own user, the LaunchAgent, the public address). It is covered in section 13.
-- The phone listener's Caddy site (`deploy/Caddyfile`, :8443 to 127.0.0.1:8788) and the systemd unit (`deploy/agmente-gateway.service`). This guide does not cover them.
+- The phone listener's Caddy site (`deploy/Caddyfile`, :8443 to 127.0.0.1:8788) and the systemd unit (`deploy/acpcode-gateway.service`). This guide does not cover them.
 - Push delivery and APNs. See `docs/PUSH-TESTING.md`.
 
 ## 13. Public connector (Claude remote access)
@@ -283,23 +283,23 @@ The publicOrigin includes the port, `https://<host>:8443`. The gateway uses it a
    CADDY_DNS_API_TOKEN=<the token>
    ```
 
-   The file is `/Users/you/agmente/secrets.env` (the gateway's secrets file, which the gateway's LaunchAgent also sources). Set its mode to 600: `chmod 600 /Users/you/agmente/secrets.env`. The gateway itself sees only the variables in `agent.envPassthrough`.
+   The file is `/Users/you/acpcode/secrets.env` (the gateway's secrets file, which the gateway's LaunchAgent also sources). Set its mode to 600: `chmod 600 /Users/you/acpcode/secrets.env`. The gateway itself sees only the variables in `agent.envPassthrough`.
 4. **Build Caddy with the DNS module.** The Homebrew build of Caddy does not include a DNS provider. Build a Caddy that does, with `xcaddy` (install it from `github.com/caddyserver/xcaddy`). Choose the module for your provider from the `caddy-dns` organisation (`github.com/caddy-dns`):
 
    ```bash
-   xcaddy build --with github.com/caddy-dns/<provider> --output ~/agmente/caddy/bin/caddy
+   xcaddy build --with github.com/caddy-dns/<provider> --output ~/acpcode/caddy/bin/caddy
    ```
 
    `<provider>` is a placeholder: use the module path from that provider's `caddy-dns` README. The `tls` directive names the provider the same way, for example `dns cloudflare {env.CLOUDFLARE_API_TOKEN}` (Caddy's `tls` directive page). In `deploy/Caddyfile.connector`, replace the placeholder `PROVIDER` with that provider name. The token stays in the environment variable `CADDY_DNS_API_TOKEN`.
 5. **Caddy files.** Copy the Caddy configs into the Caddy folder. The main file already imports the connector site, outside any site block:
 
    ```bash
-   cp deploy/Caddyfile ~/agmente/caddy/Caddyfile
-   cp deploy/Caddyfile.connector ~/agmente/caddy/Caddyfile.connector
+   cp deploy/Caddyfile ~/acpcode/caddy/Caddyfile
+   cp deploy/Caddyfile.connector ~/acpcode/caddy/Caddyfile.connector
    ```
 
-   The phone site's client CA is still read from `/etc/caddy/agmente-client-ca.pem`. Caddy runs as you, so that file must be readable by your user (`ls -l /etc/caddy/agmente-client-ca.pem`). A private copy of the same CA, under `~/agmente/caddy/`, works if the directory is not readable. Then change the `trust_pool` path in the copy. Changing it is a change to the phone's site, so re-check the phone's mutual TLS afterwards.
-6. **Caddy environment.** Set `CONNECTOR_HOST` to the host name from step 1, in `deploy/launchd/dev.agmente.caddy.plist`. The Caddy LaunchAgent sets it, and the Caddyfile reads it as `{$CONNECTOR_HOST}`. Without it, Caddy will not load the config.
+   The phone site's client CA is still read from `/etc/caddy/acpcode-client-ca.pem`. Caddy runs as you, so that file must be readable by your user (`ls -l /etc/caddy/acpcode-client-ca.pem`). A private copy of the same CA, under `~/acpcode/caddy/`, works if the directory is not readable. Then change the `trust_pool` path in the copy. Changing it is a change to the phone's site, so re-check the phone's mutual TLS afterwards.
+6. **Caddy environment.** Set `CONNECTOR_HOST` to the host name from step 1, in `deploy/launchd/dev.acpcode.caddy.plist`. The Caddy LaunchAgent sets it, and the Caddyfile reads it as `{$CONNECTOR_HOST}`. Without it, Caddy will not load the config.
 7. **Caddy LaunchAgent.** Install the template as a user agent (its comments give the commands). Stop any manually started Caddy first, or port 8443 is already taken. The agent runs as you, not as root.
 8. **Gateway config.** In your copy of the config, set `connector.enabled` to `true` and `connector.publicOrigin` to `https://<the host name>:8443`. JSON has no comments, so this note lives here. Keep `allowedOrigins` empty until the connector probe shows which origin the Claude client sends.
 9. **Start.** Run the gateway dry run first (step 7 below). Then restart the Caddy agent (or `caddy reload`), and restart the gateway. Restarting the gateway stops running project agents, so do it when no session is running.
@@ -308,10 +308,10 @@ The publicOrigin includes the port, `https://<host>:8443`. The gateway uses it a
 Validate the Caddy config before you reload it, with the same environment values as the agent. Use the Caddy built in step 4, since the stock build cannot load the DNS directive:
 
 ```bash
-CONNECTOR_HOST=connector.your-domain.example ~/agmente/caddy/bin/caddy validate --config ~/agmente/caddy/Caddyfile --adapter caddyfile
+CONNECTOR_HOST=connector.your-domain.example ~/acpcode/caddy/bin/caddy validate --config ~/acpcode/caddy/Caddyfile --adapter caddyfile
 ```
 
-Load the token from the secrets file rather than typing it: `set -a; . ~/agmente/secrets.env; set +a`, then run the command with `CONNECTOR_HOST` set. Expected: exit 0 and `Valid configuration`.
+Load the token from the secrets file rather than typing it: `set -a; . ~/acpcode/secrets.env; set +a`, then run the command with `CONNECTOR_HOST` set. Expected: exit 0 and `Valid configuration`.
 
 ### How to verify
 
@@ -353,7 +353,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://agent.your-domain.example:8443
 
 Replace `agent.your-domain.example` with the phone site's host name (the example in `deploy/Caddyfile`).
 
-The gateway's startup output names the connector listener on `127.0.0.1:8789`. Check the config with `gateway/bin/agmente-gateway --config ~/agmente/config.json --dry-run` before each start.
+The gateway's startup output names the connector listener on `127.0.0.1:8789`. Check the config with `gateway/bin/acpcode-gateway --config ~/acpcode/config.json --dry-run` before each start.
 
 ### How to turn it off
 
