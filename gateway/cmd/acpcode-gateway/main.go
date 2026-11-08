@@ -2,6 +2,7 @@
 //
 //	acpcode-gateway --config <file> [--dry-run]
 //	acpcode-gateway new-token <device-id> <identity>
+//	acpcode-gateway --config <file> mcp-server list|put|delete [id]   (the gateway's MCP list, D-107)
 package main
 
 import (
@@ -30,6 +31,9 @@ const usage = "Usage: acpcode-gateway --config <file> [--dry-run]\n       acpcod
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "new-token" {
 		os.Exit(newToken(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "--config" && len(os.Args) > 3 && os.Args[3] == "mcp-server" {
+		os.Exit(mcpServerCommand(append(os.Args[1:3:3], os.Args[4:]...), os.Stdin, os.Stdout, os.Stderr))
 	}
 	os.Exit(run(os.Args[1:]))
 }

@@ -13,6 +13,7 @@ final class ACPCodeAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Task { @MainActor in await PushRegistration.shared.refreshStatus() }
+        Task { @MainActor in ApprovalLiveActivityCoordinator.installAnswerRouter() } // Once and Deny intents (la-decision)
         return true
     }
 

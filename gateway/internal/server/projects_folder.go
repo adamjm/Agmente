@@ -90,57 +90,64 @@ func folderNameByte(c byte) bool {
 // that works through the open folder (os.Root), so a component swapped later cannot redirect the
 // mkdir, the mode change or the rollback. The folder is created with mode 0755. Registration is the
 // same as for an existing folder (registerProject). If it fails, the folder this call created is
-// removed again, and only while it is still an empty folder.
-func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, name, mode string, deny, skip []string) (*store.Project, *rpcError) {
+// removed again, and only while it is still an empty folder. With git (D-105) the new folder also
+// gets `git init` and an origin, and a failure removes the .git this call made as well.
+func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, name, mode string, deny, skip []string, git gitOptions) (*store.Project, *gitInitResult, *rpcError) {
 	parent, ok := params.Get("path").StringValue()
 	if !ok || !filepath.IsAbs(parent) {
-		return nil, invalidParams("path must be an absolute path")
+		return nil, nil, invalidParams("path must be an absolute path")
 	}
 	if filepath.Clean(parent) != parent {
-		return nil, invalidParams("path must be clean: no trailing slash, \".\" or \"..\"")
+		return nil, nil, invalidParams("path must be clean: no trailing slash, \".\" or \"..\"")
 	}
 	real, err := realpath(parent)
 	if err != nil {
-		return nil, invalidParams("path does not exist")
+		return nil, nil, invalidParams("path does not exist")
 	}
 	if real != parent {
-		return nil, invalidParams("path must not contain a symbolic link")
+		return nil, nil, invalidParams("path must not contain a symbolic link")
 	}
 	if info, err := os.Stat(real); err != nil || !info.IsDir() {
-		return nil, invalidParams("path must be a directory")
+		return nil, nil, invalidParams("path must be a directory")
 	}
 	if !isInsideRoots(real, s.roots) {
-		return nil, invalidParams("path is outside the allowed project roots")
+		return nil, nil, invalidParams("path is outside the allowed project roots")
 	}
 	dir, err := os.OpenRoot(real)
 	if err != nil {
-		return nil, invalidParams("path cannot be opened")
+		return nil, nil, invalidParams("path cannot be opened")
 	}
 	defer dir.Close()
 	// The open may have followed a link swapped in after the check above. The path must still be
 	// the same folder, or nothing is made.
 	if got, err := realpath(real); err != nil || got != real {
-		return nil, invalidParams("path must not contain a symbolic link")
+		return nil, nil, invalidParams("path must not contain a symbolic link")
 	}
 	target := filepath.Join(real, name)
 	if _, err := dir.Lstat(name); err == nil {
-		return nil, invalidParams("a folder with that name already exists")
+		return nil, nil, invalidParams("a folder with that name already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, &rpcError{Code: rpcInternal, Message: "cannot check the folder"}
+		return nil, nil, &rpcError{Code: rpcInternal, Message: "cannot check the folder"}
 	}
 	if existing, err := s.store.ProjectByPath(ctx, target); err != nil {
-		return nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
+		return nil, nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
 	} else if existing != nil {
-		return nil, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
+		return nil, nil, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
+	}
+	// The project id is chosen now, because the git steps need the project's container name and
+	// home before the project is registered.
+	id, err := newProjectID()
+	if err != nil {
+		return nil, nil, &rpcError{Code: rpcInternal, Message: "cannot create a project id"}
 	}
 	if folderHook != nil {
 		folderHook("before-mkdir", real)
 	}
 	if err := dir.Mkdir(name, 0o755); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return nil, invalidParams("a folder with that name already exists")
+			return nil, nil, invalidParams("a folder with that name already exists")
 		}
-		return nil, &rpcError{Code: rpcInternal, Message: "cannot create the folder"}
+		return nil, nil, &rpcError{Code: rpcInternal, Message: "cannot create the folder"}
 	}
 	// The folder now exists and this call made it. Anything that is not a folder at the name from
 	// here on was put there by someone else, so it is left alone and never removed.
@@ -148,25 +155,35 @@ func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, n
 		folderHook("after-mkdir", target)
 	}
 	if info, err := dir.Lstat(name); err != nil || !info.IsDir() {
-		return nil, invalidParams("the new folder was replaced while it was made")
+		return nil, nil, invalidParams("the new folder was replaced while it was made")
 	}
 	// Mkdir applies the umask, so the mode is set explicitly. Root.Chmod never follows a link out
 	// of the parent.
 	if err := dir.Chmod(name, 0o755); err != nil {
 		removeOwnFolder(dir, name)
-		return nil, &rpcError{Code: rpcInternal, Message: "cannot set the folder mode"}
+		return nil, nil, &rpcError{Code: rpcInternal, Message: "cannot set the folder mode"}
 	}
 	// Check the new folder as it now is: its path must still resolve to itself inside a root.
 	if got, err := realpath(target); err != nil || got != target || !isInsideRoots(got, s.roots) {
 		removeOwnFolder(dir, name)
-		return nil, invalidParams("path is outside the allowed project roots")
+		return nil, nil, invalidParams("path is outside the allowed project roots")
 	}
-	p, rerr := s.registerProject(ctx, name, target, mode, deny, skip)
+	home := s.projectHome(id)
+	var gitRes *gitInitResult
+	if git.init {
+		res, rerr := s.gitInitFolder(ctx, store.Project{ID: id, Path: target}, git)
+		if rerr != nil {
+			rollbackNewFolder(dir, name, home, true)
+			return nil, nil, rerr
+		}
+		gitRes = res
+	}
+	p, rerr := s.registerProjectID(ctx, id, name, target, mode, deny, skip)
 	if rerr != nil {
-		removeOwnFolder(dir, name)
-		return nil, rerr
+		rollbackNewFolder(dir, name, home, git.init)
+		return nil, nil, rerr
 	}
-	return p, nil
+	return p, gitRes, nil
 }
 
 // removeOwnFolder removes the folder this call made, and only when it is still a folder and empty

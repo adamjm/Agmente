@@ -21,7 +21,7 @@ func TestProjectDenyPathsRoundTripAndSchema2Migration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Rebuild the schema 2 shape: no deny_paths column.
-	for _, q := range []string{`DROP TABLE session_usage`, `DROP TABLE push_tokens`, `ALTER TABLE projects DROP COLUMN watch_skip`, `ALTER TABLE projects DROP COLUMN deny_paths`, `PRAGMA user_version = 2`} {
+	for _, q := range []string{`DROP TABLE session_mcp`, `DROP TABLE git_credentials`, `DROP TABLE session_usage`, `DROP TABLE push_tokens`, `ALTER TABLE projects DROP COLUMN watch_skip`, `ALTER TABLE projects DROP COLUMN deny_paths`, `PRAGMA user_version = 2`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

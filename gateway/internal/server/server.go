@@ -412,11 +412,13 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		return // Accept has written the error response
 	}
 	ws.SetReadLimit(s.cfg.Limits.MaxMessageBytes)
-	s.handleConnection(ws, entry, client)
+	s.handleConnection(ws, entry, client, connectionSecure(r, s.cfg.TrustProxy))
 }
 
-func (s *Server) handleConnection(ws *websocket.Conn, entry *config.Token, clientAddr string) {
-	who := audit.Who{Identity: entry.Identity, Device: entry.ID, Client: clientAddr, Conn: int(s.conns.Add(1))}
+// handleConnection serves one admitted socket. secure says whether the connection may carry a git
+// credential (D-105); it is checked where the credential is set, not here.
+func (s *Server) handleConnection(ws *websocket.Conn, entry *config.Token, clientAddr string, secure bool) {
+	who := audit.Who{Identity: entry.Identity, Device: entry.ID, Client: clientAddr, Conn: int(s.conns.Add(1)), Secure: secure}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	c := newClient(ctx, ws, who, s.cfg.Limits.MaxMessageBytes, func() { s.audit.Log("client_slow", with(who, audit.Fields{})) })
@@ -525,6 +527,11 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 					reply(id, result, nil)
 				}
 			}
+			return
+		}
+		if method == "_acpcode/sessions/stop" && !id.IsNull() {
+			// Stopping can wait for the agent (D-106): answer from a goroutine, as git requests do.
+			go s.serveStop(ctx, who, id, msg.Get("params"), reply)
 			return
 		}
 		if strings.HasPrefix(method, "_acpcode/git/") {

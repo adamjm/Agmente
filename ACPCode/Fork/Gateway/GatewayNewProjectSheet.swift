@@ -8,8 +8,8 @@ struct GatewayNewProjectSheet: View {
     @StateObject private var model: GatewayNewProjectModel
     let onClose: () -> Void
 
-    init(clientProvider: @escaping () -> GatewayClient?, onCreated: @escaping (GatewayProject) async -> Void, onClose: @escaping () -> Void) {
-        _model = StateObject(wrappedValue: GatewayNewProjectModel(clientProvider: clientProvider, onCreated: onCreated))
+    init(clientProvider: @escaping () -> GatewayClient?, connectionScheme: String = "wss", onCreated: @escaping (GatewayProject) async -> Void, onClose: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: GatewayNewProjectModel(clientProvider: clientProvider, connectionScheme: connectionScheme, onCreated: onCreated))
         self.onClose = onClose
     }
 
@@ -72,6 +72,8 @@ struct GatewayNewProjectSheet: View {
                     Text("The folder is created inside this root on the gateway's computer.")
                 }
 
+                gitSection
+
                 if let message = model.createMessage {
                     Section {
                         Label(message, systemImage: "exclamationmark.triangle")
@@ -112,6 +114,70 @@ struct GatewayNewProjectSheet: View {
             .task {
                 await model.loadRoots()
             }
+            .task {
+                await model.credentials.load()
+            }
         }
+    }
+
+    /// The Git section (D-105). The toggle is off by default and disabled on a gateway without git.
+    @ViewBuilder
+    private var gitSection: some View {
+        Section {
+            Toggle("Create Git repository", isOn: $model.gitEnabled)
+                .disabled(model.gitUnsupported)
+                .accessibilityIdentifier("newProjectGitToggle")
+            if model.gitEnabled && !model.gitUnsupported {
+                TextField("Remote URL (optional)", text: $model.remoteURL)
+#if os(iOS)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+#endif
+                    .autocorrectionDisabled()
+                    .accessibilityLabel("Remote URL, optional")
+                    .accessibilityValue(model.remoteProblem ?? "")
+                    .accessibilityIdentifier("newProjectRemoteURL")
+                if let problem = model.remoteProblem {
+                    Text(problem)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("newProjectRemoteProblem")
+                }
+                if model.remoteHost != nil {
+                    NavigationLink {
+                        GatewayGitCredentialPicker(model: model, credentials: model.credentials)
+                    } label: {
+                        LabeledContent("Credential") {
+                            Text(model.selectedCredentialName)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityLabel("Credential, \(model.selectedCredentialName)")
+                    .accessibilityHint("Opens the credential list")
+                    .accessibilityIdentifier("newProjectCredential")
+                }
+            }
+        } header: {
+            Text("Git")
+        } footer: {
+            Text(gitFooter)
+                .accessibilityIdentifier(model.gitUnsupported ? "newProjectGitUnsupported" : "newProjectGitFooter")
+        }
+    }
+
+    private var gitFooter: String {
+        if model.gitUnsupported {
+            return "This gateway does not support Git yet. Update it to create a Git repository."
+        }
+        if let loadMessage = model.credentials.loadMessage, model.credentials.support == .unknown {
+            return "Could not load Git credentials: \(loadMessage)"
+        }
+        guard model.gitEnabled else {
+            return "Runs git init in the new folder on the gateway's computer."
+        }
+        if model.remoteHost != nil {
+            return "Needed only for a private HTTPS remote. Stored on your Mac."
+        }
+        return "The repository starts with no remote."
     }
 }

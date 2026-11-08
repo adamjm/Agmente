@@ -191,7 +191,18 @@ struct SessionDetailView: View {
         .gitSessionToolbar(store: model.gitStore, sessionId: serverViewModel.sessionId,
                            enabled: serverViewModel.isGatewayServer && model.gitStore.supportsGit)
         .toolbar {
-            if model.canDeleteSessionsLocally, !serverViewModel.sessionId.isEmpty {
+            // D-107: the session's MCP set, for a gateway session this phone created or changed.
+            if serverViewModel.isGatewayServer, !serverViewModel.sessionId.isEmpty,
+               GatewayMCPMemoryStore.sessionIDs(sessionId: serverViewModel.sessionId) != nil {
+                ToolbarItem(placement: .automatic) {
+                    GatewayMCPSessionButton(
+                        sessionId: serverViewModel.sessionId,
+                        clientProvider: { [weak model] in model?.selectedGatewayClient() }
+                    )
+                    .id(serverViewModel.sessionId)
+                }
+            }
+            if model.canDeleteSessionsLocally || serverViewModel.isGatewayServer, !serverViewModel.sessionId.isEmpty {
                 let placement: ToolbarItemPlacement = {
 #if os(macOS)
                     .primaryAction
@@ -201,10 +212,22 @@ struct SessionDetailView: View {
                 }()
                 ToolbarItem(placement: placement) {
                     Menu {
-                        Button(role: .destructive) {
-                            showDeleteSessionConfirm = true
-                        } label: {
-                            Label("Delete Session", systemImage: "trash")
+                        if serverViewModel.isGatewayServer {
+                            // D-106: stops the running turn. If it does not end, the root view offers the agent stop.
+                            Button {
+                                let sessionId = serverViewModel.sessionId
+                                Task { await model.gatewaySessionActions.stopTurn(sessionId: sessionId) }
+                            } label: {
+                                Label(GatewayStopCopy.stopTitle, systemImage: "stop.circle")
+                            }
+                            .accessibilityIdentifier("sessionStopMenuItem")
+                        }
+                        if model.canDeleteSessionsLocally {
+                            Button(role: .destructive) {
+                                showDeleteSessionConfirm = true
+                            } label: {
+                                Label("Delete Session", systemImage: "trash")
+                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis")

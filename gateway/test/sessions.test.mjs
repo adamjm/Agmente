@@ -31,8 +31,8 @@ test('index lists every session with project, title, status, last activity and u
     const a = (await connect(gw.url, auth())).ws;
     const { project, sessionId: s1 } = await useProject(gw, a);
     let sessions = await index(a);
-    assert.deepEqual(Object.keys(sessions[0]), ['sessionId', 'projectId', 'title', 'status', 'lastActivity', 'headSeq', 'unread']);
-    assert.deepEqual({ ...sessions[0], lastActivity: 'x' }, { sessionId: s1, projectId: project.id, title: null, status: 'idle', lastActivity: 'x', headSeq: 0, unread: 0 });
+    assert.deepEqual(Object.keys(sessions[0]), ['sessionId', 'projectId', 'title', 'status', 'lastActivity', 'headSeq', 'unread', 'stalled', 'lastEventAt']);
+    assert.deepEqual({ ...sessions[0], lastActivity: 'x', lastEventAt: 'x' }, { sessionId: s1, projectId: project.id, title: null, status: 'idle', lastActivity: 'x', headSeq: 0, unread: 0, stalled: false, lastEventAt: 'x' });
     assert.match(sessions[0].lastActivity, ISO);
 
     await rpc(a, 'session/prompt', { sessionId: s1, prompt: [{ type: 'text', text: 'fix the login page [chunks:2]' }] });

@@ -25,6 +25,8 @@ type runner interface {
 	start(p store.Project, home string) (*agentProcess, error)
 	// exec runs one command for the project (git, D-034) and returns its capped output.
 	exec(ctx context.Context, p store.Project, home string, argv, extraEnv []string, stdin []byte) (gitResult, error)
+	// oneOff runs one command of the git push path in its own container, never the agent's (D-105).
+	oneOff(ctx context.Context, p store.Project, home string, c oneOffCmd, stdin []byte) (gitResult, error)
 }
 
 func newRunner(cfg *config.Config) runner {

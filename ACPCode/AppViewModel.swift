@@ -221,6 +221,24 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         return home
     }()
     private var gatewayHomeChanges: AnyCancellable?
+    /// The gateway session actions: stop, the stalled notice, recovery of a session the gateway does not know,
+    /// and the phone-only check (D-106). Their changes are forwarded so the root view shows their prompts.
+    lazy var gatewaySessionActions: GatewaySessionActions = {
+        let actions = GatewaySessionActions(
+            home: gatewayHome,
+            client: { [weak self] in self?.selectedGatewayClient() },
+            records: { [weak self] in
+                guard let self, let id = self.selectedServerId else { return [] }
+                return self.storage.fetchSessions(forServerId: id)
+            },
+            pending: { [weak self] in self?.selectedServerViewModel?.gatewayPendingSessionIds ?? [] },
+            access: { [weak self] () -> GatewayRecordAccess? in self?.selectedServerViewModel },
+            reopen: { [weak self] sessionId in self?.selectedServerViewModel?.subscribeToGatewaySession(sessionId) }
+        )
+        gatewaySessionActionsChanges = actions.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return actions
+    }()
+    private var gatewaySessionActionsChanges: AnyCancellable?
     /// Read-only git state of the selected gateway's projects (FR-31).
     lazy var gitStore = GitStore(serverId: { [weak self] in self?.selectedServerId },
                                  client: { [weak self] in self?.selectedGatewayClient() },
@@ -387,6 +405,17 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             "init servers=\(servers.count) selectedServerId=\(selectedServerId?.uuidString ?? "nil") shouldConnectOnStartup=\(shouldConnectOnStartup)"
         )
 
+        // Live Activity for approvals (la-decision): it follows the selected gateway's open approvals.
+        ApprovalLiveActivityCoordinator.shared.bind(
+            inbox: gatewayApprovals,
+            serverId: { [weak self] in self?.selectedServerId },
+            isConnected: { [weak self] in self?.connectionState == .connected },
+            projectName: { [weak self] projectId in
+                self?.gatewayHome.projects.first { $0.id == projectId }?.name ?? "Project"
+            },
+            client: { [weak self] in self?.selectedGatewayClient() }
+        )
+
         if shouldConnectOnStartup {
             startupLog("init invoking connectInitializeAndFetchSessions()")
             connectInitializeAndFetchSessions()
@@ -397,7 +426,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
 
     /// Creates a ServerViewModel instance for a server configuration.
     private func createServerViewModel(for config: ACPServerConfiguration) -> ServerViewModel {
-        return ServerViewModel(
+        let viewModel = ServerViewModel(
             id: config.id,
             name: config.name,
             scheme: config.scheme,
@@ -414,6 +443,11 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             // Note: ServerViewModel now implements ACPSessionEventDelegate itself
             storage: storage       // Pass storage for session persistence
         )
+        // D-106: a gateway that does not know a session this app opens hands it to the session actions.
+        viewModel.onGatewaySessionUnknown = { [weak self] sessionId in
+            Task { await self?.gatewaySessionActions.sessionUnknown(sessionId) }
+        }
+        return viewModel
     }
 
     /// Updates or creates a ServerViewModel when server config changes.
@@ -1840,6 +1874,15 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         // Phase 2: Delegate to ServerViewModel (supports both ACP and Codex servers)
         guard let serverViewModel = selectedServerViewModelAny else { return }
         serverViewModel.sendNewSession(workingDirectory: workingDirectory)
+    }
+
+    /// A new gateway session with the MCP servers the new-session sheet chose (D-107). Nil sends no key.
+    func sendNewGatewaySession(workingDirectory: String, mcpEnabledIDs: [String]?) {
+        guard let serverViewModel = selectedServerViewModel else {
+            sendNewSession(workingDirectory: workingDirectory)
+            return
+        }
+        serverViewModel.startNewSession(workingDirectory: workingDirectory, mcpEnabledIDs: mcpEnabledIDs)
     }
 
     /// Update the working directory for a pending (local-only) session.

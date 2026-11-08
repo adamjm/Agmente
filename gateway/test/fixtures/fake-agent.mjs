@@ -44,6 +44,10 @@ import { createInterface } from 'node:readline';
 
 const fixture = JSON.parse(readFileSync(new URL('./bob-initialize-2.0.9.json', import.meta.url), 'utf8'));
 const usageUpdates = process.env.ACPCODE_TEST_USAGE ? JSON.parse(process.env.ACPCODE_TEST_USAGE) : [];
+// Test-only (D-106, test/stop.test.mjs). ACPCODE_TEST_HANG: every prompt is accepted and never answered,
+// and session/cancel is ignored, as a hung Bob would behave. ACPCODE_TEST_IGNORE_TERM: SIGTERM does not stop
+// this process, so only the gateway's SIGKILL after the kill grace does.
+if (process.env.ACPCODE_TEST_IGNORE_TERM) process.on('SIGTERM', () => {});
 
 // --- arguments ----------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -181,6 +185,7 @@ async function runTurn(msg, entry) {
   const firstTurn = record.messages.length === 0;
   record.messages.push({ role: 'user', text });
   const d = directives(text);
+  if (process.env.ACPCODE_TEST_HANG) await new Promise(() => {}); // D-106: never answered
   let stopReason = 'end_turn';
   try {
     const root = record.cwd ?? process.cwd();
@@ -406,10 +411,14 @@ const handlers = {
 // Test hook (mcp-guard.test.mjs): when ACPCODE_TEST_RECORD_DIR names a folder, the params of the
 // last session/new, session/load and session/resume are written there as <method>.json. Nothing
 // else changes; the gateway passes the variable to this process only when the config names it.
+// Every session/* request is also appended, in order, to calls.jsonl there as {method, params}
+// (D-107: two sessions in one project, and the list each load carries).
 const recordDir = process.env.ACPCODE_TEST_RECORD_DIR;
 function recordParams(msg) {
-  if (!recordDir || !['session/new', 'session/load', 'session/resume'].includes(msg.method)) return;
+  if (!recordDir || typeof msg.method !== 'string' || !msg.method.startsWith('session/')) return;
   mkdirSync(recordDir, { recursive: true });
+  appendFileSync(join(recordDir, 'calls.jsonl'), `${JSON.stringify({ method: msg.method, params: msg.params ?? null })}\n`);
+  if (!['session/new', 'session/load', 'session/resume'].includes(msg.method)) return;
   writeFileSync(join(recordDir, `${msg.method.slice('session/'.length)}.json`), JSON.stringify(msg.params ?? null));
 }
 

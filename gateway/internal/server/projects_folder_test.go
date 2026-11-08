@@ -89,7 +89,7 @@ func TestFolderModeRefusesAFileThatReplacedTheNewFolder(t *testing.T) {
 			t.Errorf("write the file: %v", err)
 		}
 	})
-	_, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "swapped"))
+	_, _, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "swapped"))
 	if rerr == nil || rerr.Code != rpcInvalidParams {
 		t.Fatalf("want a -32602 refusal, got %+v", rerr)
 	}
@@ -118,7 +118,7 @@ func TestFolderModeNeverChangesAFolderOutsideTheRoots(t *testing.T) {
 			t.Errorf("link the name to the outside folder: %v", err)
 		}
 	})
-	_, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "linked"))
+	_, _, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "linked"))
 	if rerr == nil || rerr.Code != rpcInvalidParams {
 		t.Fatalf("want a -32602 refusal, got %+v", rerr)
 	}
@@ -157,7 +157,7 @@ func TestAParentSwappedForALinkMakesNothingOutsideTheRoots(t *testing.T) {
 			}
 		}
 	})
-	_, _, rerr := s.createProject(context.Background(), createFolderParams(t, sub, "via-swap"))
+	_, _, _, rerr := s.createProject(context.Background(), createFolderParams(t, sub, "via-swap"))
 	if rerr == nil || rerr.Code != rpcInvalidParams {
 		t.Fatalf("want a -32602 refusal, got %+v", rerr)
 	}
@@ -186,7 +186,7 @@ func TestRegistrationRefusalRemovesTheFolderItMadeAndNothingElse(t *testing.T) {
 			t.Errorf("register the racing project: %v", err)
 		}
 	})
-	_, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "race"))
+	_, _, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "race"))
 	if rerr == nil || rerr.Code != rpcInvalidParams {
 		t.Fatalf("want a -32602 refusal, got %+v", rerr)
 	}
@@ -215,7 +215,7 @@ func TestRegistrationRefusalKeepsAFileAtTheName(t *testing.T) {
 			t.Errorf("register the racing project: %v", err)
 		}
 	})
-	if _, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "race-file")); rerr == nil {
+	if _, _, _, rerr := s.createProject(context.Background(), createFolderParams(t, root, "race-file")); rerr == nil {
 		t.Fatal("want a refusal")
 	}
 	data, err := os.ReadFile(target)

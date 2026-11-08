@@ -79,8 +79,11 @@ public struct GatewayGitStatus: Codable, Equatable, Sendable {
     public let hash: String
     /// True when git's output was cut at the gateway's size cap: the list may be incomplete.
     public let truncated: Bool
+    /// True when the repository has no commits yet. The gateway may not send this field; then it is false.
+    public let unborn: Bool
 
-    public init(branch: String?, upstream: String? = nil, ahead: Int = 0, behind: Int = 0, files: [GatewayGitFile] = [], hash: String, truncated: Bool = false) {
+    public init(branch: String?, upstream: String? = nil, ahead: Int = 0, behind: Int = 0, files: [GatewayGitFile] = [], hash: String, truncated: Bool = false, unborn: Bool = false) {
+        self.unborn = unborn
         self.branch = branch
         self.upstream = upstream
         self.ahead = ahead
@@ -90,7 +93,7 @@ public struct GatewayGitStatus: Codable, Equatable, Sendable {
         self.truncated = truncated
     }
 
-    private enum CodingKeys: String, CodingKey { case branch, upstream, ahead, behind, files, hash, truncated }
+    private enum CodingKeys: String, CodingKey { case branch, upstream, ahead, behind, files, hash, truncated, unborn }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -101,6 +104,7 @@ public struct GatewayGitStatus: Codable, Equatable, Sendable {
         files = try c.decode([GatewayGitFile].self, forKey: .files)
         hash = try c.decode(String.self, forKey: .hash)
         truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
+        unborn = try c.decodeIfPresent(Bool.self, forKey: .unborn) ?? false
     }
 }
 

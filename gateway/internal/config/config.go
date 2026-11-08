@@ -42,6 +42,7 @@ type Limits struct {
 	LockoutSeconds            int64 `json:"lockoutSeconds"`
 	ApprovalTimeoutSeconds    int64 `json:"approvalTimeoutSeconds"`
 	IdleSeconds               int64 `json:"idleSeconds"`
+	StallSeconds              int64 `json:"stallSeconds"` // a turn with no event for this long is flagged stalled (D-106)
 }
 
 // Runner says how a project's agent starts (D-025): "host" (tests and development only) or
@@ -103,10 +104,12 @@ type Config struct {
 	SecretsIgnored []string
 	// Connector is the remote connector block (D-095). Enabled is false unless the block says so.
 	Connector Connector
+	// GitHosts are the hosts a git remote and a git credential may name (D-105). Default github.com.
+	GitHosts []string
 }
 
 // limitKeys in the order of DEFAULT_LIMITS (SPEC NFR-3, NFR-4, NFR-5).
-var limitKeys = []string{"maxMessageBytes", "maxAgentsPerIdentity", "maxAgentsTotal", "maxConnectionsPerIdentity", "authFailuresPerWindow", "authWindowSeconds", "lockoutSeconds", "approvalTimeoutSeconds", "idleSeconds"}
+var limitKeys = []string{"maxMessageBytes", "maxAgentsPerIdentity", "maxAgentsTotal", "maxConnectionsPerIdentity", "authFailuresPerWindow", "authWindowSeconds", "lockoutSeconds", "approvalTimeoutSeconds", "idleSeconds", "stallSeconds"}
 
 var defaultLimits = map[string]int64{
 	"maxMessageBytes":           16 * 1024 * 1024, // NFR-3
@@ -118,6 +121,7 @@ var defaultLimits = map[string]int64{
 	"lockoutSeconds":            600,              // NFR-5
 	"approvalTimeoutSeconds":    43200,            // NFR-10: 12 h, then reject (D-031)
 	"idleSeconds":               1800,             // NFR-10: idle close after 30 min (D-032)
+	"stallSeconds":              600,              // D-106: a turn with no event for this long is flagged stalled
 }
 
 var (
@@ -372,6 +376,8 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 	connectorCfg, connectorErrs := validateConnector(raw.Get("connector"))
 	errs = append(errs, connectorErrs...)
 
+	gitHosts := validateGit(raw.Get("git"), add)
+
 	if len(errs) > 0 {
 		return nil, &Error{errs}
 	}
@@ -389,6 +395,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		SecretNames:    secretNames,
 		SecretsIgnored: secretsIgnored,
 		Connector:      connectorCfg,
+		GitHosts:       gitHosts,
 		Roots:          roots,
 		StateDir:       filepath.Clean(stateDir),
 		Limits: Limits{
@@ -400,6 +407,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			AuthWindowSeconds:         limits["authWindowSeconds"],
 			ApprovalTimeoutSeconds:    min(limits["approvalTimeoutSeconds"], math.MaxInt32),
 			IdleSeconds:               min(limits["idleSeconds"], math.MaxInt32),
+			StallSeconds:              min(limits["stallSeconds"], math.MaxInt32),
 			LockoutSeconds:            min(limits["lockoutSeconds"], math.MaxInt32),
 		},
 	}, nil

@@ -188,37 +188,54 @@ struct GatewaySessionRow: View {
 /// default; Create stays off while there is no project to start in.
 struct GatewayNewSessionSheet: View {
     let projects: [GatewayProject]
+    /// The chosen MCP ids (D-107), or nil to send no key. The list is loaded from the gateway.
     let onCancel: () -> Void
-    let onCreate: (GatewayProject) -> Void
+    let onCreate: (GatewayProject, [String]?) -> Void
     @State private var selection: String?
+    @StateObject private var mcp: GatewayMCPCatalogModel
 
     /// `initialSelection` is the project the home has selected (D-091), when it is still listed.
-    init(projects: [GatewayProject], initialSelection: String? = nil, onCancel: @escaping () -> Void, onCreate: @escaping (GatewayProject) -> Void) {
+    /// `mcpClient` gives the gateway client for the MCP servers section (D-107).
+    init(
+        projects: [GatewayProject],
+        initialSelection: String? = nil,
+        mcpClient: @escaping () -> GatewayClient? = { nil },
+        onCancel: @escaping () -> Void,
+        onCreate: @escaping (GatewayProject, [String]?) -> Void
+    ) {
         self.projects = projects
         self.onCancel = onCancel
         self.onCreate = onCreate
         _selection = State(initialValue: initialSelection)
+        _mcp = StateObject(wrappedValue: GatewayMCPCatalogModel(clientProvider: mcpClient))
     }
 
     private var chosen: GatewayProject? { gatewayNewSessionChosenProject(projects, selection: selection) }
 
     var body: some View {
         NavigationStack {
-            List(projects) { project in
-                Button {
-                    selection = project.id
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(project.name).foregroundStyle(.primary)
-                            Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            List {
+                ForEach(projects) { project in
+                    Button {
+                        selection = project.id
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(project.name).foregroundStyle(.primary)
+                                Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            }
+                            Spacer()
+                            if chosen?.id == project.id { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                         }
-                        Spacer()
-                        if chosen?.id == project.id { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                     }
+                    .accessibilityIdentifier("gatewayProjectChoice.\(project.id)")
                 }
-                .accessibilityIdentifier("gatewayProjectChoice.\(project.id)")
+                if mcp.showsSection {
+                    GatewayMCPSessionSection(model: mcp)
+                }
             }
+            .task { await mcp.load(projectId: chosen?.id) }
+            .onChange(of: chosen?.id) { _, id in mcp.selectProject(id) }
             .overlay {
                 if projects.isEmpty {
                     Text("No projects. Add one on the gateway.")
@@ -237,7 +254,7 @@ struct GatewayNewSessionSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
                         if let project = chosen, gatewayNewSessionCwd(selectedProjectPath: project.path) != nil {
-                            onCreate(project)
+                            onCreate(project, mcp.idsToSend)
                         }
                     }
                     .disabled(chosen == nil || gatewayNewSessionCwd(selectedProjectPath: chosen?.path) == nil)

@@ -55,6 +55,9 @@ final class GitProjectModel: ObservableObject {
 
     var isDirty: Bool { !(status?.files.isEmpty ?? true) }
 
+    /// The gateway client of the connection this project belongs to, for the push sheet (D-105).
+    func gitClient() -> GatewayClient? { clientProvider() }
+
     /// Loads the status once; later calls do nothing until `invalidate()`.
     func loadIfNeeded() async {
         guard state == .idle else { return }

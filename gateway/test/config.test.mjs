@@ -147,6 +147,7 @@ test('the dry run applies defaults and prints no token hashes', async () => {
     lockoutSeconds: 600,
     approvalTimeoutSeconds: 43200,
     idleSeconds: 1800,
+    stallSeconds: 600, // D-106
   });
   assert.deepEqual(summary.envPassthrough, ['PATH', 'HOME']);
   assert.deepEqual(summary.tokens, ['phone (owner)', 'other (guest)']);

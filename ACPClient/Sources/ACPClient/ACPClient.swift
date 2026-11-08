@@ -81,7 +81,7 @@ public final class ACPClient {
         if configuration.appendNewline {
             text.append("\n")
         }
-        logger.info("Sending message: \(text)")
+        logger.info("Sending message: \(ACPLogRedaction.redactedForLog(text))")
         try await connection.send(text: text)
     }
 

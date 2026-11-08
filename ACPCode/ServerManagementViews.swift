@@ -35,17 +35,27 @@ struct AddServerView: View {
     let initialServerType: ServerType?
     let onValidate: (String, String, String, String, String, String, String, ServerType, ServerSecurityInput) async -> Result<ValidatedServerConfiguration, Error>
     let onInsert: (ValidatedServerConfiguration) -> Void
+    /// Git credentials (D-105): shown in the Edit form only when the gateway is connected and this is its server.
+    private let showsGitCredentials: Bool
+    @StateObject private var gitCredentials: GatewayGitCredentialsModel
 
     init(
         editingServer: ACPServerConfiguration? = nil,
         initialServerType: ServerType? = nil,
         onValidate: @escaping (String, String, String, String, String, String, String, ServerType, ServerSecurityInput) async -> Result<ValidatedServerConfiguration, Error>,
-        onInsert: @escaping (ValidatedServerConfiguration) -> Void
+        onInsert: @escaping (ValidatedServerConfiguration) -> Void,
+        gitCredentialsClient: (() -> GatewayClient?)? = nil,
+        gitCredentialsScheme: String = "wss"
     ) {
         self.editingServer = editingServer
         self.initialServerType = initialServerType
         self.onValidate = onValidate
         self.onInsert = onInsert
+        self.showsGitCredentials = editingServer != nil && gitCredentialsClient != nil
+        _gitCredentials = StateObject(wrappedValue: GatewayGitCredentialsModel(
+            clientProvider: gitCredentialsClient ?? { nil },
+            connectionScheme: gitCredentialsScheme
+        ))
 
         _name = State(initialValue: editingServer?.name ?? "")
         _scheme = State(initialValue: editingServer?.scheme ?? "wss")
@@ -233,6 +243,29 @@ struct AddServerView: View {
                     Label("Need help? View the setup guide", systemImage: "questionmark.circle")
                 }
                 .font(.footnote)
+            }
+        }
+
+        if showsGitCredentials {
+            Section {
+                NavigationLink {
+                    GatewayGitCredentialsView(model: gitCredentials)
+                } label: {
+                    HStack {
+                        Label("Git credentials", systemImage: "key")
+                        Spacer()
+                        Text("\(gitCredentials.credentials.count)")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityIdentifier("gitCredentialsRow")
+                .accessibilityLabel("Git credentials, \(gitCredentials.credentials.count) saved")
+                .task { await gitCredentials.load() }
+            } header: {
+                Text("Git")
+            } footer: {
+                Text("Tokens for private HTTPS repositories. Each token goes to your Mac once and cannot be read back.")
             }
         }
 

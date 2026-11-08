@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 6
+const SchemaVersion = 8
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -112,6 +112,16 @@ var schemaV6 = []string{
 	) WITHOUT ROWID`,
 }
 
+// schemaV8 adds the MCP servers each session enables (D-107): one row per enabled gateway server.
+// A session with no rows has none. A row names a server id; a removed server is dropped when read.
+var schemaV8 = []string{
+	`CREATE TABLE session_mcp (
+		session_id TEXT NOT NULL,
+		server_id TEXT NOT NULL,
+		PRIMARY KEY (session_id, server_id)
+	) WITHOUT ROWID`,
+}
+
 // Store is one open database. It is safe for concurrent use.
 type Store struct {
 	db *sql.DB
@@ -172,7 +182,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -445,6 +455,7 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 		`DELETE FROM reads WHERE session_id = ?`,
 		`DELETE FROM snapshots WHERE session_id = ?`,
 		`DELETE FROM session_usage WHERE session_id = ?`,
+		`DELETE FROM session_mcp WHERE session_id = ?`,
 		`DELETE FROM sessions WHERE session_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, sessionID); err != nil {

@@ -75,7 +75,13 @@ func (s *Server) runGit(ctx context.Context, p store.Project, extraEnv []string,
 // onKill functions run at each kill, before the output is drained: a process that a kill does not
 // reach (see runner_apple.go) can keep the output open, so cleanup cannot wait for the return.
 func runCapped(ctx context.Context, cmd *exec.Cmd, stdin []byte, onKill ...func()) (gitResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	return runCappedFor(ctx, gitTimeout, cmd, stdin, onKill...)
+}
+
+// runCappedFor is runCapped with its own time limit (the push containers, D-105, need longer than
+// a git call).
+func runCappedFor(ctx context.Context, limit time.Duration, cmd *exec.Cmd, stdin []byte, onKill ...func()) (gitResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdin = bytes.NewReader(stdin)

@@ -350,5 +350,8 @@ func (s *Server) serveMCPConfig(ctx context.Context, who audit.Who, method strin
 		result, rerr = s.mcpSet(ctx, who, params)
 		return result, rerr, true
 	}
+	if result, rerr, handled := s.serveMCPServers(ctx, who, method, params); handled { // D-107
+		return result, rerr, true
+	}
 	return nil, nil, false
 }

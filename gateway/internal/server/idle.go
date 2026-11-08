@@ -29,6 +29,12 @@ var autoLoad = map[string]bool{
 func (a *projectAgent) touchLocked(sid string) {
 	now := time.Now()
 	a.lastActive = now
+	if sid != "" { // D-106: the time of the session's last event, for the stall flag
+		if a.eventAt == nil {
+			a.eventAt = map[string]time.Time{}
+		}
+		a.eventAt[sid] = now
+	}
 	if sid != "" && a.live[sid] != nil {
 		a.sessionActive[sid] = now
 	}
@@ -138,7 +144,16 @@ func (a *projectAgent) idleCheck(proc *agentProcess, idle time.Duration) bool {
 			a.sessionActive[sid] = now
 		}
 	}
-	if len(a.pending) > 0 || anyApproval || anySub || len(a.reloads) > 0 {
+	// D-106: a pending turn that is stalled does not keep the project awake. Other pending requests do.
+	stall := a.s.stallTime()
+	awake := false
+	for _, p := range a.pending {
+		if keepsAgentAwake(p, func(sid string) bool { return turnStalled(a.eventAt[sid], now, stall, approvals[sid]) }) {
+			awake = true
+			break
+		}
+	}
+	if awake || anyApproval || anySub || len(a.reloads) > 0 {
 		a.lastActive = now
 	}
 	if now.Sub(a.lastActive) >= idle {

@@ -14,7 +14,7 @@ struct GitBranchChip: View {
         if let status = model.status {
             let content = HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.branch")
-                Text(status.branch ?? "detached")
+                Text(GatewayGitHeadText.label(branch: status.branch, unborn: status.unborn))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if status.ahead > 0 { Text("↑\(status.ahead)") }
@@ -43,7 +43,7 @@ struct GitBranchChip: View {
 
 enum GitChipText {
     static func accessibilityLabel(status: GatewayGitStatus) -> String {
-        var parts = ["Branch \(status.branch ?? "detached head")"]
+        var parts = [status.unborn ? "No commits yet" : "Branch \(status.branch ?? "detached head")"]
         if status.ahead > 0 { parts.append("\(status.ahead) ahead") }
         if status.behind > 0 { parts.append("\(status.behind) behind") }
         parts.append(status.files.isEmpty ? "no changes" : "\(status.files.count) changed")
@@ -105,6 +105,7 @@ struct GitTabView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var part: Part = .changes
     @State private var showDiff = false
+    @State private var showPush = false
 
     enum Part: String, CaseIterable, Identifiable {
         case changes = "Changes"
@@ -128,7 +129,7 @@ struct GitTabView: View {
                 case .history: GitLogList(model: model)
                 }
             }
-            .navigationTitle(model.status?.branch ?? "Git")
+            .navigationTitle(model.status.map { GatewayGitHeadText.label(branch: $0.branch, unborn: $0.unborn) } ?? "Git")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -136,11 +137,21 @@ struct GitTabView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }.accessibilityIdentifier("gitTabDone")
                 }
+                if let status = model.status, status.branch != nil, !status.unborn {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { showPush = true } label: { Image(systemName: "arrow.up.circle") }
+                            .accessibilityLabel("Push to remote")
+                            .accessibilityIdentifier("gitPushOpen")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel("Refresh")
                         .accessibilityIdentifier("gitRefresh")
                 }
+            }
+            .sheet(isPresented: $showPush) {
+                GatewayGitPushSheet(model: model)
             }
             .navigationDestination(isPresented: $showDiff) {
                 GitFileDiffView(model: model)
@@ -176,7 +187,7 @@ struct GitTabView: View {
             Section {
                 HStack {
                     Image(systemName: "arrow.triangle.branch")
-                    Text(status.branch ?? "Detached HEAD").font(.headline)
+                    Text(GatewayGitHeadText.label(branch: status.branch, unborn: status.unborn)).font(.headline)
                     Spacer()
                     if let upstream = status.upstream {
                         Text(upstream).font(.caption).foregroundStyle(.secondary)

@@ -45,7 +45,11 @@ type pendingRequest struct {
 	reload  *reload           // a load or resume the gateway let through after a restart (FR-20)
 	fence   *reload           // the gateway's session/list that ends that load's replay window
 	mcp     *jsonv.Value      // session/new, load, resume: the mcpServers list the phone sent (D-088)
+	mcpIDs  []string          // session/new: the gateway MCP servers the session takes, recorded on success (D-107)
+	mcpRec  bool              // session/new: record mcpIDs when the agent accepts the session (D-107)
 	reply   chan *jsonv.Value // the gateway's own requests
+	sent    bool              // session/prompt: the prompt is written to the agent (D-106)
+	cancel  bool              // session/prompt: a stop asked for a cancel before the prompt was written (D-106)
 }
 
 // liveSession is a session open in the current agent process (FR-20, D-029). result is what the
@@ -85,6 +89,9 @@ type projectAgent struct {
 	lastActive    time.Time               // the last request, agent line or busy check of the project
 	sessionActive map[string]time.Time    // the same, per live session
 	mcp           map[string]*jsonv.Value // the mcpServers list the phone last sent, per session (D-088, F2)
+	reapDone      bool                    // leftovers under the project's name were dealt with since the last exit (D-106)
+	eventAt       map[string]time.Time    // when each session last had an event in this process (D-106)
+	turnEnds      map[string]turnEnd      // turns ended per session, for the turn-scope stop (D-106)
 
 	writeMu sync.Mutex
 
@@ -174,6 +181,7 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 	if err != nil || project == nil {
 		return failStart("project", &rpcError{Code: rpcAgentUnavailable, Message: "unknown project"})
 	}
+	a.reapIfNeeded(*project) // D-106: a leftover container under the name would fail this start
 	proc, err := a.s.runner.start(*project, a.s.projectHome(a.id))
 	if errors.Is(err, errProjectLocked) {
 		return failStart("locked", &rpcError{Code: rpcAgentUnavailable, Message: err.Error()})
@@ -264,6 +272,8 @@ func (a *projectAgent) watchExit(proc *agentProcess) {
 	a.mu.Lock()
 	pending := a.pending
 	a.pending = map[int64]*pendingRequest{}
+	a.reapDone = false // the next start looks for a container this process did not stop (D-106)
+	a.eventAt = map[string]time.Time{}
 	a.sessions = map[string]map[*client]struct{}{} // sessions are not live in a new process
 	a.live = map[string]*liveSession{}
 	a.sessionActive = map[string]time.Time{}
@@ -446,6 +456,9 @@ func (a *projectAgent) agentResponse(msg, id *jsonv.Value) {
 				}
 				a.mu.Unlock()
 				a.recordSession(sid, p.c)
+				if p.mcpRec {
+					a.s.recordSessionMCP(sid, p.mcpIDs) // D-107: the set the session took
+				}
 			}
 		case "session/load", "session/resume":
 			if p.session != "" {
@@ -640,7 +653,7 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			params := jsonv.Obj()
 			params.Set("sessionId", jsonv.Str(sid))
 			params.Set("cwd", jsonv.Str(a.path))
-			params.Set("mcpServers", a.keptMCPLocked(sid)) // the list the phone last sent (D-088, F2)
+			params.Set("mcpServers", a.s.loadMCPLocked(a, sid, a.keptMCPLocked(sid))) // the phone's list (D-088, F2) and the session's stored set (D-107)
 			load := jsonv.Obj()
 			load.Set("jsonrpc", jsonv.Str("2.0"))
 			load.Set("id", &jsonv.Value{Kind: jsonv.Number, Num: strconv.FormatInt(n, 10)})
@@ -667,6 +680,7 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			a.attachLocked(sid, c)
 		}
 		var rl *reload
+		var turnReq *pendingRequest
 		turn := ""
 		if isRequest {
 			if reopen != "" {
@@ -677,8 +691,12 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 				turn = sid
 			}
 			p := &pendingRequest{c: c, id: msg.Get("id"), method: method, session: reopen, turn: turn, reload: rl}
+			if turn != "" {
+				turnReq = p
+			}
 			if mcpMethods[method] {
-				p.mcp = mcpKept(msg.Get("params")) // recorded for the session when the agent accepts it (D-088)
+				p.mcp = mcpKept(msg.Get("params"))                                        // recorded for the session when the agent accepts it (D-088)
+				p.mcpIDs, p.mcpRec = a.s.mcpForRequest(a, method, key, msg.Get("params")) // the agent's list (D-107)
 			}
 			switch method {
 			case "session/set_mode":
@@ -702,6 +720,9 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			a.snapshotTurnStart(turn) // before the agent sees the prompt, so it cannot change files first (D-036)
 		}
 		full, _ := a.write(proc, append(msg.Marshal(), '\n')) // after an exit, the exit path answers
+		if turnReq != nil {
+			a.promptWritten(turnReq, proc, key) // D-106: a cancel asked for meanwhile goes after the prompt
+		}
 		if full {
 			a.s.audit.Log("backpressure", with(c.who, audit.Fields{Dir: "in", Project: a.id}))
 		}
@@ -764,7 +785,9 @@ func (a *projectAgent) logTurnEnded(sessionID string, response *jsonv.Value) {
 	if err := a.s.store.SetSessionStatus(context.Background(), sessionID, status); err != nil {
 		a.s.audit.Log("store_error", a.fields(audit.Fields{Reason: "session_status"}))
 	}
+	stopReason, _ := response.Get("result").Get("stopReason").StringValue()
 	a.logEvent(sessionID, "turn_ended", gatewayNotification("_acpcode/turn_ended", sessionID, fields, "stopReason", "error"))
+	a.noteTurnEnd(sessionID, stopReason) // D-106: the turn-scope stop waits for this
 	// FR-23: a finished turn, or a failed one (the agent exited or refused it) pushes once.
 	if status == "error" {
 		a.s.pushNotify(push.SessionFailed, a.id, sessionID)

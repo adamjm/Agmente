@@ -67,10 +67,16 @@ public struct GatewaySession: Codable, Equatable, Hashable, Sendable, Identifiab
     public let lastActivity: String
     public let headSeq: Int
     public let unread: Int
+    /// The gateway flags a running turn that has had no event for a long time, with no approval open (D-106). It
+    /// changes nothing by itself. Nil when an older gateway does not send the field.
+    public let stalled: Bool?
 
     public var id: String { sessionId }
 
-    public init(sessionId: String, projectId: String, title: String?, status: GatewaySessionStatus, lastActivity: String, headSeq: Int, unread: Int) {
+    /// True when the gateway flags this session as stalled (D-106).
+    public var isStalled: Bool { stalled == true }
+
+    public init(sessionId: String, projectId: String, title: String?, status: GatewaySessionStatus, lastActivity: String, headSeq: Int, unread: Int, stalled: Bool? = nil) {
         self.sessionId = sessionId
         self.projectId = projectId
         self.title = title
@@ -78,6 +84,7 @@ public struct GatewaySession: Codable, Equatable, Hashable, Sendable, Identifiab
         self.lastActivity = lastActivity
         self.headSeq = headSeq
         self.unread = unread
+        self.stalled = stalled
     }
 
     /// `lastActivity` as a date, or nil when it is not in the gateway's format.

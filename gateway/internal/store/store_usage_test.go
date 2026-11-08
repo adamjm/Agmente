@@ -59,6 +59,12 @@ func TestSetUsageReplacesAndShowsOnTheIndex(t *testing.T) {
 // A database at schema 5 gets the session_usage table when it is opened (migration 6).
 func TestMigrationFromV5AddsSessionUsage(t *testing.T) {
 	s, path := open(t)
+	if _, err := s.db.Exec(`DROP TABLE session_mcp`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DROP TABLE git_credentials`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`DROP TABLE session_usage`); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +78,7 @@ func TestMigrationFromV5AddsSessionUsage(t *testing.T) {
 	}
 	defer again.Close()
 	var version int
-	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion || SchemaVersion != 6 {
+	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion || SchemaVersion != 8 { // D-107: schema 8 adds session_mcp (D-105: schema 7 adds git_credentials)
 		t.Fatalf("version = %d, %v", version, err)
 	}
 	var n int

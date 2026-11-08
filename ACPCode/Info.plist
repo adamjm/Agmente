@@ -22,6 +22,8 @@
                 <key>NSAllowsLocalNetworking</key>
                 <true/>
         </dict>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
         <string>ACP Code needs access to your photo library to attach images to messages.</string>
         <key>NSLocalNetworkUsageDescription</key>

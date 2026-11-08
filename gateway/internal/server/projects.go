@@ -89,12 +89,21 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		}
 		return map[string]any{"projects": out}, nil
 	case "_acpcode/projects/create":
-		p, folderCreated, rerr := s.createProject(ctx, params)
+		p, folderCreated, gitRes, rerr := s.createProject(ctx, params)
 		if rerr != nil {
 			return nil, rerr
 		}
 		s.audit.Log("project_created", with(who, audit.Fields{Project: p.ID, FolderCreated: folderCreated}))
-		return map[string]any{"project": toProjectJSON(*p)}, nil
+		out := map[string]any{"project": toProjectJSON(*p)}
+		if gitRes != nil { // D-105: only a create that asked for git has this field
+			reason := "no_remote"
+			if gitRes.Remote != nil {
+				reason = "remote"
+			}
+			s.audit.Log("project_git_init", with(who, audit.Fields{Project: p.ID, Reason: reason}))
+			out["git"] = gitRes
+		}
+		return out, nil
 	case "_acpcode/projects/roots":
 		return s.projectRoots(), nil
 	case "_acpcode/projects/addDenyPaths":
@@ -123,6 +132,14 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		return s.gitTurnDiff(ctx, params)
 	case "_acpcode/git/log":
 		return s.gitLog(ctx, params)
+	case "_acpcode/git/credentials/list":
+		return s.listGitCredentials(ctx)
+	case "_acpcode/git/credentials/set":
+		return s.setGitCredential(ctx, who, params)
+	case "_acpcode/git/credentials/delete":
+		return s.deleteGitCredential(ctx, who, params)
+	case "_acpcode/git/push":
+		return s.gitPush(ctx, who, params)
 	case "_acpcode/files/url":
 		return s.fileURL(ctx, who, params)
 	default:
@@ -141,55 +158,64 @@ func with(who audit.Who, f audit.Fields) audit.Fields {
 // creates the project's HOME under stateDir and trusts the project folder for Bob (D-013).
 //
 // With createFolder true the gateway makes <path>/<name> first, and <name> is the project's name
-// (D-091). The bool result is true when this call created the folder.
-func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store.Project, bool, *rpcError) {
+// (D-091). The bool result is true when this call created the folder. With gitInit the new folder
+// gets `git init` and, with gitRemote, an origin; the git result is then non-nil (D-105). Every
+// check, git's included, runs before the folder is made.
+func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store.Project, bool, *gitInitResult, *rpcError) {
 	createFolder, rerr := folderFlag(params.Get("createFolder"))
 	if rerr != nil {
-		return nil, false, rerr
+		return nil, false, nil, rerr
 	}
 	rawName, nameOK := params.Get("name").StringValue()
 	name := strings.TrimSpace(rawName)
 	switch {
 	case createFolder:
 		if !nameOK {
-			return nil, false, invalidParams("folder name must be a string")
+			return nil, false, nil, invalidParams("folder name must be a string")
 		}
 		if rerr := checkFolderName(rawName); rerr != nil {
-			return nil, false, rerr
+			return nil, false, nil, rerr
 		}
 		name = rawName
 	case !nameOK || name == "" || utf8.RuneCountInString(name) > maxProjectName || strings.IndexFunc(name, unicode.IsControl) >= 0:
-		return nil, false, invalidParams("name must be 1 to %d characters with no control characters", maxProjectName)
+		return nil, false, nil, invalidParams("name must be 1 to %d characters with no control characters", maxProjectName)
 	}
 	mode, deny, skip, rerr := parseProjectOptions(params)
 	if rerr != nil {
-		return nil, false, rerr
+		return nil, false, nil, rerr
+	}
+	gitOpts, rerr := parseGitOptions(params)
+	if rerr != nil {
+		return nil, false, nil, rerr
+	}
+	if _, rerr := s.checkGitOptions(ctx, gitOpts, createFolder); rerr != nil {
+		return nil, false, nil, rerr
 	}
 	if createFolder {
-		p, rerr := s.createFolderProject(ctx, params, name, mode, deny, skip)
-		return p, true, rerr
+		p, gitRes, rerr := s.createFolderProject(ctx, params, name, mode, deny, skip, gitOpts)
+		return p, true, gitRes, rerr
 	}
 	rawPath, ok := params.Get("path").StringValue()
 	if !ok || !filepath.IsAbs(rawPath) {
-		return nil, false, invalidParams("path must be an absolute path")
+		return nil, false, nil, invalidParams("path must be an absolute path")
 	}
 	real, err := realpath(rawPath)
 	if err != nil {
-		return nil, false, invalidParams("path does not exist")
+		return nil, false, nil, invalidParams("path does not exist")
 	}
 	if info, err := os.Stat(real); err != nil || !info.IsDir() {
-		return nil, false, invalidParams("path must be a directory")
+		return nil, false, nil, invalidParams("path must be a directory")
 	}
 	if !isInsideRoots(real, s.roots) {
-		return nil, false, invalidParams("path is outside the allowed project roots")
+		return nil, false, nil, invalidParams("path is outside the allowed project roots")
 	}
 	if existing, err := s.store.ProjectByPath(ctx, real); err != nil {
-		return nil, false, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
+		return nil, false, nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
 	} else if existing != nil {
-		return nil, false, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
+		return nil, false, nil, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
 	}
 	p, rerr := s.registerProject(ctx, name, real, mode, deny, skip)
-	return p, false, rerr
+	return p, false, nil, rerr
 }
 
 // parseProjectOptions reads the optional defaultMode, denyPaths and watchSkip of a create request
@@ -233,6 +259,12 @@ func (s *Server) registerProject(ctx context.Context, name, real, mode string, d
 	if err != nil {
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create a project id"}
 	}
+	return s.registerProjectID(ctx, id, name, real, mode, deny, skip)
+}
+
+// registerProjectID is registerProject with the id chosen by the caller (D-105: a git step runs
+// in the project's container before it is registered).
+func (s *Server) registerProjectID(ctx context.Context, id, name, real, mode string, deny, skip []string) (*store.Project, *rpcError) {
 	home := s.projectHome(id)
 	if err := prepareHome(home, real); err != nil {
 		_ = os.RemoveAll(home)

@@ -248,5 +248,8 @@ func (s *Server) checkMCPList(who audit.Who, method string, params *jsonv.Value)
 		}
 		s.audit.Log("mcp_servers", with(who, audit.Fields{Method: method, Reason: reason}))
 	}
+	if method == "session/new" {
+		return s.checkEnabledIDs(who, params) // the gateway's own servers, by id (D-107)
+	}
 	return nil
 }

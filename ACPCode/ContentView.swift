@@ -85,9 +85,14 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             startupLog("scenePhase changed to \(String(describing: newPhase))")
+            ApprovalLiveActivityCoordinator.shared.setForeground(newPhase == .active)
             if newPhase == .active {
                 model.resumeConnectionIfNeeded()
             }
+        }
+        .onAppear {
+            // onChange does not fire for the phase the app launches in, so set it here (la-decision).
+            ApprovalLiveActivityCoordinator.shared.setForeground(scenePhase == .active)
         }
         .onChange(of: model.selectedServerId) { oldServerId, newServerId in
             // Track server changes to prevent auto-navigation on server switch.
@@ -339,7 +344,11 @@ private extension ContentView {
             },
             onInsert: { validated in
                 model.updateServer(server.id, with: validated)
-            }
+            },
+            // D-105: Git credentials are offered only for the gateway this server is connected to.
+            gitCredentialsClient: (model.selectedServerId == server.id && model.selectedServerViewModel?.isGatewayServer == true)
+                ? { [weak model] in model?.selectedGatewayClient() } : nil,
+            gitCredentialsScheme: server.scheme
         )
     }
 
@@ -519,6 +528,10 @@ private struct SessionListPage: View {
     @State private var customWorkingDirectory: String = ""
     /// Owned by the app model, so `_acpcode/project/state` reaches it (D-102).
     private var gatewayHome: GatewayHomeModel { model.gatewayHome }
+    /// The scheme of the selected server's connection (D-105: credentials need wss).
+    private var selectedServerScheme: String {
+        model.servers.first(where: { $0.id == model.selectedServerId })?.scheme ?? "wss"
+    }
     @State private var showingApprovals: Bool = false
     @State private var showingNewProjectSheet: Bool = false // D-091: New project on a gateway server
     @AppStorage("summaryCardCollapsed") private var summaryCardCollapsed: Bool = false
@@ -765,13 +778,24 @@ private struct SessionListPage: View {
                                     showingProjects = true
                                 }
                             }
+
+                            if !gatewayHome.projects.isEmpty {
+                                SidebarNavRow(
+                                    title: "On this phone only",
+                                    systemImage: "iphone",
+                                    count: nil,
+                                    identifier: "gatewayPhoneOnlyRow"
+                                ) {
+                                    model.gatewaySessionActions.showingPhoneOnly = true
+                                }
+                            }
                         }
 
                         if model.selectedServerIsGatewayHome {
                             if !gatewayHome.projects.isEmpty {
                                 SidebarSectionHeader(title: "Recents")
                             }
-                            SidebarGatewaySections(home: gatewayHome, search: sessionSearchText, git: model.gitStore) { sessionId in
+                            SidebarGatewaySections(home: gatewayHome, search: sessionSearchText, git: model.gitStore, actions: model.gatewaySessionActions) { sessionId in
                                 navigate(to: .session(sessionId))
                             }
                             .gitHomeTabSheet(store: model.gitStore)
@@ -852,10 +876,21 @@ private struct SessionListPage: View {
         .textInputAutocapitalization(.never)
 #endif
         .disableAutocorrection(true)
+        .sheet(isPresented: Binding(
+            get: { model.gatewaySessionActions.showingPhoneOnly },
+            set: { model.gatewaySessionActions.showingPhoneOnly = $0 }
+        )) {
+            // D-106: sessions on this phone that the gateway does not list. Nothing is removed until confirmed.
+            GatewayPhoneOnlySheet(actions: model.gatewaySessionActions) {
+                model.gatewaySessionActions.showingPhoneOnly = false
+            }
+        }
+        .gatewaySessionDialogs(model.gatewaySessionActions)
         .sheet(isPresented: $showingNewProjectSheet) {
             // D-091: the gateway makes <root>/<name> and registers it; the new project is then selected.
             GatewayNewProjectSheet(
                 clientProvider: { [weak model] in model?.selectedGatewayClient() },
+                connectionScheme: selectedServerScheme,
                 onCreated: { project in
                     await gatewayHome.refresh()
                     gatewayHome.select(projectId: project.id)
@@ -877,10 +912,11 @@ private struct SessionListPage: View {
                 GatewayNewSessionSheet(
                     projects: gatewayHome.projects,
                     initialSelection: gatewayHome.selectedProjectId,
+                    mcpClient: { [weak model] in model?.selectedGatewayClient() },
                     onCancel: { showingNewSessionSheet = false },
-                    onCreate: { project in
+                    onCreate: { project, mcpIDs in
                         if let cwd = gatewayNewSessionCwd(selectedProjectPath: project.path) {
-                            model.sendNewSession(workingDirectory: cwd)
+                            model.sendNewGatewaySession(workingDirectory: cwd, mcpEnabledIDs: mcpIDs)
                         }
                         showingNewSessionSheet = false
                     }

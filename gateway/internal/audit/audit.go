@@ -28,6 +28,7 @@ type Fields struct {
 	Path                     string // a project-relative file path (file events, D-063); never a token
 	FolderCreated            bool   // project_created: the gateway made the project folder (D-091)
 	Source, Grant            string // a connector prompt: source "claude" and the grant id (D-096)
+	Credential, Host         string // git credential profile id and its host (D-105); never a token
 }
 
 // Who identifies one connection in every line it writes.
@@ -35,6 +36,7 @@ type Who struct {
 	Identity, Device, Client string
 	Conn                     int
 	Source, Grant            string // set for a connector prompt: source "claude" and the grant id (D-096)
+	Secure                   bool   // the connection is secure (wss, or a loopback-only gateway); D-105. Not logged.
 }
 
 func (w Who) Fields() Fields {
@@ -85,6 +87,8 @@ func (l *Logger) Log(event string, f Fields) {
 	str("dir", f.Dir)
 	str("project", f.Project)
 	str("path", f.Path)
+	str("credential", f.Credential)
+	str("host", f.Host)
 	if f.FolderCreated {
 		buf = append(buf, `,"folderCreated":true`...)
 	}

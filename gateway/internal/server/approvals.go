@@ -232,6 +232,8 @@ func (s *Server) closedReason(ctx context.Context, id string) (string, bool) {
 		return "timed out", true
 	case "cancel":
 		return "cancelled", true
+	case "stop": // D-106: the phone stopped the session or its agent
+		return "the session was stopped", true
 	case "agent_exit", "gateway_restart":
 		return "the agent exited", true
 	}

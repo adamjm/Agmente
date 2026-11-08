@@ -185,9 +185,25 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             } catch {
                 connectionManager.markSessionUnmaterialized(id)
                 currentSessionViewModel?.loadChatState(serverId: self.id, sessionId: id, canLoadFromStorage: true)
+                if GatewayUnknownSession.isUnknown(error), let onGatewaySessionUnknown {
+                    onGatewaySessionUnknown(id) // D-106: re-attach, or offer removal from this phone
+                    return
+                }
                 appendClosure("Failed to open session: \((error as? GatewayError)?.message ?? error.localizedDescription)")
             }
         }
+    }
+
+    /// Set by the app: called when the gateway does not know a session this app opens (D-106).
+    var onGatewaySessionUnknown: ((String) -> Void)?
+
+    /// The sessions this app created that the agent has not answered for yet. They are not on the gateway yet.
+    var gatewayPendingSessionIds: Set<String> { pendingLocalSessions }
+
+    /// `session/load` through the gateway, for a session the gateway does not know (D-106, the re-attach step only).
+    func loadGatewaySessionOnAgent(sessionId: String, cwd: String) async throws {
+        guard connectionState == .connected, let service = getServiceClosure() else { throw GatewayError.disconnected }
+        _ = try await service.loadSession(ACPSessionLoadPayload(sessionId: sessionId, workingDirectory: cwd))
     }
 
     /// After a reconnect the gateway has forgotten this socket's subscription: subscribe again.
@@ -213,6 +229,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     private(set) var lastLoadedSession: String?
     private var pendingLocalSessions: Set<String> = []
     private var pendingLocalSessionCwds: [String: String] = [:]
+    /// The gateway MCP set chosen for a pending session, sent with its session/new (D-107).
+    private var pendingLocalSessionMCPIDs: [String: [String]] = [:]
     private var pendingLocalSessionNewCwds: [String: Bool] = [:]
     private var creatingSessionTasks: [String: Task<Void, Never>] = [:]
     // Note: Unlike AppViewModel which uses (serverId: UUID, sessionId: String)? tuple,
@@ -958,6 +976,12 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
     /// Create a new session.
     func sendNewSession(workingDirectory: String? = nil) {
+        startNewSession(workingDirectory: workingDirectory, mcpEnabledIDs: nil)
+    }
+
+    /// Create a new session. `mcpEnabledIDs` is the gateway MCP set the new-session sheet chose (D-107).
+    /// Nil sends no MCP key, so the gateway uses its defaults.
+    func startNewSession(workingDirectory: String?, mcpEnabledIDs: [String]?) {
         // FR-26: a gateway session starts in a registered project. A blank path is never sent as "/".
         if gatewayNewSessionBlocked(isGateway: isGatewayServer, selectedProjectPath: workingDirectory) {
             appendClosure("Pick a project on the gateway to start a session.")
@@ -978,6 +1002,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             let newCwdAdded = rememberUsedWorkingDirectory(sanitizedCwd)
             pendingLocalSessionNewCwds[pendingId] = newCwdAdded
         }
+        if let mcpEnabledIDs {
+            pendingLocalSessionMCPIDs[pendingId] = mcpEnabledIDs
+        }
 
         pendingLocalSessions.insert(pendingId)
         setActiveSession(pendingId, cwd: sanitizedCwd)
@@ -996,14 +1023,16 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                 let newCwdAdded = self.rememberUsedWorkingDirectory(creationCwd)
                 // Preserve any earlier working-directory discovery from placeholder edits.
                 self.pendingLocalSessionNewCwds[pendingId] = (self.pendingLocalSessionNewCwds[pendingId] == true) || newCwdAdded
+                let mcpIDs = self.pendingLocalSessionMCPIDs.removeValue(forKey: pendingId)
                 let payload = ACPSessionCreatePayload(
                     workingDirectory: creationCwd,
                     mcpServers: self.mcpServersForSession(),
-                    meta: await gatewayStartMeta(forCwd: creationCwd)
+                    meta: await self.gatewayCreateMeta(forCwd: creationCwd, mcpIDs: mcpIDs)
                 )
 
                 do {
                     let response = try await service.createSession(payload)
+                    self.rememberGatewayMCPSession(response, mcpIDs: mcpIDs)
                     self.finalizePendingSessionCreation(
                         response: response,
                         placeholderId: pendingId,
@@ -1383,14 +1412,16 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                     // Update the flag - use OR to preserve any previous true value
                     pendingLocalSessionNewCwds[placeholderId] = (pendingLocalSessionNewCwds[placeholderId] == true) || newCwdAdded
 
+                    let mcpIDs = pendingLocalSessionMCPIDs.removeValue(forKey: placeholderId)
                     let payload = ACPSessionCreatePayload(
                         workingDirectory: creationCwd,
                         mcpServers: self.mcpServersForSession(),
-                        meta: await gatewayStartMeta(forCwd: creationCwd)
+                        meta: await gatewayCreateMeta(forCwd: creationCwd, mcpIDs: mcpIDs)
                     )
 
                     do {
                         let response = try await service.createSession(payload)
+                        rememberGatewayMCPSession(response, mcpIDs: mcpIDs)
                         finalizePendingSessionCreation(
                             response: response,
                             placeholderId: placeholderId,

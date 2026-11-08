@@ -50,6 +50,8 @@ struct SidebarGatewaySections: View {
     @ObservedObject var home: GatewayHomeModel
     let search: String
     var git: GitStore?
+    /// Stop, stop agent and the stalled notice (D-106). Its prompts are shown by the root view.
+    let actions: GatewaySessionActions
     let open: (String) -> Void
 
     var body: some View {
@@ -82,24 +84,80 @@ struct SidebarGatewaySections: View {
                             .padding(.vertical, SidebarStyle.rowVerticalPadding)
                     }
                     ForEach(section.sessions) { session in
-                        Button { open(session.sessionId) } label: {
-                            SidebarSessionRow(
-                                title: session.title ?? "New Chat",
-                                status: ForkStatusKind(session.status),
-                                unread: session.unread,
-                                isHighlighted: session.status == .running
-                            )
-                            .overlay(alignment: .bottom) {
-                                GatewayContextBar(usage: home.usage[session.sessionId])
+                        VStack(alignment: .leading, spacing: 0) {
+                            Button { open(session.sessionId) } label: {
+                                SidebarSessionRow(
+                                    title: session.title ?? "New Chat",
+                                    status: ForkStatusKind(session.status),
+                                    unread: session.unread,
+                                    isHighlighted: session.status == .running
+                                )
+                                .overlay(alignment: .bottom) {
+                                    GatewayContextBar(usage: home.usage[session.sessionId])
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("gatewaySession.\(session.sessionId)")
+                            .contextMenu {
+                                sessionActions(session, agentRunning: home.agentState(for: section.id) == .running)
+                            }
+                            if GatewayStopRules.showsStalledBadge(session) {
+                                GatewayStalledBadge(sessionId: session.sessionId) { actions.explainStalled() }
                             }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("gatewaySession.\(session.sessionId)")
                     }
                 }
                 .id(SidebarScroll.project(section.id))
             }
         }
+    }
+}
+
+extension SidebarGatewaySections {
+    /// Stop a turn, and stop the project's agent. The agent stop always asks first (D-106).
+    @ViewBuilder
+    fileprivate func sessionActions(_ session: GatewaySession, agentRunning: Bool) -> some View {
+        if GatewayStopRules.canStopTurn(session.status) {
+            Button {
+                Task { await actions.stopTurn(sessionId: session.sessionId) }
+            } label: {
+                Label("Stop", systemImage: "stop.circle")
+            }
+            .accessibilityIdentifier("gatewaySessionStop.\(session.sessionId)")
+        }
+        if GatewayStopRules.canStopTurn(session.status) || agentRunning {
+            Button(role: .destructive) {
+                Task { await actions.requestAgentStop(sessionId: session.sessionId) }
+            } label: {
+                Label("Stop agent", systemImage: "power")
+            }
+            .accessibilityIdentifier("gatewayAgentStop.\(session.sessionId)")
+        }
+    }
+}
+
+/// The "Stalled" flag under a gateway session row (D-106). Tapping it explains the flag. It stops nothing.
+struct GatewayStalledBadge: View {
+    let sessionId: String
+    let explain: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: explain) {
+                Label(GatewayStopCopy.stalledTitle, systemImage: "pause.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange.opacity(0.18)))
+                    .foregroundStyle(Color.orange)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stalled. Tap for details.")
+            .accessibilityIdentifier("gatewayStalled.\(sessionId)")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, SidebarStyle.rowHorizontalPadding)
+        .padding(.bottom, 6)
     }
 }
 
