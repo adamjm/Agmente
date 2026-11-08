@@ -130,6 +130,14 @@ struct CodexSessionDetailView: View {
         .sheet(item: $fileChangesReviewPayload) { payload in
             FileChangesReviewSheet(items: payload.items)
         }
+        .onChange(of: ApprovalKeyboardRule.awaitingApprovalCount(in: sessionViewModel.chatMessages)) { oldCount, newCount in
+            // A new approval appeared: drop the keyboard so its buttons can be seen and tapped.
+            if ApprovalKeyboardRule.shouldDismiss(previousCount: oldCount, currentCount: newCount) {
+                #if canImport(UIKit)
+                ForkKeyboard.dismiss()
+                #endif
+            }
+        }
         .agentHTMLPreviewSheet($htmlPreviewPayload)
         .sheet(item: $sessionViewModel.activeUserInputRequest) { request in
             UserInputQuestionsSheet(request: request) { requestId, answers in

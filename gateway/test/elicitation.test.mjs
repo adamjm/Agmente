@@ -240,3 +240,38 @@ test('(f) a content value that is an object gets -32602 and nothing reaches the 
     await gw.stop();
   }
 });
+
+test('(g) a late subscriber gets no question that was already answered; an open one once; a replayed close is marked replay', async () => {
+  const { gw } = await startElicitation();
+  try {
+    const { a, sessionId, seen } = await subscribed(gw);
+    const first = await prompt(a, sessionId, seen);
+    assert.deepEqual((await answer(a, { elicitationId: first.req.id, action: 'decline' })).result, {});
+    assert.deepEqual((await first.turn).result, { stopReason: 'end_turn' });
+    const second = await prompt(a, sessionId, seen);
+
+    const late = (await connect(gw.url, auth())).ws;
+    const lateSeen = collect(late);
+    await rpc(late, '_acpcode/sessions/subscribe', { sessionId, afterSeq: 0 });
+    await until(() => closed(lateSeen).length === 1, 'the replayed close');
+    await sleep(100);
+
+    assert.deepEqual(requests(lateSeen).map((r) => r.id), [second.req.id], 'only the open question is replayed');
+    const closeEvent = lateSeen.find((m) => m.method === '_acpcode/event'
+      && m.params.message.method === '_acpcode/elicitation_answered');
+    assert.equal(closeEvent.params.replay, true, 'the replayed close is marked as history');
+    assert.equal(closeEvent.params.message.params.elicitationId, first.req.id);
+
+    assert.deepEqual((await answer(late, { elicitationId: second.req.id, action: 'decline' })).result, {});
+    await until(() => closed(lateSeen).length === 2, 'the live close');
+    const liveClose = lateSeen.filter((m) => m.method === '_acpcode/event'
+      && m.params.message.method === '_acpcode/elicitation_answered').at(-1);
+    assert.equal(liveClose.params.replay, undefined, 'a live close is not marked replay');
+    assert.equal(liveClose.params.message.params.elicitationId, second.req.id);
+    assert.deepEqual((await second.turn).result, { stopReason: 'end_turn' });
+    a.close();
+    late.close();
+  } finally {
+    await gw.stop();
+  }
+});

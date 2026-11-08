@@ -7,11 +7,15 @@ public struct GatewayEvent: Equatable, Sendable {
     public let sessionId: String
     public let seq: Int
     public let message: ACP.Value
+    /// True for an event the gateway sent from the log during a subscribe's replay (history). The
+    /// gateway marks only the elicitation close this way; a live event is never marked.
+    public let isReplay: Bool
 
-    public init(sessionId: String, seq: Int, message: ACP.Value) {
+    public init(sessionId: String, seq: Int, message: ACP.Value, isReplay: Bool = false) {
         self.sessionId = sessionId
         self.seq = seq
         self.message = message
+        self.isReplay = isReplay
     }
 
     public static let method = "_acpcode/event"
@@ -22,7 +26,9 @@ public struct GatewayEvent: Equatable, Sendable {
               let sessionId = object["sessionId"]?.stringValue,
               let seq = object["seq"]?.intValue, seq >= 1,
               let message = object["message"], message.objectValue != nil else { return nil }
-        return GatewayEvent(sessionId: sessionId, seq: seq, message: message)
+        var isReplay = false
+        if case .bool(let flag)? = object["replay"] { isReplay = flag }
+        return GatewayEvent(sessionId: sessionId, seq: seq, message: message, isReplay: isReplay)
     }
 
     /// What the app should do with this event.

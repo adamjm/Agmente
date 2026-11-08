@@ -33,6 +33,13 @@ final class ElicitationInboxModel: ObservableObject {
         form.closedByGateway(note: "The agent's question was answered elsewhere or closed (\(answeredBy ?? "closed")).")
     }
 
+    /// A close the gateway replayed from its log (a subscribe's history, `replay: true`). It is not a new
+    /// event, so the form on the list goes without the notice. A form the list does not hold is left alone.
+    func closedInReplay(elicitationId: String) {
+        guard let form = forms.first(where: { $0.request.id == elicitationId }) else { return }
+        form.closedByGateway(note: nil)
+    }
+
     private func remove(_ form: ElicitationFormModel) {
         forms.removeAll { $0 === form }
     }

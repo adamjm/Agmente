@@ -46,8 +46,10 @@ func (sub *subscription) deliver(note []byte) {
 	}
 }
 
-// eventNotification wraps a logged message: `_acpcode/event {sessionId, seq, message}`.
-func eventNotification(sessionID string, seq int64, message []byte) []byte {
+// eventNotification wraps a logged message: `_acpcode/event {sessionId, seq, message}`. A close
+// sent from the log during a replay adds `replay: true`: it is history, not a new event, so the
+// phone closes its form without a notice.
+func eventNotification(sessionID string, seq int64, message []byte, replay bool) []byte {
 	b := make([]byte, 0, len(message)+len(sessionID)+80)
 	b = append(b, `{"jsonrpc":"2.0","method":"_acpcode/event","params":{"sessionId":`...)
 	b = jsonv.AppendString(b, sessionID)
@@ -55,6 +57,9 @@ func eventNotification(sessionID string, seq int64, message []byte) []byte {
 	b = strconv.AppendInt(b, seq, 10)
 	b = append(b, `,"message":`...)
 	b = append(b, message...)
+	if replay {
+		b = append(b, `,"replay":true`...)
+	}
 	return append(b, `}}`...)
 }
 
@@ -79,7 +84,7 @@ func (s *Server) emit(projectID, sessionID, kind string, message []byte, raw []*
 			}
 		case err == nil:
 			if note == nil {
-				note = eventNotification(sessionID, seq, message)
+				note = eventNotification(sessionID, seq, message, false)
 			}
 			sub.deliver(note)
 		}
@@ -157,13 +162,10 @@ func (s *Server) replay(ctx context.Context, sub *subscription, after, head int6
 	c := sub.c
 	for cur := after; cur < head; {
 		upTo := min(cur+replayPage, head)
-		batch := make([][]byte, 0, upTo-cur)
+		// The page is read first and the store released before the checks below, which take permMu.
+		var page []store.Event
 		err := s.store.EventsAfter(ctx, sub.sid, cur, upTo, func(e store.Event) error {
-			if sub.plain {
-				batch = append(batch, s.history(e)...)
-			} else {
-				batch = append(batch, eventNotification(sub.sid, e.Seq, []byte(e.Message)))
-			}
+			page = append(page, e)
 			return nil
 		})
 		if err != nil {
@@ -172,6 +174,19 @@ func (s *Server) replay(ctx context.Context, sub *subscription, after, head int6
 				c.closeWith(1011, "replay failed") // the phone resubscribes; a gap is never left open
 			}
 			return
+		}
+		batch := make([][]byte, 0, len(page))
+		for _, e := range page {
+			switch {
+			case sub.plain:
+				batch = append(batch, s.history(e)...)
+			case e.Kind == "elicitation_request" && !s.elicitationOpen([]byte(e.Message)):
+				// A question closed before this subscribe is history. Sending it would show a form
+				// the phone can only close, so the replay leaves it out (FR-44).
+			default:
+				closed := e.Kind == "elicitation_answered" // marked replay: see eventNotification
+				batch = append(batch, eventNotification(sub.sid, e.Seq, []byte(e.Message), closed))
+			}
 		}
 		for _, b := range batch {
 			if !c.sendWait(ctx, b) {

@@ -32,7 +32,8 @@ struct SessionDetailView: View {
     @State private var transcriptState = ChatTranscriptState()
     @State private var scrollViewHeight: CGFloat = 0
     @State private var isAtBottom = true
-    @State private var composerHeight: CGFloat = 0
+    @State private var composerStackHeight: CGFloat = 0
+    @State private var runningStripHeight: CGFloat = 0
     @State private var scrollToBottomAction: (() -> Void)?
     @State private var scrollPosition: UUID?
 
@@ -105,30 +106,54 @@ struct SessionDetailView: View {
                     .readableColumn()
                     .frame(maxHeight: .infinity)
                     .safeAreaInset(edge: .bottom) {
-                        RunningNowStrip(messages: sessionViewModel.chatMessages) { requestId, optionId in
-                            model.sendPermissionResponse(requestId: requestId, optionId: optionId)
+                        // Measured so the scroll-to-bottom arrow can clear it (zero height when empty).
+                        VStack(spacing: 0) {
+                            RunningNowStrip(messages: sessionViewModel.chatMessages) { requestId, optionId in
+                                model.sendPermissionResponse(requestId: requestId, optionId: optionId)
+                            }
                         }
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .onAppear { runningStripHeight = proxy.size.height }
+                                    .onChange(of: proxy.size.height) { _, newValue in
+                                        runningStripHeight = newValue
+                                    }
+                            }
+                        )
                     }
 
-                composer
-                    .readableColumn()
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 10)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear
-                                .onAppear { composerHeight = proxy.size.height }
-                                .onChange(of: proxy.size.height) { _, newValue in
-                                    composerHeight = newValue
-                                }
-                        }
-                    )
-                ContextUsageChip(usage: sessionViewModel.forkMeta.usage)
-                    .readableColumn()
+                // Composer and context chip are measured together: the chip sits below the composer,
+                // so the scroll-to-bottom arrow must clear both.
+                VStack(spacing: 12) {
+                    composer
+                        .readableColumn()
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ContextUsageChip(usage: sessionViewModel.forkMeta.usage)
+                        .readableColumn()
+                }
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { composerStackHeight = proxy.size.height }
+                            .onChange(of: proxy.size.height) { _, newValue in
+                                composerStackHeight = newValue
+                            }
+                    }
+                )
             }
         }
         .navigationTitle(sessionDisplayTitle)
+        .onChange(of: ApprovalKeyboardRule.awaitingApprovalCount(in: sessionViewModel.chatMessages)) { oldCount, newCount in
+            // A new approval appeared: drop the keyboard so its buttons can be seen and tapped.
+            if ApprovalKeyboardRule.shouldDismiss(previousCount: oldCount, currentCount: newCount) {
+                #if canImport(UIKit)
+                ForkKeyboard.dismiss()
+                #endif
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if shouldShowScrollToBottomButton {
                 Button(action: scrollTranscriptToBottom) {
@@ -148,7 +173,9 @@ struct SessionDetailView: View {
                 }
                 .forkHitTarget()
                 .padding(.trailing, 16)
-                .padding(.bottom, composerHeight + 24)
+                // Bottom edge sits above the chip and composer (composerStackHeight), above the running
+                // strip when it shows (its height plus the 12 pt VStack spacing), plus a 16 pt gap.
+                .padding(.bottom, composerStackHeight + (runningStripHeight > 0 ? runningStripHeight + 12 : 0) + 16)
                 .accessibilityLabel("Scroll to bottom")
                 .zIndex(2)
             }

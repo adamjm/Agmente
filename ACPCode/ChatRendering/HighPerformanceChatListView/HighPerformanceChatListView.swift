@@ -99,6 +99,10 @@ final class HighPerformanceChatListView: UIView {
 
     var onAtBottomChanged: ((Bool) -> Void)?
 
+    /// Runs when a person starts dragging the transcript. Not called for programmatic scrolls.
+    /// Defaults to dropping the composer keyboard: UIKit's interactive dismissal cannot reach the SwiftUI TextEditor.
+    var onUserDragBegan: @MainActor () -> Void = { ForkKeyboard.dismiss() }
+
     private(set) var theme: MarkdownTheme = ForkMarkdownTheme.make() {
         didSet {
             listView.reloadData()
@@ -119,8 +123,8 @@ final class HighPerformanceChatListView: UIView {
         listView.showsVerticalScrollIndicator = true
         listView.showsHorizontalScrollIndicator = false
         listView.contentInsetAdjustmentBehavior = .never
-        // Scrolling the transcript drops the keyboard interactively, as in Messages and Notes.
-        // The composer is a SwiftUI TextEditor outside this scroll view; tapping it does not scroll, so it keeps focus.
+        // Keyboard follows a slow drag interactively. A drag that begins also dismisses it outright via
+        // onUserDragBegan (scrollViewWillBeginDragging), because the SwiftUI TextEditor composer is outside this scroll view.
         listView.keyboardDismissMode = .interactive
 
         addSubview(listView)
@@ -217,6 +221,11 @@ final class HighPerformanceChatListView: UIView {
         guard lastReportedAtBottom != isAtBottom else { return }
         lastReportedAtBottom = isAtBottom
         onAtBottomChanged?(isAtBottom)
+    }
+
+    /// Called when a user drag on the transcript begins.
+    func transcriptDidBeginUserDrag() {
+        onUserDragBegan()
     }
 
     private func isThoughtExpanded(for entry: ChatEntry) -> Bool {
@@ -340,6 +349,7 @@ extension HighPerformanceChatListView: UIScrollViewDelegate {
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         isAutoScrollingToBottom = false
         reportAtBottomIfChanged(false)
+        transcriptDidBeginUserDrag()
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {

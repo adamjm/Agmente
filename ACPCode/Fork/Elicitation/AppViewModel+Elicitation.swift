@@ -19,7 +19,12 @@ extension AppViewModel {
         case "_acpcode/elicitation_answered":
             let params = event.message["params"]
             guard let id = params?["elicitationId"]?.stringValue else { return }
-            gatewayElicitations.closed(elicitationId: id, answeredBy: params?["answeredBy"]?.stringValue)
+            if event.isReplay {
+                // History from the subscribe's replay: close the form silently, with no notice.
+                gatewayElicitations.closedInReplay(elicitationId: id)
+            } else {
+                gatewayElicitations.closed(elicitationId: id, answeredBy: params?["answeredBy"]?.stringValue)
+            }
         default:
             break
         }

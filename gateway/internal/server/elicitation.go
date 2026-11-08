@@ -64,6 +64,21 @@ func (s *Server) takeElicitation(id, by string) *elicitation {
 	return e
 }
 
+// elicitationOpen reports whether a logged elicitation/create is still waiting for an answer in this
+// process. An elicitation this process does not know (the gateway restarted) cannot be answered, so
+// it is not open either. message is the logged request, whose id is the gateway id.
+func (s *Server) elicitationOpen(message []byte) bool {
+	msg, err := jsonv.Parse(message)
+	if err != nil {
+		return false
+	}
+	id, _ := msg.Get("id").StringValue()
+	s.permMu.Lock()
+	defer s.permMu.Unlock()
+	e := s.elics[id]
+	return e != nil && e.closedBy == ""
+}
+
 // resolveElicitation sends the agent its answer and records the close for subscribers. The content
 // is sent only with accept; it is never logged.
 func (s *Server) resolveElicitation(e *elicitation, action string, content *jsonv.Value, by string) {

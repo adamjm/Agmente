@@ -160,8 +160,9 @@ final class ElicitationFormModel: ObservableObject, Identifiable {
         onFinish?(note)
     }
 
-    /// The gateway closed the form (an `answered elsewhere` or timeout event).
-    func closedByGateway(note: String) {
+    /// The gateway closed the form. A note says why it closed (answered elsewhere, timed out); nil closes
+    /// it silently, for a close the gateway replayed from its log.
+    func closedByGateway(note: String?) {
         finish(note: note)
     }
 
