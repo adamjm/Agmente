@@ -222,7 +222,7 @@ test('T-13: the audit log holds method names but no prompt text or token', async
     assert.equal(text.includes(TOKEN), false);
     assert.equal(text.includes(gw.dirs.project), false, 'no paths from params');
     // Each line has a timestamp and an event name, and only known fields.
-    const allowed = new Set(['ts', 'event', 'identity', 'device', 'client', 'conn', 'status', 'reason', 'method', 'dir', 'code', 'pid', 'exitCode', 'signal', 'project']);
+    const allowed = new Set(['ts', 'event', 'identity', 'device', 'client', 'conn', 'scope', 'status', 'reason', 'method', 'dir', 'code', 'pid', 'exitCode', 'signal', 'project']);
     for (const line of gw.audit) {
       assert.match(line.ts, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
       assert.equal(typeof line.event, 'string');

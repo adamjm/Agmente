@@ -8,7 +8,7 @@
       "Bash(node --test:*)",
       "Bash(node --check:*)",
       "Bash(node gateway/test/bench.mjs:*)",
-      "Bash(gateway/bin/agmente-gateway --config gateway/config.example.json --dry-run)",
+      "Bash(gateway/bin/acpcode-gateway --config gateway/config.example.json --dry-run)",
       "Bash(node scripts/check-docs.mjs)",
       "Bash(swift test:*)",
       "Bash(xcodebuild test:*)",

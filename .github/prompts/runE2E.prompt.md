@@ -1,10 +1,10 @@
 ---
 name: runE2ETest
-description: Run end-to-end tests for Agmente iOS app with a local ACP agent
+description: Run end-to-end tests for ACP Code iOS app with a local ACP agent
 argument-hint: "agent name and feature to test"
 ---
 
-Run an end-to-end test for **Agmente** iOS app using Xcode Build MCP tools. Reference: Agents.md
+Run an end-to-end test for **ACP Code** iOS app using Xcode Build MCP tools. Reference: Agents.md
 
 ## Workflow
 
@@ -39,7 +39,7 @@ Run an end-to-end test for **Agmente** iOS app using Xcode Build MCP tools. Refe
 
 4. **Cleanup Phase (REQUIRED)**
    - Stop agent server: `pkill -9 -f "stdio-to-ws.*8765"`
-   - Uninstall app: `xcrun simctl uninstall <SIMULATOR_UUID> com.example.Agmente`
+   - Uninstall app: `xcrun simctl uninstall <SIMULATOR_UUID> com.example.ACPCode`
    - **Always complete cleanup even if tests fail**
 
 ## Test Scenarios (from Agents.md)

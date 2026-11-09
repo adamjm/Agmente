@@ -131,13 +131,23 @@ extension ACPService: ACPClientDelegate {
     }
 
     public func acpClient(_ client: ACPClient, didReceiveMessage message: ACPWireMessage) {
+        acpClient(client, didReceiveMessage: message, errorData: nil)
+    }
+
+    public func acpClient(_ client: ACPClient, didReceiveMessage message: ACPWireMessage, errorData: ACP.Value?) {
         Task { @MainActor in delegate?.acpService(self, didReceiveMessage: message) }
         switch message {
         case .notification(let notification):
             Task { @MainActor in delegate?.acpService(self, didReceiveNotification: notification) }
         case .response(let response):
             if let error = response.errorValue {
-                Task { await pendingRequests.resume(id: response.id, with: .failure(ACPServiceError.rpc(id: response.id, error: error))) }
+                let failure: ACPServiceError
+                if let errorData {
+                    failure = .rpcData(id: response.id, error: error, data: errorData)
+                } else {
+                    failure = .rpc(id: response.id, error: error)
+                }
+                Task { await pendingRequests.resume(id: response.id, with: .failure(failure)) }
             } else {
                 Task { await pendingRequests.resume(id: response.id, with: .success(response)) }
             }
@@ -157,26 +167,28 @@ extension ACPService: ACPClientDelegate {
 public enum ACPServiceError: Error, Equatable {
     case disconnected
     case rpc(id: ACP.ID, error: ACPError)
+    /// A JSON-RPC error that carried a `data` member. The SDK's `ACPError` has no place for it, so it is kept here.
+    case rpcData(id: ACP.ID, error: ACPError, data: ACP.Value)
     case unsupportedMessage
 }
 
 public extension ACPServiceError {
-    var rpcMessage: String? {
+    /// The JSON-RPC error of an `rpc` or `rpcData` failure, or nil.
+    var rpcError: ACPError? {
         switch self {
-        case .rpc(_, let error):
-            return error.message
+        case .rpc(_, let error), .rpcData(_, let error, _):
+            return error
         default:
             return nil
         }
     }
 
+    var rpcMessage: String? {
+        rpcError?.message
+    }
+
     var rpcCode: Int? {
-        switch self {
-        case .rpc(_, let error):
-            return error.code
-        default:
-            return nil
-        }
+        rpcError?.code
     }
 }
 

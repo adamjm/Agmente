@@ -5,7 +5,8 @@ private let healthyGreen = Color(.sRGB, red: 73/255, green: 210/255, blue: 123/2
 
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var model = AppViewModel()
+    /// The process-wide model (see ForkProcessModel). It is created at launch, so the view never makes a second one.
+    @StateObject private var model: AppViewModel
     @State private var addServerSheet: AddServerSheet?
     @State private var showingSettings = false
     @State private var showingMCPServers = false // gateway MCP list (FR-40), opened from the More menu
@@ -16,6 +17,10 @@ struct ContentView: View {
     @State private var previousServerId: UUID?
     @State private var deepLinkNotice: String?
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        _model = StateObject(wrappedValue: ForkProcessModel.shared)
+    }
 
     /// Opens the session a link or a tapped notification names. A link only navigates (D-041): it never
     /// sends a prompt, answers an approval or changes a setting.

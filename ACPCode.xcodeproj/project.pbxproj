@@ -7,12 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1BBF5220F342E36575F02C54 /* ACPCodeLiveApproval in Frameworks */ = {isa = PBXBuildFile; productRef = 3BDA5B25613BC0DF240EC3BF /* ACPCodeLiveApproval */; };
+		262E22FA4797EC8B7FBE1BF6 /* ACPCodeLiveApproval in Frameworks */ = {isa = PBXBuildFile; productRef = BED179179B033F04E09445BC /* ACPCodeLiveApproval */; };
 		4B0ED1DD2EDA23BA000D949E /* ACPClient in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0ED1DC2EDA23BA000D949E /* ACPClient */; };
 		4B98A0C62EFD012800FFF21E /* AppServerClient in Frameworks */ = {isa = PBXBuildFile; productRef = 4B98A0C52EFD012800FFF21E /* AppServerClient */; };
 		4BF9CAC72EF39606006464B5 /* (null) in Frameworks */ = {isa = PBXBuildFile; };
 		4BF9CAC82EF39606006464B5 /* (null) in Frameworks */ = {isa = PBXBuildFile; };
 		4C7A10052F10000100A11111 /* ListViewKit in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 4C7A10032F10000100A11111 /* ListViewKit */; };
 		4C7A10062F10000100A11111 /* MarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 4C7A10042F10000100A11111 /* MarkdownView */; };
+		B5854DB2F21D8BD3478C5407 /* ACPCodeLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 694DD8DBE5F9F2C7D946AFEA /* ACPCodeLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -30,13 +33,35 @@
 			remoteGlobalIDString = 4B0ED1A82EDA2237000D949E;
 			remoteInfo = ACPCode;
 		};
+		BC3ABC7710209716F3FDEFC3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4B0ED1A12EDA2237000D949E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5111C8503B96E122E7032BDC;
+			remoteInfo = ACPCodeLiveActivity;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A41CAA349DFE2918B95270F2 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B5854DB2F21D8BD3478C5407 /* ACPCodeLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		4B0ED1A92EDA2237000D949E /* ACPCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ACPCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B0ED1BE2EDA2238000D949E /* ACPCodeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ACPCodeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B0ED1C82EDA2238000D949E /* ACPCodeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ACPCodeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4BF9CAFB2EF78D1E006464B5 /* ACPCode.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = ACPCode.xctestplan; sourceTree = "<group>"; };
+		694DD8DBE5F9F2C7D946AFEA /* ACPCodeLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ACPCodeLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -46,6 +71,13 @@
 				Info.plist,
 			);
 			target = 4B0ED1A82EDA2237000D949E /* ACPCode */;
+		};
+		A5149455124F99AE80BB5960 /* Exceptions for "ACPCodeLiveActivity" folder in "ACPCodeLiveActivity" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5111C8503B96E122E7032BDC /* ACPCodeLiveActivity */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -68,9 +100,25 @@
 			path = ACPCodeUITests;
 			sourceTree = "<group>";
 		};
+		CE01B47B704FF72340F12090 /* ACPCodeLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A5149455124F99AE80BB5960 /* Exceptions for "ACPCodeLiveActivity" folder in "ACPCodeLiveActivity" target */,
+			);
+			path = ACPCodeLiveActivity;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		19E65AF58F69B91CA04AE48A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				262E22FA4797EC8B7FBE1BF6 /* ACPCodeLiveApproval in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B0ED1A62EDA2237000D949E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -79,6 +127,7 @@
 				4B98A0C62EFD012800FFF21E /* AppServerClient in Frameworks */,
 				4C7A10052F10000100A11111 /* ListViewKit in Frameworks */,
 				4C7A10062F10000100A11111 /* MarkdownView in Frameworks */,
+				1BBF5220F342E36575F02C54 /* ACPCodeLiveApproval in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -108,6 +157,7 @@
 				4B0ED1AB2EDA2237000D949E /* ACPCode */,
 				4B0ED1C12EDA2238000D949E /* ACPCodeTests */,
 				4B0ED1CB2EDA2238000D949E /* ACPCodeUITests */,
+				CE01B47B704FF72340F12090 /* ACPCodeLiveActivity */,
 				4B0ED1AA2EDA2237000D949E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -118,6 +168,7 @@
 				4B0ED1A92EDA2237000D949E /* ACPCode.app */,
 				4B0ED1BE2EDA2238000D949E /* ACPCodeTests.xctest */,
 				4B0ED1C82EDA2238000D949E /* ACPCodeUITests.xctest */,
+				694DD8DBE5F9F2C7D946AFEA /* ACPCodeLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -132,10 +183,12 @@
 				4B0ED1A52EDA2237000D949E /* Sources */,
 				4B0ED1A62EDA2237000D949E /* Frameworks */,
 				4B0ED1A72EDA2237000D949E /* Resources */,
+				A41CAA349DFE2918B95270F2 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				000CCC7AA335EFE34966CF67 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4B0ED1AB2EDA2237000D949E /* ACPCode */,
@@ -146,6 +199,7 @@
 				4B98A0C52EFD012800FFF21E /* AppServerClient */,
 				4C7A10032F10000100A11111 /* ListViewKit */,
 				4C7A10042F10000100A11111 /* MarkdownView */,
+				3BDA5B25613BC0DF240EC3BF /* ACPCodeLiveApproval */,
 			);
 			productName = ACPCode;
 			productReference = 4B0ED1A92EDA2237000D949E /* ACPCode.app */;
@@ -197,6 +251,29 @@
 			productReference = 4B0ED1C82EDA2238000D949E /* ACPCodeUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		5111C8503B96E122E7032BDC /* ACPCodeLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10F8CA5C266B37EA440056B4 /* Build configuration list for PBXNativeTarget "ACPCodeLiveActivity" */;
+			buildPhases = (
+				20368C0DDF03370B0104518D /* Sources */,
+				19E65AF58F69B91CA04AE48A /* Frameworks */,
+				E693A0E9BB63688454550BA4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CE01B47B704FF72340F12090 /* ACPCodeLiveActivity */,
+			);
+			name = ACPCodeLiveActivity;
+			packageProductDependencies = (
+				BED179179B033F04E09445BC /* ACPCodeLiveApproval */,
+			);
+			productName = ACPCodeLiveActivity;
+			productReference = 694DD8DBE5F9F2C7D946AFEA /* ACPCodeLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -231,6 +308,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				4B0ED1DB2EDA23BA000D949E /* XCLocalSwiftPackageReference "ACPClient" */,
+				F2A43C5F677870AC02498F0D /* XCLocalSwiftPackageReference "ACPCodeLiveApproval" */,
 				4B98A0C42EFD012800FFF21E /* XCLocalSwiftPackageReference "AppServerClient" */,
 				4C7A10012F10000100A11111 /* XCRemoteSwiftPackageReference "ListViewKit" */,
 				4C7A10022F10000100A11111 /* XCRemoteSwiftPackageReference "MarkdownView" */,
@@ -243,6 +321,7 @@
 				4B0ED1A82EDA2237000D949E /* ACPCode */,
 				4B0ED1BD2EDA2238000D949E /* ACPCodeTests */,
 				4B0ED1C72EDA2238000D949E /* ACPCodeUITests */,
+				5111C8503B96E122E7032BDC /* ACPCodeLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -269,9 +348,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E693A0E9BB63688454550BA4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		20368C0DDF03370B0104518D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4B0ED1A52EDA2237000D949E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -296,6 +389,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		000CCC7AA335EFE34966CF67 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5111C8503B96E122E7032BDC /* ACPCodeLiveActivity */;
+			targetProxy = BC3ABC7710209716F3FDEFC3 /* PBXContainerItemProxy */;
+		};
 		4B0ED1C02EDA2238000D949E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 4B0ED1A82EDA2237000D949E /* ACPCode */;
@@ -585,9 +683,72 @@
 			};
 			name = Release;
 		};
+		5B9D72F7EA0BA1940A824E79 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 58;
+				DEVELOPMENT_TEAM = JNPGD7477Q;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ACPCodeLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adammakarucha.acpcode.liveapproval;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B7806DF4627A84EAAC100B95 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 58;
+				DEVELOPMENT_TEAM = JNPGD7477Q;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ACPCodeLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adammakarucha.acpcode.liveapproval;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		10F8CA5C266B37EA440056B4 /* Build configuration list for PBXNativeTarget "ACPCodeLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5B9D72F7EA0BA1940A824E79 /* Debug */,
+				B7806DF4627A84EAAC100B95 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		4B0ED1A42EDA2237000D949E /* Build configuration list for PBXProject "ACPCode" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -635,6 +796,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = AppServerClient;
 		};
+		F2A43C5F677870AC02498F0D /* XCLocalSwiftPackageReference "ACPCodeLiveApproval" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ACPCodeLiveApproval;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -657,6 +822,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3BDA5B25613BC0DF240EC3BF /* ACPCodeLiveApproval */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ACPCodeLiveApproval;
+		};
 		4B0ED1DC2EDA23BA000D949E /* ACPClient */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ACPClient;
@@ -674,6 +843,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 4C7A10022F10000100A11111 /* XCRemoteSwiftPackageReference "MarkdownView" */;
 			productName = MarkdownView;
+		};
+		BED179179B033F04E09445BC /* ACPCodeLiveApproval */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ACPCodeLiveApproval;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,14 +1,14 @@
-# Agmente Agents Guide
+# ACP Code Agents Guide
 
 ## Documentation Topology
 - `Agents.md` (this file) is the root index for all coding agents.
 - `CLAUDE.md` is the Cloud/Claude agent entrypoint and should reference the same component docs.
 - Component-specific guidance lives next to code in nested files:
-  - `Agmente/AGENTS.md`
+  - `ACPCode/AGENTS.md`
   - `ACPClient/AGENTS.md`
   - `AppServerClient/AGENTS.md`
-  - `AgmenteTests/AGENTS.md`
-  - `AgmenteUITests/AGENTS.md`
+  - `ACPCodeTests/AGENTS.md`
+  - `ACPCodeUITests/AGENTS.md`
   - `e2e/AGENTS.md`
 - Root files should stay concise and link to nested docs instead of duplicating implementation detail.
 
@@ -34,12 +34,12 @@
   - compatibility constraints with ACP/Codex and any migration behavior.
 
 ## Local External Repo Config
-- Create `.agmente.paths` from `.agmente.paths.example` only if it does not already exist; otherwise keep your existing file and update keys as needed.
-- `.agmente.paths` is local-only and gitignored.
-- Use `.agmente.paths` as the single local path registry for ACP/Codex upstream checkouts.
+- Create `.acpcode.paths` from `.acpcode.paths.example` only if it does not already exist; otherwise keep your existing file and update keys as needed.
+- `.acpcode.paths` is local-only and gitignored.
+- Use `.acpcode.paths` as the single local path registry for ACP/Codex upstream checkouts.
 - Required variables:
-  - `AGMENTE_ACP_REPO`: local `agent-client-protocol` checkout.
-  - `AGMENTE_CODEX_REPO`: local `codex` checkout (must contain `codex-rs`).
+  - `ACPCODE_ACP_REPO`: local `agent-client-protocol` checkout.
+  - `ACPCODE_CODEX_REPO`: local `codex` checkout (must contain `codex-rs`).
 
 ## What this app does
 - Connect to an Agent Client Protocol (ACP) server over WebSocket.
@@ -47,10 +47,10 @@
 - Detect protocol after `initialize` and route requests to the matching client/runtime.
 - Keep ACP session flow and Codex thread/turn flow separate in app state and UI.
 
-## Protocol modes in Agmente
+## Protocol modes in ACP Code
 - **ACP mode** uses ACP RPC methods (`session/new`, `session/prompt`, `session/cancel`, optional `session/list` and `session/load`).
 - **Codex mode** uses app-server v2 methods (`thread/start`, `thread/resume`, `thread/list`, `turn/start`, `turn/interrupt`, `model/list`, `skills/list`).
-- **Detection**: if `initialize` returns a Codex `userAgent` (for example `codex/…`), Agmente switches to Codex mode for that server.
+- **Detection**: if `initialize` returns a Codex `userAgent` (for example `codex/…`), ACP Code switches to Codex mode for that server.
 
 ## Adding your own agent
 - Tap **Add Server**, then choose **ACP** or **Codex** in `ServerTypePicker`.
@@ -69,7 +69,7 @@
   - The app uses `thread/list` for summaries and `thread/resume` for full history.
   - `cwd`/timestamp metadata comes from `thread/list` when provided; if missing on older servers, cached values are preserved.
   - New prompts are sent with `turn/start`, and streaming updates are rendered from turn/item notifications.
-- **Persistence with `@rebornix/stdio-to-ws`**: when using `--persist`, the server keeps the child process alive during disconnections and buffers messages. Agmente no longer sends an `X-Client-Id` header (removed in the gateway work, PLAN 3.18): that header was the only credential for reattaching to a live agent (F-3). With the Agmente gateway the app subscribes to a session with `afterSeq` instead.
+- **Persistence with `@rebornix/stdio-to-ws`**: when using `--persist`, the server keeps the child process alive during disconnections and buffers messages. ACP Code no longer sends an `X-Client-Id` header (removed in the gateway work, PLAN 3.18): that header was the only credential for reattaching to a live agent (F-3). With the ACP Code gateway the app subscribes to a session with `afterSeq` instead.
 - Each session/thread opens a chat transcript view; tool calls are surfaced as system messages.
 
 ## Running Local Agents
@@ -80,8 +80,8 @@
 # If codex is installed in PATH
 codex app-server --listen ws://127.0.0.1:8788
 
-# Or from Codex source checkout (read `AGMENTE_CODEX_REPO` from `.agmente.paths`)
-cd <AGMENTE_CODEX_REPO>/codex-rs
+# Or from Codex source checkout (read `ACPCODE_CODEX_REPO` from `.acpcode.paths`)
+cd <ACPCODE_CODEX_REPO>/codex-rs
 cargo run -p codex-cli -- app-server --listen ws://127.0.0.1:8788
 ```
 
@@ -138,13 +138,13 @@ swift test --package-path /path/to/Agmente-oss/ACPClient
 ### App Tests (Xcode)
 List destinations and pick a simulator UDID:
 ```bash
-xcodebuild -project /path/to/Agmente-oss/Agmente.xcodeproj -scheme Agmente -showdestinations
+xcodebuild -project /path/to/Agmente-oss/ACPCode.xcodeproj -scheme ACPCode -showdestinations
 ```
 
 Run tests:
 ```bash
-xcodebuild -project /path/to/Agmente-oss/Agmente.xcodeproj \
-  -scheme Agmente \
+xcodebuild -project /path/to/Agmente-oss/ACPCode.xcodeproj \
+  -scheme ACPCode \
   -destination "platform=iOS Simulator,id=<SIMULATOR_UDID>" \
   test
 ```
@@ -268,7 +268,7 @@ pkill -9 -f "stdio-to-ws.*8765"
 #### Uninstalling the app from simulator
 **Always** remove the app from the simulator when done testing:
 ```bash
-xcrun simctl uninstall <SIMULATOR_UUID> com.example.Agmente
+xcrun simctl uninstall <SIMULATOR_UUID> com.example.ACP Code
 ```
 You can get the simulator UUID from `xcrun simctl list devices` or from the `list_sims` tool.
 
@@ -281,15 +281,15 @@ You can get the simulator UUID from `xcrun simctl list devices` or from the `lis
 | Step | Command | Why |
 |------|---------|-----|
 | 1. Stop agent server | `pkill -9 -f "stdio-to-ws.*8765"` | Frees port 8765 for future tests |
-| 2. Uninstall app | `xcrun simctl uninstall <UUID> com.example.Agmente` | Removes stale app state |
+| 2. Uninstall app | `xcrun simctl uninstall <UUID> com.example.ACPCode` | Removes stale app state |
 
 > 💡 **Tip**: Run these as the final step of every test, even if the test failed partway through.
 
 ---
 
 ## ACPClient reference
-- The iOS app uses the local `ACPClient` Swift package (`Agmente/ACPClient`) to speak ACP over WebSocket.
-- ACP protocol/spec upstream reference checkout: `AGMENTE_ACP_REPO/docs` (especially `AGMENTE_ACP_REPO/docs/protocol` and `AGMENTE_ACP_REPO/docs/schema`).
+- The iOS app uses the local `ACPClient` Swift package (`ACPCode/ACPClient`) to speak ACP over WebSocket.
+- ACP protocol/spec upstream reference checkout: `ACPCODE_ACP_REPO/docs` (especially `ACPCODE_ACP_REPO/docs/protocol` and `ACPCODE_ACP_REPO/docs/schema`).
 - Key types: `ACPClientConfiguration` (endpoint, auth token provider, ping), `ACPClient` (connect/send), and delegate callbacks for state and messages.
 - RPC entry points used in the app: `initialize`, `session/new`, `session/prompt`, `session/cancel`, and optional `session/list`.
 - If you extend the client, keep new RPC methods consistent with ACP JSON-RPC envelopes and add handlers to `ACPViewModel`.
@@ -297,15 +297,15 @@ You can get the simulator UUID from `xcrun simctl list devices` or from the `lis
 ## Capabilities sent on initialize
 - Filesystem read/write toggles (default on).
 - Terminal support toggle (default on).
-- Client info defaults: name `Agmente iOS`, version `0.1.0`.
+- Client info defaults: name `ACPCode iOS`, version `0.1.0`.
 
 ---
 
 ## Codex app-server reference (local source)
-- App-server implementation: `AGMENTE_CODEX_REPO/codex-rs/app-server`
-  - README for protocol flow and examples: `AGMENTE_CODEX_REPO/codex-rs/app-server/README.md`
-- Protocol types/schema: `AGMENTE_CODEX_REPO/codex-rs/app-server-protocol`
-  - v2 protocol definitions (Thread/Turn/Item): `AGMENTE_CODEX_REPO/codex-rs/app-server-protocol/src/protocol/v2.rs`
+- App-server implementation: `ACPCODE_CODEX_REPO/codex-rs/app-server`
+  - README for protocol flow and examples: `ACPCODE_CODEX_REPO/codex-rs/app-server/README.md`
+- Protocol types/schema: `ACPCODE_CODEX_REPO/codex-rs/app-server-protocol`
+  - v2 protocol definitions (Thread/Turn/Item): `ACPCODE_CODEX_REPO/codex-rs/app-server-protocol/src/protocol/v2.rs`
 - Schema generation (from installed Codex CLI):
   - `codex app-server generate-ts --out DIR`
   - `codex app-server generate-json-schema --out DIR`

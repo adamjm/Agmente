@@ -113,6 +113,9 @@ func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, n
 	if !isInsideRoots(real, s.roots) {
 		return nil, nil, invalidParams("path is outside the allowed project roots")
 	}
+	if rerr := projectAboveHome(filepath.Join(real, name)); rerr != nil {
+		return nil, nil, rerr
+	}
 	dir, err := os.OpenRoot(real)
 	if err != nil {
 		return nil, nil, invalidParams("path cannot be opened")

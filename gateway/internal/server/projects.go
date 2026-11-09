@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
 	"acpcode/gateway/internal/jsonv"
 	"acpcode/gateway/internal/store"
 )
@@ -150,6 +151,7 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 func with(who audit.Who, f audit.Fields) audit.Fields {
 	f.Identity, f.Device, f.Client, f.Conn = who.Identity, who.Device, who.Client, who.Conn
 	f.Source, f.Grant = who.Source, who.Grant // a connector prompt's lines name the source and grant (D-096)
+	f.Scope = who.Scope
 	return f
 }
 
@@ -209,6 +211,9 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 	if !isInsideRoots(real, s.roots) {
 		return nil, false, nil, invalidParams("path is outside the allowed project roots")
 	}
+	if rerr := projectAboveHome(real); rerr != nil {
+		return nil, false, nil, rerr
+	}
 	if existing, err := s.store.ProjectByPath(ctx, real); err != nil {
 		return nil, false, nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
 	} else if existing != nil {
@@ -216,6 +221,19 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 	}
 	p, rerr := s.registerProject(ctx, name, real, mode, deny, skip)
 	return p, false, nil, rerr
+}
+
+// projectAboveHome refuses a project folder that is the home folder or a folder above it. It is the
+// rule config.Validate applies to projects.roots, checked again at create. The error names the rule.
+func projectAboveHome(real string) *rpcError {
+	home, err := config.HomeFolder()
+	if err != nil {
+		return &rpcError{Code: rpcInternal, Message: "cannot read the home folder to check the project path"}
+	}
+	if config.AtOrAboveHome(real, home) {
+		return invalidParams("path is the home folder or a folder above it. Rule: no project root at or above $HOME; choose a folder inside your home folder")
+	}
+	return nil
 }
 
 // parseProjectOptions reads the optional defaultMode, denyPaths and watchSkip of a create request

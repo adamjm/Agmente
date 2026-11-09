@@ -902,4 +902,162 @@ final class ServerViewModelTests: XCTestCase {
         // Verify session is now materialized
         XCTAssertTrue(manager.isSessionMaterialized("orphaned-session-1"))
     }
+
+    // MARK: - Gateway list and load, and the connect deadline
+
+    /// A socket whose handshake never completes, as on a host that accepts the TCP connection and then stays silent.
+    private final class SilentWebSocketConnection: WebSocketConnection, @unchecked Sendable {
+        func connect(headers: [String : String]) async throws {
+            while true { try await Task.sleep(nanoseconds: 1_000_000_000) }
+        }
+
+        func send(text: String) async throws {}
+
+        func receive() async throws -> WebSocketEvent {
+            while true { try await Task.sleep(nanoseconds: 1_000_000_000) }
+        }
+
+        func close() async {}
+        func ping() async throws {}
+    }
+
+    private struct SilentWebSocketProvider: WebSocketProviding, @unchecked Sendable {
+        func makeConnection(url: URL) -> WebSocketConnection {
+            SilentWebSocketConnection()
+        }
+    }
+
+    /// A ServerViewModel on an initialized, recording connection. `gateway` sets the gateway identity the way
+    /// the initialize result does.
+    private func makeInitializedServer(gateway: Bool) async throws -> (RecordingWebSocketConnection, ServerViewModel, ACPClientManager) {
+        let connection = RecordingWebSocketConnection()
+        let client = ACPClient(
+            configuration: .init(endpoint: URL(string: "ws://localhost:1234")!, pingInterval: nil),
+            socketProvider: RecordingWebSocketProvider(connection: connection)
+        )
+        let service = ACPService(client: client)
+        try await service.connect()
+
+        let suiteName = "ServerViewModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let manager = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false)
+        manager.setServiceForTesting(service)
+
+        Task {
+            guard let initRequest = await self.waitForSentRequest(connection: connection, method: "initialize"),
+                  let initId = initRequest["id"] as? Int else { return }
+            var result: [String: ACP.Value] = [
+                "protocolVersion": .number(1),
+                "agentCapabilities": .object(["loadSession": .bool(true)])
+            ]
+            if gateway {
+                result["_meta"] = .object([
+                    "acpcode/gateway": .object([
+                        "version": .string("0.3.0-dev"),
+                        "extensions": .array([.string("projects"), .string("sessions")])
+                    ])
+                ])
+            }
+            try? self.enqueueResponse(id: initId, result: .object(result), on: connection)
+        }
+        let initialized = await manager.initializeAndWait(
+            payload: ACPInitializationPayload(clientName: "ACP Code iOS", clientVersion: "0.1.0")
+        )
+        XCTAssertTrue(initialized)
+
+        let serverId = UUID()
+        let storage = SessionStorage.inMemory()
+        storage.saveServer(makeStoredServer(id: serverId))
+        let serverViewModel = ServerViewModel(
+            id: serverId,
+            name: "Local",
+            scheme: "ws",
+            host: "localhost:1234",
+            token: "",
+            workingDirectory: "/tmp",
+            connectionManager: manager,
+            getService: { manager.service },
+            append: { _ in },
+            logWire: { _, _ in },
+            cacheDelegate: StorageBackedCacheDelegate(storage: storage),
+            storage: storage
+        )
+        serverViewModel.updateGatewayInfo(gateway
+            ? GatewayInfo(version: "0.3.0-dev", extensions: ["projects", "sessions"])
+            : nil)
+        return (connection, serverViewModel, manager)
+    }
+
+    func testConnectThatNeverCompletesFailsAfterTheDeadlineWithTheMessage() async throws {
+        let endpoint = URL(string: "wss://phone.example.test:8443")!
+        let client = ACPClient(
+            configuration: .init(endpoint: endpoint, pingInterval: nil),
+            socketProvider: SilentWebSocketProvider()
+        )
+        let suiteName = "ServerViewModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let manager = ACPClientManager(
+            defaults: defaults,
+            shouldStartNetworkMonitoring: false,
+            serviceFactory: { _, _ in ACPService(client: client) }
+        )
+        manager.connectDeadline = 0.2
+
+        let connected = await manager.connectAndWait(config: ACPConnectionConfig(endpoint: endpoint))
+
+        XCTAssertFalse(connected)
+        XCTAssertFalse(manager.isConnecting, "the spinner must stop")
+        guard case .failed(let error) = manager.connectionState else {
+            return XCTFail("expected a failed state, got \(manager.connectionState)")
+        }
+        XCTAssertEqual(
+            (error as? LocalizedError)?.errorDescription,
+            "Could not reach the gateway at phone.example.test. Check the network, then try again."
+        )
+    }
+
+    func testGatewayServerSendsNoSessionListAfterInitialize() async throws {
+        let (connection, serverViewModel, _) = try await makeInitializedServer(gateway: true)
+        var homeRefreshes = 0
+        serverViewModel.onGatewayHomeRefresh = { homeRefreshes += 1 }
+
+        serverViewModel.fetchSessionList()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertFalse(
+            hasSentRequest(connection: connection, method: "session/list"),
+            "a gateway refuses session/list with 'no project', so none is sent"
+        )
+        XCTAssertEqual(homeRefreshes, 1, "the list is reloaded through the gateway home instead")
+    }
+
+    func testGatewayServerSendsNoSessionLoadWhenSessionIsOpened() async throws {
+        let (connection, serverViewModel, _) = try await makeInitializedServer(gateway: true)
+        Task {
+            guard let subscribe = await self.waitForSentRequest(connection: connection, method: "_acpcode/sessions/subscribe"),
+                  let subscribeId = subscribe["id"] as? Int else { return }
+            try? self.enqueueResponse(id: subscribeId, result: .object(["headSeq": .int(0)]), on: connection)
+        }
+
+        serverViewModel.openSession("gateway-session-1")
+
+        let subscribe = await waitForSentRequest(connection: connection, method: "_acpcode/sessions/subscribe")
+        XCTAssertNotNil(subscribe, "opening a gateway session subscribes to it")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(
+            hasSentRequest(connection: connection, method: "session/load"),
+            "a gateway never gets session/load when a session is opened"
+        )
+    }
+
+    func testPlainServerStillSendsSessionList() async throws {
+        let (connection, serverViewModel, _) = try await makeInitializedServer(gateway: false)
+
+        serverViewModel.fetchSessionList()
+
+        let request = await waitForSentRequest(connection: connection, method: "session/list")
+        XCTAssertNotNil(request, "a plain ACP server keeps its session/list")
+    }
 }

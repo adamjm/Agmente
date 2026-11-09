@@ -93,16 +93,21 @@ final class GatewayConnectionsModel: ObservableObject {
         }
     }
 
-    /// Approves a pairing with the chosen scope. Returns true when the gateway made the grant.
+    /// Approves a pairing with the chosen scope, sending the row's code so the gateway can check it.
+    /// Returns true when the gateway made the grant. A row with no code is refused here and nothing is sent.
     @discardableResult
     func approve(_ pairing: GatewayConnectorPairing, choice: ScopeChoice) async -> Bool {
+        guard !pairing.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = GatewayError.missingPairingCode.message
+            return false
+        }
         guard let scope = scope(for: choice), !busy.contains(pairing.pairingId), let client = clientProvider() else { return false }
         let id = pairing.pairingId
         let mine = generation
         busy.insert(id)
         defer { if mine == generation { busy.remove(id) } }
         do {
-            _ = try await client.approveConnectorPairing(pairingId: id, scope: scope)
+            _ = try await client.approveConnectorPairing(pairingId: id, code: pairing.code, scope: scope)
             guard mine == generation else { return true }
             resolved.insert(id)
             pairings.removeAll { $0.pairingId == id }

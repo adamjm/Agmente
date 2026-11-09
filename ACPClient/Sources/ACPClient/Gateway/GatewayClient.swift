@@ -21,6 +21,11 @@ public enum GatewayError: Error, Equatable, Sendable {
     case disconnected
     /// The answer was not in the documented shape.
     case invalidResponse(String)
+    /// `_acpcode/sessions/create` (-32015): the session exists, but its first prompt was not sent. The id is
+    /// kept, so the caller can report the session instead of losing it.
+    case sessionCreatedPromptNotSent(sessionId: String, message: String)
+    /// A connector approval was asked for with no pairing code. Refused on the phone; nothing is sent (D-097).
+    case missingPairingCode
 
     /// The text for a person.
     public var message: String {
@@ -28,6 +33,8 @@ public enum GatewayError: Error, Equatable, Sendable {
         case .rpc(_, let message): return message
         case .disconnected: return "Not connected"
         case .invalidResponse(let what): return "Unexpected answer from the gateway (\(what))"
+        case .sessionCreatedPromptNotSent(_, let message): return message
+        case .missingPairingCode: return "This pairing has no code, so it was not approved. Refresh the list and try again."
         }
     }
 }
@@ -95,6 +102,11 @@ public struct GatewayClient: Sendable {
         } catch let error as ACPServiceError {
             switch error {
             case .rpc(_, let rpc): throw GatewayError.rpc(code: rpc.code, message: rpc.message)
+            case .rpcData(_, let rpc, let data):
+                if let refusal = GatewayError.promptNotSent(code: rpc.code, message: rpc.message, data: data) {
+                    throw refusal
+                }
+                throw GatewayError.rpc(code: rpc.code, message: rpc.message)
             case .disconnected: throw GatewayError.disconnected
             case .unsupportedMessage: throw GatewayError.invalidResponse("unsupported message")
             }

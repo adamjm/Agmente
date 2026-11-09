@@ -1,4 +1,4 @@
 interface:
   display_name: "Upstream Protocol Drift Watch"
   short_description: "Check ACP/Codex upstream changes for API and protocol regressions"
-  default_prompt: "Read .agmente.paths, always fetch upstream remotes first, compare HEAD..origin/main by default, inspect latest Codex and ACP changes, detect API/protocol/spec drift, score risk, and report unknown added methods, removed supported methods, and recommended follow-up tests."
+  default_prompt: "Read .acpcode.paths, always fetch upstream remotes first, compare HEAD..origin/main by default, inspect latest Codex and ACP changes, detect API/protocol/spec drift, score risk, and report unknown added methods, removed supported methods, and recommended follow-up tests."

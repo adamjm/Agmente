@@ -3,9 +3,9 @@ set -euo pipefail
 
 simulator_id="${1:?Usage: cleanup.sh <simulator_id> [port] [bundle_id]}"
 port="${2:-9000}"
-bundle_id="${3:-com.example.Agmente}"
+bundle_id="${3:-com.example.ACPCode}"
 
-pid_file="/tmp/agmente-e2e-stdio-to-ws-${port}.pid"
+pid_file="/tmp/acpcode-e2e-codex-stdio-to-ws-${port}.pid"
 
 if [[ -f "$pid_file" ]]; then
   pid="$(cat "$pid_file" || true)"

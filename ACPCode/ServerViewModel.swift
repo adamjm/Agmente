@@ -197,6 +197,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     /// Set by the app: called when the gateway does not know a session this app opens (D-106).
     var onGatewaySessionUnknown: ((String) -> Void)?
 
+    /// Set by the app: reloads the gateway home (projects and sessions). A gateway's session list is loaded this way.
+    var onGatewayHomeRefresh: (() -> Void)?
+
     /// The sessions this app created that the agent has not answered for yet. They are not on the gateway yet.
     var gatewayPendingSessionIds: Set<String> { pendingLocalSessions }
 
@@ -1169,6 +1172,16 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         startupLog(
             "ServerViewModel.fetchSessionList serverId=\(id.uuidString) force=\(force) canFetch=\(canFetch) connectionState=\(connectionState) isInitialized=\(isInitialized)"
         )
+        // A gateway refuses session/list ("no project"), so it never gets one. Its home loads projects and
+        // sessions through `_acpcode/projects/list` and `_acpcode/sessions/index`; the list is reloaded that way.
+        if isGatewayServer {
+            if connectionState == .connected {
+                onGatewayHomeRefresh?()
+            } else {
+                loadCachedSessions()
+            }
+            return
+        }
         guard canFetch else {
             loadCachedSessions()
             return
@@ -1205,6 +1218,11 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
 
     /// Send session/list for all working directories.
     private func sendSessionListForAllWorkingDirectories(service: ACPService) {
+        // A gateway never gets session/list (fetchSessionList routes it to the gateway home).
+        guard !isGatewayServer else {
+            startupLog("ServerViewModel.sendSessionListForAllWorkingDirectories skipped: gateway serverId=\(id.uuidString)")
+            return
+        }
         // The cwd depends on the gateway flag, so no list goes out before the initialize result is applied.
         // The response handler for initialize calls fetchSessionList again once it is.
         guard hasAppliedInitializeResult else {

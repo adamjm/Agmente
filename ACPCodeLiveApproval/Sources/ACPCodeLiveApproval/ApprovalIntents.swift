@@ -9,6 +9,22 @@ public enum ApprovalAnswerRouter {
     public static var handler: Handler?
 }
 
+/// Why an answer from the Live Activity or a Shortcut was not sent. The intents throw it, so the person sees
+/// the reason instead of a success that did nothing.
+public enum ApprovalAnswerError: Error, CustomLocalizedStringResourceConvertible {
+    /// The app is not running its answer path (the intent ran in another process, or the app has not launched).
+    case appNotReady
+    /// The gateway refused, or could not be reached, or the request is already closed.
+    case notSent
+
+    public var localizedStringResource: LocalizedStringResource {
+        switch self {
+        case .appNotReady: return "Open ACP Code to answer this request."
+        case .notSent: return "ACP Code could not send that answer. The request may already be closed."
+        }
+    }
+}
+
 /// Once, from the Dynamic Island or the Lock Screen. Requires an unlocked phone (authentication required).
 public struct ApproveOnceIntent: LiveActivityIntent {
     public static var title: LocalizedStringResource = "Allow once"
@@ -29,7 +45,8 @@ public struct ApproveOnceIntent: LiveActivityIntent {
     }
 
     public func perform() async throws -> some IntentResult {
-        _ = await ApprovalAnswerRouter.handler?(approvalId, optionId, .once)
+        guard let handler = ApprovalAnswerRouter.handler else { throw ApprovalAnswerError.appNotReady }
+        guard await handler(approvalId, optionId, .once) else { throw ApprovalAnswerError.notSent }
         return .result()
     }
 }
@@ -54,7 +71,8 @@ public struct DenyApprovalIntent: LiveActivityIntent {
     }
 
     public func perform() async throws -> some IntentResult {
-        _ = await ApprovalAnswerRouter.handler?(approvalId, optionId, .deny)
+        guard let handler = ApprovalAnswerRouter.handler else { throw ApprovalAnswerError.appNotReady }
+        guard await handler(approvalId, optionId, .deny) else { throw ApprovalAnswerError.notSent }
         return .result()
     }
 }

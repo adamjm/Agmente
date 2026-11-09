@@ -52,8 +52,35 @@ final class ApprovalIntentTests: XCTestCase {
         XCTAssertEqual(recorder.all.map { $0.1 }, ["cancel"])
     }
 
-    func testIntentWithoutAHandlerDoesNothingAndDoesNotThrow() async throws {
+    func testIntentWithoutAHandlerThrowsInsteadOfReportingSuccess() async {
         ApprovalAnswerRouter.handler = nil
-        _ = try await ApproveOnceIntent(approvalId: "a", optionId: "o").perform()
+        do {
+            _ = try await ApproveOnceIntent(approvalId: "a", optionId: "o").perform()
+            XCTFail("an answer that was not delivered must not report success")
+        } catch let error as ApprovalAnswerError {
+            XCTAssertEqual(error, .appNotReady)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        do {
+            _ = try await DenyApprovalIntent(approvalId: "a", optionId: "o").perform()
+            XCTFail("an answer that was not delivered must not report success")
+        } catch let error as ApprovalAnswerError {
+            XCTAssertEqual(error, .appNotReady)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+
+    func testARefusedAnswerThrows() async {
+        ApprovalAnswerRouter.handler = { _, _, _ in false }
+        do {
+            _ = try await ApproveOnceIntent(approvalId: "a", optionId: "o").perform()
+            XCTFail("a refused answer must not report success")
+        } catch let error as ApprovalAnswerError {
+            XCTAssertEqual(error, .notSent)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
     }
 }

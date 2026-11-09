@@ -4,7 +4,7 @@
 
 1. Start Codex bridge:
    - `scripts/start_codex.sh "codex app-server" 9000 latest`
-2. Build and run Agmente on simulator.
+2. Build and run ACP Code on simulator.
 
 ## Sanity Scenario
 

@@ -15,7 +15,7 @@ public enum ACPAgentErrorText {
     /// The text to show for an error from an ACP or gateway call.
     public static func text(for error: Error) -> String {
         switch error {
-        case let ACPServiceError.rpc(_, rpc):
+        case let ACPServiceError.rpc(_, rpc), let ACPServiceError.rpcData(_, rpc, _):
             if isAuthenticationRequired(code: rpc.code, message: rpc.message) { return authenticationRequired }
             return rpc.message
         case let GatewayError.rpc(code, message):

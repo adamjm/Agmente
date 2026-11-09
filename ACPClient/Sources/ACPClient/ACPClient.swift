@@ -1,9 +1,35 @@
 import Foundation
+import ACP
 
 public protocol ACPClientDelegate: AnyObject {
     func acpClient(_ client: ACPClient, didChangeState state: ACPConnectionState)
     func acpClient(_ client: ACPClient, didReceiveMessage message: ACPWireMessage)
+    /// Like `didReceiveMessage`, and also gets the JSON-RPC error's `data` when the message is an error
+    /// response that carried one (the SDK's `ACPError` does not keep it). The default forwards to the
+    /// two-argument method, so delegates that do not need the data do not implement this.
+    func acpClient(_ client: ACPClient, didReceiveMessage message: ACPWireMessage, errorData: ACP.Value?)
     func acpClient(_ client: ACPClient, didEncounterError error: Error)
+}
+
+public extension ACPClientDelegate {
+    func acpClient(_ client: ACPClient, didReceiveMessage message: ACPWireMessage, errorData: ACP.Value?) {
+        acpClient(client, didReceiveMessage: message)
+    }
+}
+
+/// Reads the `data` of a JSON-RPC error response from its raw bytes. The SDK's `ACPError` has no field for it.
+enum ACPRawErrorData {
+    private struct Envelope: Decodable {
+        let error: Inner?
+        struct Inner: Decodable {
+            let data: ACP.Value?
+        }
+    }
+
+    static func read(from raw: Data) -> ACP.Value? {
+        guard let envelope = try? JSONDecoder().decode(Envelope.self, from: raw) else { return nil }
+        return envelope.error?.data
+    }
 }
 
 public final class ACPClient {
@@ -173,7 +199,7 @@ public final class ACPClient {
         if buffer.isEmpty {
             // 1. Attempt to decode as a single JSON-RPC message
             if let message = try? ACPMessageBridge.decodeMessage(from: data, decoder: decoder) {
-                notifyMessage(message)
+                notifyMessage(message, raw: data)
                 return
             }
 
@@ -200,7 +226,9 @@ public final class ACPClient {
                     
                     if allValid {
                         logger.info("Received \(messages.count) newline-delimited messages")
-                        messages.forEach(notifyMessage)
+                        for (index, message) in messages.enumerated() {
+                            notifyMessage(message, raw: lines[index].data(using: .utf8))
+                        }
                         return
                     }
                 }
@@ -218,7 +246,7 @@ public final class ACPClient {
             buffer = remaining
 
             if let message = try? ACPMessageBridge.decodeMessage(from: messageData, decoder: decoder) {
-                notifyMessage(message)
+                notifyMessage(message, raw: messageData)
             } else {
                 logger.error("Failed to decode extracted JSON message: \(String(data: messageData, encoding: .utf8) ?? "nil")")
                 notifyError(ACPClientError.decodingFailed)
@@ -291,11 +319,16 @@ public final class ACPClient {
         }
     }
 
-    private func notifyMessage(_ message: ACPWireMessage) {
+    private func notifyMessage(_ message: ACPWireMessage, raw: Data?) {
         let delegate = self.delegate
+        // Only an error response can carry the `data` the gateway sends with a refusal.
+        var errorData: ACP.Value?
+        if case .response(let response) = message, response.errorValue != nil, let raw {
+            errorData = ACPRawErrorData.read(from: raw)
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            delegate?.acpClient(self, didReceiveMessage: message)
+            delegate?.acpClient(self, didReceiveMessage: message, errorData: errorData)
         }
     }
 

@@ -1,11 +1,11 @@
 ---
-description: 'Agmente iOS development agent with VS Code terminal and Xcode MCP integration'
+description: 'ACP Code iOS development agent with VS Code terminal and Xcode MCP integration'
 tools: ['execute', 'read', 'edit', 'search', 'web', 'xcodebuildmcp/*', 'agent', 'todo']
 ---
 
-# Beast Agent for Agmente Development
+# Beast Agent for ACP Code Development
 
-You are an expert iOS developer working on the Agmente app. See [claude.md](../../claude.md) for full project documentation.
+You are an expert iOS developer working on the ACP Code app. See [claude.md](../../claude.md) for full project documentation.
 
 ## Critical Rules for VS Code Terminal Usage
 
@@ -80,4 +80,4 @@ pkill -9 -f "stdio-to-ws.*8765"
 
 After every test session:
 1. Stop agent server: `pkill -9 -f "stdio-to-ws.*8765"`
-2. Uninstall app: `xcrun simctl uninstall <UUID> com.example.Agmente`
+2. Uninstall app: `xcrun simctl uninstall <UUID> com.example.ACPCode`

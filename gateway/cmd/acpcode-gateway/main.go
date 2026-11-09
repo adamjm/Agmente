@@ -1,7 +1,8 @@
 // Command acpcode-gateway is the authenticated ACP gateway (SPEC 6.4).
 //
 //	acpcode-gateway --config <file> [--dry-run]
-//	acpcode-gateway new-token <device-id> <identity>
+//	acpcode-gateway new-token <device-id> <identity> [--scope full|intent|connector]
+//	acpcode-gateway --config <file> revoke-token <device-id>
 //	acpcode-gateway --config <file> mcp-server list|put|delete [id]   (the gateway's MCP list, D-107)
 package main
 
@@ -16,6 +17,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -26,11 +29,17 @@ import (
 	"acpcode/gateway/internal/store"
 )
 
-const usage = "Usage: acpcode-gateway --config <file> [--dry-run]\n       acpcode-gateway new-token <device-id> <identity>\n"
+const usage = "Usage: acpcode-gateway --config <file> [--dry-run]\n       acpcode-gateway new-token <device-id> <identity> [--scope full|intent|connector]\n       acpcode-gateway --config <file> revoke-token <device-id>\n"
+
+// pidFileName is the running gateway's process id, in the state directory. revoke-token signals it.
+const pidFileName = "gateway.pid"
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "new-token" {
 		os.Exit(newToken(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 3 && os.Args[1] == "--config" && os.Args[3] == "revoke-token" {
+		os.Exit(revokeTokenCommand(os.Args[2], os.Args[4:], os.Stdout, os.Stderr))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "--config" && len(os.Args) > 3 && os.Args[3] == "mcp-server" {
 		os.Exit(mcpServerCommand(append(os.Args[1:3:3], os.Args[4:]...), os.Stdin, os.Stdout, os.Stderr))
@@ -75,6 +84,11 @@ func run(args []string) int {
 
 	logger := audit.New(os.Stderr)
 	srv := server.New(cfg, logger, db)
+	// A damaged revoked-token list stops the start: a revocation must never be lost silently.
+	if err := srv.LoadRevoked(); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot read the revoked-token list: %v\n", err)
+		return 1
+	}
 	ln, err := srv.Listen()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot listen: %v\n", err)
@@ -86,8 +100,19 @@ func run(args []string) int {
 	}
 	logger.Log("listening", audit.Fields{Reason: ln.Addr().String()})
 
+	pidPath := filepath.Join(cfg.StateDir, pidFileName)
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+		logger.Log("pid_file_failed", audit.Fields{Reason: err.Error()})
+	} else {
+		defer os.Remove(pidPath)
+	}
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	// SIGHUP reloads the revoked-token list (token_revoke.go); it does not stop the gateway.
+	reloads := make(chan os.Signal, 1)
+	signal.Notify(reloads, syscall.SIGHUP)
+	go srv.ReloadOnSIGHUP(reloads)
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 	select {
@@ -194,10 +219,32 @@ func filesSummary(f *config.Files) any {
 	return out
 }
 
-// newToken prints a new random token once, and the config entry that holds only its hash.
+// newToken prints a new random token once, and the config entry that holds only its hash. The
+// entry names the token's scope; full is the default.
 func newToken(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 2 || args[0] == "" || args[1] == "" {
-		fmt.Fprint(stderr, "Usage: acpcode-gateway new-token <device-id> <identity>\n")
+	const usageLine = "Usage: acpcode-gateway new-token <device-id> <identity> [--scope full|intent|connector]\n"
+	scope := config.ScopeFull
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--scope" && i+1 < len(args):
+			scope = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--scope="):
+			scope = strings.TrimPrefix(a, "--scope=")
+		case strings.HasPrefix(a, "-"):
+			fmt.Fprint(stderr, usageLine)
+			return 2
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) != 2 || positional[0] == "" || positional[1] == "" {
+		fmt.Fprint(stderr, usageLine)
+		return 2
+	}
+	if !slices.Contains(config.TokenScopes, scope) {
+		fmt.Fprintf(stderr, "--scope must be full, intent or connector (got %q)\n", scope)
 		return 2
 	}
 	raw := make([]byte, 32) // 256 bits
@@ -210,9 +257,72 @@ func newToken(args []string, stdout, stderr io.Writer) int {
 		ID       string `json:"id"`
 		Identity string `json:"identity"`
 		SHA256   string `json:"sha256"`
-	}{args[0], args[1], server.HashToken(token)})
+		Scope    string `json:"scope"`
+	}{positional[0], positional[1], server.HashToken(token), scope})
 	fmt.Fprintln(stderr, "Copy the token into the app now. It is not stored anywhere and is shown once.")
 	fmt.Fprintf(stdout, "token: %s\n", token)
 	fmt.Fprintf(stdout, "config entry: %s\n", entry)
 	return 0
+}
+
+// revokeTokenCommand adds a token id to the revoked-token list in the state directory, then signals
+// a running gateway to reload it (SIGHUP). The token's open connections close, and its next request
+// is refused. With no running gateway the list is read at the next start.
+func revokeTokenCommand(configPath string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 || args[0] == "" {
+		fmt.Fprint(stderr, "Usage: acpcode-gateway --config <file> revoke-token <device-id>\n")
+		return 2
+	}
+	id := args[0]
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		fmt.Fprintln(stderr, err.Error())
+		return 1
+	}
+	known := false
+	for _, t := range cfg.Tokens {
+		known = known || t.ID == id
+	}
+	if !known {
+		fmt.Fprintf(stderr, "no token with id %q in %s\n", id, configPath)
+		return 1
+	}
+	ids, err := server.ReadRevokedTokens(cfg.StateDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "cannot read the revoked-token list: %v\n", err)
+		return 1
+	}
+	if !slices.Contains(ids, id) {
+		ids = append(ids, id)
+	}
+	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+		fmt.Fprintf(stderr, "cannot create the state directory: %v\n", err)
+		return 1
+	}
+	if err := server.WriteRevokedTokens(cfg.StateDir, ids); err != nil {
+		fmt.Fprintf(stderr, "cannot write the revoked-token list: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Revoked token %q. Its open connections close and its next request is refused.\n", id)
+	if pid, ok := runningGateway(cfg.StateDir); ok {
+		if err := syscall.Kill(pid, syscall.SIGHUP); err == nil {
+			fmt.Fprintf(stdout, "Told the running gateway (pid %d) to reload the list.\n", pid)
+			return 0
+		}
+	}
+	fmt.Fprintln(stdout, "No running gateway was told. It reads the list at its next start, or on SIGHUP.")
+	return 0
+}
+
+// runningGateway reads the pid file and reports the pid when that process is alive.
+func runningGateway(stateDir string) (int, bool) {
+	data, err := os.ReadFile(filepath.Join(stateDir, pidFileName))
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 1 {
+		return 0, false
+	}
+	return pid, syscall.Kill(pid, 0) == nil
 }

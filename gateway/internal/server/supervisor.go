@@ -40,6 +40,7 @@ type pendingRequest struct {
 	method  string
 	session string            // load and resume: the session to record on success
 	turn    string            // session/prompt: the session whose turn this is (event log, D-027)
+	turnID  string            // session/prompt: the gateway's id for the turn, given to the caller once the agent accepts it
 	sid     string            // set_mode, delete and close: the session they change
 	modeID  string            // set_mode: the mode asked for
 	reload  *reload           // a load or resume the gateway let through after a restart (FR-20)
@@ -664,6 +665,17 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			_, _ = a.write(proc, append(load.Marshal(), '\n'))
 			continue
 		}
+		if method == "session/prompt" && sid != "" && a.turnPendingLocked(sid) {
+			// One turn at a time per session. This check and the insert of the pending entry below
+			// are in the same hold of a.mu, so two prompts cannot both pass it (sessions_create.go).
+			running := a.turnRequestLocked(sid).turnID
+			a.mu.Unlock()
+			if !isRequest {
+				a.s.audit.Log("dropped", with(c.who, audit.Fields{Method: method, Project: a.id}))
+				return nil // a notification has no answer to refuse with
+			}
+			return busyError(sid, running)
+		}
 		a.touchLocked(key)
 		a.users[c] = struct{}{}
 		if reopen != "" {
@@ -681,7 +693,7 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 		}
 		var rl *reload
 		var turnReq *pendingRequest
-		turn := ""
+		turn, turnID := "", ""
 		if isRequest {
 			if reopen != "" {
 				rl = &reload{c: c, done: make(chan struct{})}
@@ -689,8 +701,9 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			}
 			if method == "session/prompt" {
 				turn = sid
+				turnID = newTurnID()
 			}
-			p := &pendingRequest{c: c, id: msg.Get("id"), method: method, session: reopen, turn: turn, reload: rl}
+			p := &pendingRequest{c: c, id: msg.Get("id"), method: method, session: reopen, turn: turn, turnID: turnID, reload: rl}
 			if turn != "" {
 				turnReq = p
 			}
@@ -719,9 +732,12 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			a.logTurnStarted(turn, msg.Get("params").Get("prompt"))
 			a.snapshotTurnStart(turn) // before the agent sees the prompt, so it cannot change files first (D-036)
 		}
-		full, _ := a.write(proc, append(msg.Marshal(), '\n')) // after an exit, the exit path answers
+		full, werr := a.write(proc, append(msg.Marshal(), '\n')) // after an exit, the exit path answers
 		if turnReq != nil {
 			a.promptWritten(turnReq, proc, key) // D-106: a cancel asked for meanwhile goes after the prompt
+		}
+		if werr == nil && turnID != "" {
+			notifyAccepted(c, turnID) // the agent has the prompt: a gateway call may now answer its caller
 		}
 		if full {
 			a.s.audit.Log("backpressure", with(c.who, audit.Fields{Dir: "in", Project: a.id}))

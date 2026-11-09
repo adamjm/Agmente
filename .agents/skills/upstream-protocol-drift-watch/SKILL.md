@@ -1,6 +1,6 @@
 ---
 name: upstream-protocol-drift-watch
-description: Dynamically inspect ACP and Codex upstream repos using .agmente.paths, detect protocol/API/spec drift, and produce a risk-scored regression report. Use when checking for new APIs, method changes, or protocol/spec changes after upstream updates.
+description: Dynamically inspect ACP and Codex upstream repos using .acpcode.paths, detect protocol/API/spec drift, and produce a risk-scored regression report. Use when checking for new APIs, method changes, or protocol/spec changes after upstream updates.
 ---
 
 # Upstream Protocol Drift Watch
@@ -10,7 +10,7 @@ description: Dynamically inspect ACP and Codex upstream repos using .agmente.pat
 Catch upstream ACP/Codex changes early, especially:
 - new RPC/API methods,
 - removed or renamed methods,
-- protocol/spec file changes that can cause Agmente regressions.
+- protocol/spec file changes that can cause ACP Code regressions.
 
 This skill is dynamic by default: always read current local repos and refs at runtime.
 
@@ -34,11 +34,11 @@ git -C <repo> fetch --all --prune
 
 1. Read repo-local path registry:
 ```bash
-cat .agmente.paths
+cat .acpcode.paths
 ```
 2. Resolve:
-- `AGMENTE_CODEX_REPO`
-- `AGMENTE_ACP_REPO`
+- `ACPCODE_CODEX_REPO`
+- `ACPCODE_ACP_REPO`
 3. Validate both paths are git repos before scanning.
 
 ## Dynamic Scan Workflow
@@ -102,7 +102,7 @@ Always return:
 5. Recommended follow-up tests:
 - `swift test --package-path AppServerClient`
 - `swift test --package-path ACPClient`
-- targeted `AgmenteTests` protocol suites.
+- targeted `ACPCodeTests` protocol suites.
 
 ## Guardrails
 

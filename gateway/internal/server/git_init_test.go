@@ -390,7 +390,7 @@ func TestSecretScanFindsAPrivateKeyHeaderInContent(t *testing.T) {
 	rec := &recordingRunner{runner: s.runner}
 	s.runner = rec
 	seedCredential(t, s, db, "github.com", "tok-abcdefghijklmnop")
-	pushRepo(t, s, db, root, "https://github.com/owner/repo.git", map[string]string{"notes.txt": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n"})
+	pushRepo(t, s, db, root, "https://github.com/owner/repo.git", map[string]string{"notes.txt": "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nabc\n"})
 	_, rerr := s.gitPush(context.Background(), audit.Who{Identity: "owner"}, pushParams(t, nil))
 	if rerr == nil || rerr.Code != rpcInvalidParams {
 		t.Fatalf("want a refusal for a key header, got %+v", rerr)

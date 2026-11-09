@@ -11,10 +11,16 @@ public extension GatewayClient {
     }
 
     /// `_acpcode/connector/approve`: makes a grant for the pairing with `scope` and returns its id.
-    /// Approval needs a person's tap; the gateway checks the code shown on the phone against the page.
+    /// Approval needs a person's tap. `code` is the six-digit code on the pairing row; the gateway refuses a
+    /// wrong one and makes no grant. An empty code is refused here, before anything is sent (D-097).
     @discardableResult
-    func approveConnectorPairing(pairingId: String, scope: GatewayConnectorScope) async throws -> String {
-        let result = try await call("_acpcode/connector/approve", .object(["pairingId": .string(pairingId), "scope": scope.value]))
+    func approveConnectorPairing(pairingId: String, code: String, scope: GatewayConnectorScope) async throws -> String {
+        guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw GatewayError.missingPairingCode }
+        let result = try await call("_acpcode/connector/approve", .object([
+            "pairingId": .string(pairingId),
+            "scope": scope.value,
+            "code": .string(code),
+        ]))
         guard let grantId = result["grantId"]?.stringValue else { throw GatewayError.invalidResponse("grantId") }
         return grantId
     }

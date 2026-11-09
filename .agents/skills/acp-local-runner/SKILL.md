@@ -1,6 +1,6 @@
 ---
 name: acp-local-runner
-description: Run and debug Agmente ACP end-to-end scenarios from the repo-owned e2e/scenarios/acp specs. Use when validating ACP websocket compatibility, session creation, cwd handling, reconnect flows, or reproducing ACP-only UI failures against a real local ACP backend.
+description: Run and debug ACP Code ACP end-to-end scenarios from the repo-owned e2e/scenarios/acp specs. Use when validating ACP websocket compatibility, session creation, cwd handling, reconnect flows, or reproducing ACP-only UI failures against a real local ACP backend.
 ---
 
 # ACP Local Runner
@@ -38,7 +38,7 @@ For `run`, `execute`, `validate`, or `reproduce` requests, this skill is execute
 - Report backend, endpoint, simulator target, scenario path, and pass/fail status.
 - On failure, report the concrete broken step and the most likely root cause.
 - Always stop the backend if this run started it.
-- Always uninstall Agmente from the simulator unless the user explicitly asks to preserve state.
+- Always uninstall ACP Code from the simulator unless the user explicitly asks to preserve state.
 
 ## Guardrails
 

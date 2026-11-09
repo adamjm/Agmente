@@ -18,6 +18,12 @@ extension AppViewModel {
     }
 
     func handleGatewayEvent(_ params: ACP.Value?) {
+        // A permission request for a session that is not on screen (a session a Shortcut started) still needs to
+        // reach the approval inbox and the Live Activity, so the inbox is refreshed for it too.
+        if let event = GatewayEvent.parse(params), event.sessionId != sessionId,
+           case .permissionRequest = event.action {
+            Task { await gatewayApprovals.refresh() }
+        }
         guard let event = GatewayEvent.parse(params),
               let serverId = selectedServerId,
               let server = selectedServerViewModel,

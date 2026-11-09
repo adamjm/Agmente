@@ -11,8 +11,8 @@ enabledWorkflows:
 debug: true
 sentryDisabled: true
 sessionDefaults:
-  projectPath: Agmente.xcodeproj
-  scheme: Agmente
+  projectPath: ACPCode.xcodeproj
+  scheme: ACPCode
   simulatorName: iPhone 17 Pro Max
   simulatorId: BE205EA8-B26C-44C2-B52B-B49141678273
   simulatorPlatform: iOS Simulator

@@ -47,35 +47,67 @@ final class GatewayConnectorClientTests: XCTestCase {
         let transport = ConnectorFakeTransport()
         transport.results["_acpcode/connector/approve"] = .object(["grantId": .string("g1")])
         let session = GatewaySession(sessionId: "s9", projectId: "proj-a", title: "Fix", status: .idle, lastActivity: "2026-11-07T10:00:00.000Z", headSeq: 1, unread: 0)
-        let grantId = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .oneSession(session))
+        let grantId = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", code: "482913", scope: .oneSession(session))
         XCTAssertEqual(grantId, "g1")
         XCTAssertEqual(transport.calls.map(\.method), ["_acpcode/connector/approve"])
         XCTAssertEqual(transport.calls.first?.params, .object([
             "pairingId": .string("p1"),
             "scope": .object(["projects": .array([.string("proj-a")]), "sessions": .array([.string("s9")])]),
+            "code": .string("482913"),
         ]))
+    }
+
+    func testApproveRequestCarriesTheCode() async throws {
+        let transport = ConnectorFakeTransport()
+        transport.results["_acpcode/connector/approve"] = .object(["grantId": .string("g3")])
+        _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", code: "000111", scope: .allProjects)
+        XCTAssertEqual(transport.calls.first?.params?["code"], .string("000111"))
+        XCTAssertEqual(transport.calls.first?.params?["pairingId"], .string("p1"))
     }
 
     func testApproveAllProjectsSendsTheWordAllAndNoSessionList() async throws {
         let transport = ConnectorFakeTransport()
         transport.results["_acpcode/connector/approve"] = .object(["grantId": .string("g2")])
-        let grantId = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .allProjects)
+        let grantId = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", code: "482913", scope: .allProjects)
         XCTAssertEqual(grantId, "g2")
         XCTAssertEqual(transport.calls.first?.params, .object([
             "pairingId": .string("p1"),
             "scope": .object(["projects": .string("all")]),
+            "code": .string("482913"),
         ]))
+    }
+
+    func testAnEmptyCodeIsRefusedLocallyWithNothingSent() async {
+        let transport = ConnectorFakeTransport()
+        transport.results["_acpcode/connector/approve"] = .object(["grantId": .string("g4")])
+        for code in ["", "   "] {
+            do {
+                _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", code: code, scope: .allProjects)
+                XCTFail("an empty code must not be sent")
+            } catch {
+                XCTAssertEqual(error as? GatewayError, .missingPairingCode)
+                XCTAssertEqual((error as? GatewayError)?.message, "This pairing has no code, so it was not approved. Refresh the list and try again.")
+            }
+        }
+        XCTAssertTrue(transport.calls.isEmpty, "no request reaches the gateway for an empty code")
     }
 
     func testApproveWithoutAGrantIdIsNamed() async {
         let transport = ConnectorFakeTransport()
         transport.results["_acpcode/connector/approve"] = .object([:])
         do {
-            _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .allProjects)
+            _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", code: "482913", scope: .allProjects)
             XCTFail("expected an error")
         } catch {
             XCTAssertEqual(error as? GatewayError, .invalidResponse("grantId"))
         }
+    }
+
+    func testDenySendsNoCode() async throws {
+        let transport = ConnectorFakeTransport()
+        try await GatewayClient(transport).denyConnectorPairing(pairingId: "p3")
+        XCTAssertEqual(transport.calls.first?.params, .object(["pairingId": .string("p3")]))
+        XCTAssertNil(transport.calls.first?.params?["code"], "deny takes no code")
     }
 
     func testDenySendsThePairingIdAndNeedsNoAnswerBody() async throws {
@@ -127,7 +159,7 @@ final class GatewayConnectorClientTests: XCTestCase {
         transport.error = ACPServiceError.rpc(id: .number(4), error: .serverError(code: -32001, message: "pairing already closed"))
         let calls: [(String, () async throws -> Void)] = [
             ("pending", { _ = try await GatewayClient(transport).connectorPending() }),
-            ("approve", { _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", scope: .allProjects) }),
+            ("approve", { _ = try await GatewayClient(transport).approveConnectorPairing(pairingId: "p1", code: "482913", scope: .allProjects) }),
             ("deny", { try await GatewayClient(transport).denyConnectorPairing(pairingId: "p1") }),
             ("grants", { _ = try await GatewayClient(transport).connectorGrants() }),
             ("revoke", { try await GatewayClient(transport).revokeConnectorGrant(grantId: "g1") }),

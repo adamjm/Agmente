@@ -93,6 +93,7 @@ final class ConnectorConnectionsModelTests: XCTestCase {
         XCTAssertEqual(fake.params(of: "_acpcode/connector/approve"), [.object([
             "pairingId": .string("p1"),
             "scope": .object(["projects": .array([.string("p2")]), "sessions": .array([.string("s-new")])]),
+            "code": .string("482913"),
         ])])
         XCTAssertTrue(model.pairings.isEmpty, "the approved row leaves the list")
     }
@@ -124,7 +125,60 @@ final class ConnectorConnectionsModelTests: XCTestCase {
         XCTAssertEqual(fake.params(of: "_acpcode/connector/approve"), [.object([
             "pairingId": .string("p1"),
             "scope": .object(["projects": .string("all")]),
+            "code": .string("482913"),
         ])])
+    }
+
+    func testTheApproveRequestCarriesTheCode() async {
+        let fake = ConnectionsFakeGateway()
+        fake.pairings = [pairingValue("p1", code: "705318")]
+        fake.sessions = [sessionValue("s1", project: "p1", activity: "2026-11-07T09:00:00.000Z")]
+        let model = makeModel(fake)
+        await model.refresh()
+        await model.loadSessions()
+        await model.approve(model.pairings[0], choice: .oneSession)
+        let sent = fake.params(of: "_acpcode/connector/approve").first.flatMap { $0 }
+        XCTAssertEqual(sent?["code"], .string("705318"))
+    }
+
+    func testAnEmptyCodeIsRefusedLocallyWithNothingSent() async {
+        let fake = ConnectionsFakeGateway()
+        fake.pairings = [pairingValue("p1", code: "")]
+        fake.sessions = [sessionValue("s1", project: "p1", activity: "2026-11-07T09:00:00.000Z")]
+        let model = makeModel(fake)
+        await model.refresh()
+        await model.loadSessions()
+        let approved = await model.approve(model.pairings[0], choice: .oneSession)
+        XCTAssertFalse(approved)
+        XCTAssertEqual(model.errorMessage, "This pairing has no code, so it was not approved. Refresh the list and try again.")
+        XCTAssertTrue(fake.params(of: "_acpcode/connector/approve").isEmpty, "nothing is sent for an empty code")
+        XCTAssertEqual(model.pairings.map(\.pairingId), ["p1"], "the row stays")
+    }
+
+    func testAWrongCodeKeepsTheRowAndShowsTheGatewayText() async {
+        let fake = ConnectionsFakeGateway()
+        fake.pairings = [pairingValue("p1", code: "482913")]
+        fake.sessions = [sessionValue("s1", project: "p1", activity: "2026-11-07T09:00:00.000Z")]
+        let model = makeModel(fake)
+        await model.refresh()
+        await model.loadSessions()
+        fake.errors["_acpcode/connector/approve"] = ACPServiceError.rpc(id: .number(2), error: .serverError(code: -32001, message: "the code does not match"))
+        let approved = await model.approve(model.pairings[0], choice: .oneSession)
+        XCTAssertFalse(approved)
+        XCTAssertEqual(model.errorMessage, "the code does not match")
+        XCTAssertEqual(model.pairings.map(\.pairingId), ["p1"], "the row is kept so the person can check the code again")
+        XCTAssertTrue(model.grants.isEmpty, "no grant is shown for a refused code")
+    }
+
+    func testDenySendsNoCode() async {
+        let fake = ConnectionsFakeGateway()
+        fake.pairings = [pairingValue("p1")]
+        let model = makeModel(fake)
+        await model.refresh()
+        await model.deny(model.pairings[0])
+        XCTAssertEqual(fake.params(of: "_acpcode/connector/deny"), [.object(["pairingId": .string("p1")])])
+        let sent = fake.params(of: "_acpcode/connector/deny").first.flatMap { $0 }
+        XCTAssertNil(sent?["code"], "deny takes no code")
     }
 
     func testOneSessionWithNoSessionToPickSendsNothing() async {

@@ -12,12 +12,12 @@ Required:
 
 Optional:
   --start-codex-cmd <value>  Command to start codex app-server for this run
-  --project <value>          Xcode project path (default: <repo-root>/Agmente.xcodeproj)
-  --scheme <value>           Xcode scheme (default: Agmente)
-  --test-id <value>          Test identifier (default: AgmenteUITests/AgmenteUITests/testCodexDirectWebSocketConnectInitializeAndSessionFlow)
-  --bundle-id <value>        App bundle id for uninstall (default: com.example.Agmente)
+  --project <value>          Xcode project path (default: <repo-root>/ACPCode.xcodeproj)
+  --scheme <value>           Xcode scheme (default: ACPCode)
+  --test-id <value>          Test identifier (default: ACPCodeUITests/ACPCodeUITests/testCodexDirectWebSocketConnectInitializeAndSessionFlow)
+  --bundle-id <value>        App bundle id for uninstall (default: com.example.ACPCode)
   --workdir <value>          Working directory for xcodebuild (default: <repo-root>)
-  --xcodebuild-log <value>   xcodebuild log path (default: ${TMPDIR:-/tmp}/agmente_codex_e2e_xcodebuild.log)
+  --xcodebuild-log <value>   xcodebuild log path (default: ${TMPDIR:-/tmp}/acpcode_codex_e2e_xcodebuild.log)
   --codex-log <value>        Codex server log path (default: ${TMPDIR:-/tmp}/codex-local-app-server-e2e.log)
   --skip-uninstall           Skip simulator app uninstall during cleanup
   --shutdown-sim             Shutdown simulator during cleanup
@@ -34,14 +34,14 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/../../../.." && pwd)"
 TMP_BASE="${TMPDIR:-/tmp}"
 
-PROJECT="${REPO_ROOT}/Agmente.xcodeproj"
-SCHEME="Agmente"
-TEST_ID="AgmenteUITests/AgmenteUITests/testCodexDirectWebSocketConnectInitializeAndSessionFlow"
-BUNDLE_ID="com.example.Agmente"
+PROJECT="${REPO_ROOT}/ACPCode.xcodeproj"
+SCHEME="ACPCode"
+TEST_ID="ACPCodeUITests/ACPCodeUITests/testCodexDirectWebSocketConnectInitializeAndSessionFlow"
+BUNDLE_ID="com.example.ACPCode"
 WORKDIR="${REPO_ROOT}"
-XCODEBUILD_LOG="${TMP_BASE}/agmente_codex_e2e_xcodebuild.log"
+XCODEBUILD_LOG="${TMP_BASE}/acpcode_codex_e2e_xcodebuild.log"
 CODEX_LOG="${TMP_BASE}/codex-local-app-server-e2e.log"
-E2E_CONFIG_FILE="${TMP_BASE}/agmente_codex_e2e_config.env"
+E2E_CONFIG_FILE="${TMP_BASE}/acpcode_codex_e2e_config.env"
 
 ENDPOINT=""
 UDID=""
@@ -202,17 +202,17 @@ if (( SKIP_UNINSTALL == 0 )); then
 fi
 
 cat > "$E2E_CONFIG_FILE" <<EOF
-AGMENTE_E2E_CODEX_ENABLED=1
-AGMENTE_E2E_CODEX_ENDPOINT=$ENDPOINT
+ACPCODE_E2E_CODEX_ENABLED=1
+ACPCODE_E2E_CODEX_ENDPOINT=$ENDPOINT
 EOF
 
 echo "Running Codex UI E2E test..."
 set +e
 (
   cd "$WORKDIR"
-  AGMENTE_E2E_CODEX_ENABLED=1 \
-  AGMENTE_E2E_CODEX_ENDPOINT="$ENDPOINT" \
-  AGMENTE_E2E_CODEX_CONFIG_PATH="$E2E_CONFIG_FILE" \
+  ACPCODE_E2E_CODEX_ENABLED=1 \
+  ACPCODE_E2E_CODEX_ENDPOINT="$ENDPOINT" \
+  ACPCODE_E2E_CODEX_CONFIG_PATH="$E2E_CONFIG_FILE" \
   xcodebuild \
     -project "$PROJECT" \
     -scheme "$SCHEME" \

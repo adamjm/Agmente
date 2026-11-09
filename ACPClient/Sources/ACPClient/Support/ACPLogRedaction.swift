@@ -4,8 +4,13 @@ import Foundation
 /// it, so a message whose params carry a secret is logged by its method name only (D-105: a token is
 /// never logged).
 public enum ACPLogRedaction {
-    /// Methods whose params hold a secret.
-    public static let secretMethods: [String] = ["_acpcode/git/credentials/set"]
+    /// Methods whose params hold a secret or a person's prompt text. A Shortcut's prompt (`sessions/create`,
+    /// `sessions/prompt`) is private to the person, so it is logged by method name only, as a token is.
+    public static let secretMethods: [String] = [
+        "_acpcode/git/credentials/set",
+        "_acpcode/sessions/create",
+        "_acpcode/sessions/prompt",
+    ]
 
     /// The text to log for one outgoing message. JSON may escape the slashes of a method name, so both
     /// forms are checked.

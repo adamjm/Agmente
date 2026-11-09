@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 
 	"acpcode/gateway/internal/audit"
+	"acpcode/gateway/internal/config"
 	"acpcode/gateway/internal/connector"
 	"acpcode/gateway/internal/jsonv"
 	"acpcode/gateway/internal/store"
@@ -142,7 +143,7 @@ func (b *connectorBridge) StartPrompt(ctx context.Context, grantID, sid, text st
 	}
 	t := &connectorTurn{s: s, pid: pid, sid: sid, reqID: reqID, done: make(chan struct{})}
 	t.c = &client{
-		who:     audit.Who{Source: connectorSource, Grant: grantID},
+		who:     audit.Who{Source: connectorSource, Grant: grantID, Scope: config.ScopeConnector},
 		ctx:     s.pushCtx,
 		out:     make(chan []byte, clientQueueMessages),
 		done:    make(chan struct{}),

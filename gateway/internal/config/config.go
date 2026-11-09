@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,8 +26,21 @@ func (e *Error) Error() string {
 	return "Invalid gateway config:\n- " + strings.Join(e.Errors, "\n- ")
 }
 
+// Token scopes (what a token may call; the server checks them per request). An entry with no scope
+// is "full", so tokens written before scopes existed keep working. Any other value is refused here.
+const (
+	ScopeFull      = "full"      // every method the phone may call
+	ScopeIntent    = "intent"    // the Shortcut's start and continue calls, and their reads (no session/load)
+	ScopeConnector = "connector" // the connector's own prompt path only
+)
+
+// TokenScopes lists the accepted scope values.
+var TokenScopes = []string{ScopeFull, ScopeIntent, ScopeConnector}
+
 type Token struct {
 	ID, Identity, SHA256 string
+	// Scope is one of TokenScopes. Validate fills in ScopeFull when the entry has none.
+	Scope string
 }
 
 type Limits struct {
@@ -199,11 +213,20 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		if t.Get("token") != nil || t.Get("secret") != nil {
 			add("tokens[%d] must not contain a raw token (NFR-14)", i)
 		}
+		scope := ScopeFull
+		if sv := t.Get("scope"); !sv.IsNull() {
+			s, ok := sv.StringValue()
+			if !ok || !slices.Contains(TokenScopes, s) {
+				add("tokens[%d].scope must be \"full\", \"intent\" or \"connector\"", i)
+			} else {
+				scope = s
+			}
+		}
 		if seen[id] {
 			add("tokens[%d].id \"%s\" is a duplicate", i, id)
 		}
 		seen[id] = true
-		tokens = append(tokens, Token{ID: id, Identity: identity, SHA256: sha})
+		tokens = append(tokens, Token{ID: id, Identity: identity, SHA256: sha, Scope: scope})
 	}
 
 	agent := raw.Get("agent")
@@ -257,6 +280,11 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			}
 			if ok && s == "/" {
 				add("projects.roots[%d] must not be \"/\"", i)
+			}
+			if ok && filepath.IsAbs(s) {
+				if msg := rootAboveHome(s); msg != "" {
+					add("projects.roots[%d] %s", i, msg)
+				}
 			}
 			roots = append(roots, s)
 		}
@@ -411,6 +439,48 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			LockoutSeconds:            min(limits["lockoutSeconds"], math.MaxInt32),
 		},
 	}, nil
+}
+
+// rootAboveHome is the message when a project root is the home folder or a folder above it, or ""
+// when the root is fine. The rule: no project root at or above $HOME (the owner's home folder holds
+// files no project should reach). A root inside the home folder is allowed.
+func rootAboveHome(root string) string {
+	const rule = "is the home folder or a folder above it. Rule: no project root at or above $HOME; use a folder inside your home folder, such as ~/acpcode/projects"
+	home, err := HomeFolder()
+	if err != nil {
+		return "cannot be checked against the home folder: " + err.Error()
+	}
+	if AtOrAboveHome(root, home) {
+		return rule
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil && AtOrAboveHome(resolved, home) {
+		return rule
+	}
+	return ""
+}
+
+// HomeFolder is the owner's home folder ($HOME) as an absolute, symlink-resolved path.
+func HomeFolder() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	abs, err := filepath.Abs(home)
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
+	}
+	return abs, nil
+}
+
+// AtOrAboveHome is true when path is the home folder or a folder above it. home is an absolute,
+// clean path. A path that is inside home is not at or above it.
+func AtOrAboveHome(path, home string) bool {
+	p := strings.TrimSuffix(filepath.Clean(path), "/")
+	h := strings.TrimSuffix(filepath.Clean(home), "/")
+	return p == "" || p == h || strings.HasPrefix(h, p+"/")
 }
 
 var (

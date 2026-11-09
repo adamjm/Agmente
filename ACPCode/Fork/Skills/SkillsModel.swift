@@ -78,7 +78,7 @@ struct GatewaySkillsClient: SkillsClient {
             return try await caller.gatewayCall(method: method, params: .object(params))
         } catch let error as ACPServiceError {
             switch error {
-            case .rpc(_, let rpc): throw GatewayError.rpc(code: rpc.code, message: rpc.message)
+            case .rpc(_, let rpc), .rpcData(_, let rpc, _): throw GatewayError.rpc(code: rpc.code, message: rpc.message)
             case .disconnected: throw GatewayError.disconnected
             case .unsupportedMessage: throw GatewayError.invalidResponse("unsupported message")
             }

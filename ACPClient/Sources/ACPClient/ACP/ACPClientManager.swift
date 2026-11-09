@@ -90,6 +90,9 @@ public final class ACPClientManager: ObservableObject {
 
     /// Timeout for health check pings.
     public var healthCheckTimeout: TimeInterval = 8.0
+    /// How long a connect, or the initialize after it, may take before the attempt fails.
+    /// Past it the state becomes `.failed(UnreachableEndpointError)` and the spinner stops.
+    public var connectDeadline: TimeInterval = 15.0
     /// Whether to automatically send initialize after connecting.
     public var shouldAutoInitialize: Bool = false
     /// Supplies the initialization payload for auto-initialize flows.
@@ -117,6 +120,8 @@ public final class ACPClientManager: ObservableObject {
     private var materializedSessions = Set<String>()
     private var resumingSessions = Set<String>()
     private var lastInitializationError: Error?
+    /// The service whose attempt ran past `connectDeadline`. Its late replies are ignored.
+    private weak var expiredService: ACPService?
 
     private let networkMonitor = NWPathMonitor()
     private let networkMonitorQueue = DispatchQueue(label: "ACPClientManager.NetworkMonitor")
@@ -129,6 +134,15 @@ public final class ACPClientManager: ObservableObject {
     public struct NetworkOfflineError: LocalizedError, Sendable {
         public var errorDescription: String? { "The Internet connection appears to be offline." }
         public init() {}
+    }
+
+    /// The connect or initialize did not finish within `connectDeadline`.
+    public struct UnreachableEndpointError: LocalizedError, Sendable {
+        public let host: String
+        public var errorDescription: String? {
+            "Could not reach the gateway at \(host). Check the network, then try again."
+        }
+        public init(host: String) { self.host = host }
     }
 
     // MARK: - Initialization
@@ -271,9 +285,12 @@ public final class ACPClientManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await service.connect()
+                guard expiredService !== service else { return }
                 delegate?.clientManager(self, didCreateService: service)
                 resolveContinuation(success: true, completion: completion)
             } catch {
+                // An attempt that already failed by deadline must not overwrite that state.
+                guard expiredService !== service else { return }
                 log("Connect error: \(error)")
                 delegate?.clientManager(self, didEncounterError: error)
                 isConnecting = false
@@ -285,15 +302,56 @@ public final class ACPClientManager: ObservableObject {
         }
     }
 
-    /// Connects and waits for the result asynchronously.
+    /// Connects and waits for the result asynchronously. An attempt that runs past `connectDeadline` fails
+    /// with `UnreachableEndpointError` instead of waiting forever.
     public func connectAndWait(config: ACPConnectionConfig) async -> Bool {
         await withCheckedContinuation { continuation in
             connectContinuation?.resume(returning: false)
-            connectContinuation = continuation
+            connectContinuation = nil
+            let waiter = AttemptWaiter(continuation)
+            let host = config.endpoint.host ?? config.endpoint.absoluteString
+            let seconds = connectDeadline
+            let deadline = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                guard let self else {
+                    waiter.finish(false)
+                    return
+                }
+                if self.isConnecting {
+                    self.failUnreachable(host: host)
+                    waiter.finish(false)
+                } else if self.connectionState != .connected {
+                    // Already failed, or disconnected, without the completion: do not leave the caller waiting.
+                    waiter.finish(false)
+                }
+                // Connected in the meantime: the connect's own completion resolves the wait with success.
+            }
             connect(config: config) { success in
-                continuation.resume(returning: success)
+                deadline.cancel()
+                waiter.finish(success)
                 self.connectContinuation = nil
             }
+        }
+    }
+
+    /// Fails an attempt that ran past `connectDeadline`. The socket is dropped, so a late reply cannot revive it,
+    /// and no automatic retry runs: the person tries again.
+    private func failUnreachable(host: String) {
+        log("No connection within \(connectDeadline)s to \(host); failing the attempt")
+        let stale = service
+        expiredService = stale
+        service = nil
+        isConnecting = false
+        shouldAutoReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        resetInitializationState()
+        resetSessionTracking()
+        connectionState = .failed(UnreachableEndpointError(host: host))
+        delegate?.clientManager(self, didChangeState: connectionState)
+        Task { @MainActor in
+            await stale?.disconnect()
         }
     }
 
@@ -361,10 +419,22 @@ public final class ACPClientManager: ObservableObject {
             isInitializing = true
             lastInitializationError = nil
 
+            let seconds = connectDeadline
+            let host = currentConfig?.endpoint.host ?? "the server"
+            let deadline = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                guard !Task.isCancelled, let self, self.isInitializing else { return }
+                self.failUnreachable(host: host)
+            }
+
             Task { @MainActor in
-                defer { isInitializing = false }
+                defer {
+                    isInitializing = false
+                    deadline.cancel()
+                }
                 do {
                     let response = try await service.initialize(payload)
+                    guard expiredService !== service else { return }
                     let success = response.resultValue != nil
                     isInitialized = success
                     if !success {
@@ -372,7 +442,8 @@ public final class ACPClientManager: ObservableObject {
                     }
                     resolveInitialization(success: success)
                 } catch {
-                    if case ACPServiceError.rpc(_, let rpcError) = error,
+                    guard expiredService !== service else { return }
+                    if let rpcError = (error as? ACPServiceError)?.rpcError,
                        rpcError.message.lowercased().contains("already initialized") {
                         isInitialized = true
                         lastInitializationError = nil
@@ -625,6 +696,23 @@ extension ACPClientManager: ACPServiceDelegate {
         if testService != nil {
             connectionState = .connected
         }
+    }
+}
+
+// MARK: - Attempt Waiter
+
+/// Resumes the continuation of one connect attempt exactly once. Later calls do nothing.
+@MainActor
+private final class AttemptWaiter {
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ success: Bool) {
+        continuation?.resume(returning: success)
+        continuation = nil
     }
 }
 

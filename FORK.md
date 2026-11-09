@@ -1,6 +1,6 @@
-# Agmente for IBM Bob (private fork)
+# ACP Code for IBM Bob (private fork)
 
-This fork turns Agmente into a remote client for IBM Bob Shell that is safe on the public internet. It adds a gateway (`gateway/`) that replaces `stdio-to-ws`, and a phased plan for the app changes.
+This fork turns ACP Code into a remote client for IBM Bob Shell that is safe on the public internet. It adds a gateway (`gateway/`) that replaces `stdio-to-ws`, and a phased plan for the app changes.
 
 Start with `docs/SPEC.md`. The upstream `README.md` still describes the original app.
 
@@ -28,11 +28,11 @@ Start with `docs/SPEC.md`. The upstream `README.md` still describes the original
 ## Try the gateway locally
 
 ```bash
-(cd gateway && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)
-gateway/bin/agmente-gateway new-token iphone owner     # copy the token; put the entry in config.json
+(cd gateway && go build -trimpath -o bin/acpcode-gateway ./cmd/acpcode-gateway)
+gateway/bin/acpcode-gateway new-token iphone owner     # copy the token; put the entry in config.json
 cp gateway/config.example.json gateway/config.json  # edit tokens, agent.command, projects.roots
-gateway/bin/agmente-gateway --config gateway/config.json --dry-run
-gateway/bin/agmente-gateway --config gateway/config.json
+gateway/bin/acpcode-gateway --config gateway/config.json --dry-run
+gateway/bin/acpcode-gateway --config gateway/config.json
 ```
 
 In the current, unmodified app, add a server with `ws://127.0.0.1:8787` (simulator) and the token as the bearer token. For a phone on the internet, put Caddy in front (`deploy/Caddyfile`) and use `wss://`.
@@ -51,8 +51,8 @@ In the current, unmodified app, add a server with `ws://127.0.0.1:8787` (simulat
 | `docs/RESULTS.md` | Test results with commands and output |
 | `scripts/check.sh` | The check gate |
 | `scripts/check-docs.mjs` | Keeps SPEC, PLAN and RESULTS consistent |
-| `gateway/cmd/agmente-gateway/` | Gateway entry point: run, `--dry-run`, `new-token` |
+| `gateway/cmd/acpcode-gateway/` | Gateway entry point: run, `--dry-run`, `new-token` |
 | `gateway/internal/` | Gateway packages: `config`, `audit`, `jsonv` (one-line JSON re-encoder), `server` (admission, guard, agent process) |
 | `gateway/test/` | Gateway tests, fake ACP agent, Bob capability fixture, benchmark |
-| `gateway/bin/agmente-gateway new-token` | Create a device token and its hashed config entry |
+| `gateway/bin/acpcode-gateway new-token` | Create a device token and its hashed config entry |
 | `deploy/` | Caddy (mutual TLS) and systemd examples, marked "verify" |

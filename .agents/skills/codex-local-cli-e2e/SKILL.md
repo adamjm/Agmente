@@ -1,13 +1,13 @@
 ---
 name: codex-local-cli-e2e
-description: Run and debug Agmente iOS end-to-end tests against a real local Codex CLI app-server instance. Use when validating Codex websocket/protocol compatibility, connect/initialize/thread flows, or reproducing Codex-only UI test failures with an actual local Codex server.
+description: Run and debug ACP Code iOS end-to-end tests against a real local Codex CLI app-server instance. Use when validating Codex websocket/protocol compatibility, connect/initialize/thread flows, or reproducing Codex-only UI test failures with an actual local Codex server.
 ---
 
 # Codex Local CLI E2E
 
 ## Overview
 
-Run Agmente's Codex UI E2E test against a real local `codex app-server`, using the repo-owned scenario spec as the source of truth, collect actionable failure details, and always clean up simulator/app-server state.
+Run ACP Code's Codex UI E2E test against a real local `codex app-server`, using the repo-owned scenario spec as the source of truth, collect actionable failure details, and always clean up simulator/app-server state.
 
 ## Workflow
 
@@ -17,7 +17,7 @@ Run Agmente's Codex UI E2E test against a real local `codex app-server`, using t
   - `existing server`: server already running.
   - `managed server`: start server with a provided command and stop it during cleanup.
 - Read `e2e/scenarios/codex/local-cli-smoke.md`.
-- Use `references/agmente-codex-e2e-contract.md` only for the UI-test environment-variable harness contract.
+- Use `references/acpcode-codex-e2e-contract.md` only for the UI-test environment-variable harness contract.
 
 2. Start or verify server.
 - If `managed server`, start the command and wait until the endpoint port is reachable.
@@ -25,10 +25,10 @@ Run Agmente's Codex UI E2E test against a real local `codex app-server`, using t
 
 3. Run only the Codex UI E2E test.
 - Export:
-  - `AGMENTE_E2E_CODEX_ENABLED=1`
-  - `AGMENTE_E2E_CODEX_ENDPOINT=<endpoint>`
+  - `ACPCODE_E2E_CODEX_ENABLED=1`
+  - `ACPCODE_E2E_CODEX_ENDPOINT=<endpoint>`
 - Execute targeted test only:
-  - `AgmenteUITests/AgmenteUITests/testCodexDirectWebSocketConnectInitializeAndSessionFlow`
+  - `ACPCodeUITests/ACPCodeUITests/testCodexDirectWebSocketConnectInitializeAndSessionFlow`
 
 4. On failure, extract root cause.
 - Parse `xcodebuild` output for the failing test and assertion.
@@ -38,7 +38,7 @@ Run Agmente's Codex UI E2E test against a real local `codex app-server`, using t
 5. Always clean up.
 - Stop app-server if this run started it.
 - Uninstall app from simulator:
-  - `xcrun simctl uninstall <UDID> com.example.Agmente`
+  - `xcrun simctl uninstall <UDID> com.example.ACPCode`
 - Optionally shut simulator down if requested.
 
 ## Preferred Execution

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## Role
-You are the engineer for the Agmente fork for IBM Bob: an iOS app (Swift) and a gateway (Go) in `gateway/` (D-021).
+You are the engineer for the ACP Code fork for IBM Bob: an iOS app (Swift) and a gateway (Go) in `gateway/` (D-021).
 You write small, tested code. You report facts.
 You do not guess about Bob, ACP or Apple API behaviour: you test it, or you mark it as unknown.
 
@@ -28,7 +28,7 @@ A "fail" result is a valid outcome. Do not change a test to make it pass.
 - The gateway must never approve a tool call. Reason: the phone's approval is the last control before a shell (D-009). Exception: the phone may send MCP `alwaysAllow` for named tools, by owner override (D-089); the gateway still never approves on its own.
 - Never add a code path that lets an unauthenticated request spawn a process. Reason: that is the flaw this fork removes (F-1).
 - Run git and Bob in the project container, never in the gateway process. Reason: repo config can run programs (F-20, D-008).
-- Put new app code in new files under `Agmente/Fork/` or `Agmente/Security/` when it is a new feature. Upstream files may be changed freely when that is the cleaner design. Reason: this is a hard fork with no upstream merges (D-017).
+- Put new app code in new files under `ACPCode/Fork/` or `ACPCode/Security/` when it is a new feature. Upstream files may be changed freely when that is the cleaner design. Reason: this is a hard fork with no upstream merges (D-017).
 - Keep ACP and Codex behaviour separate unless a shared abstraction is tested. Reason: upstream rule in `Agents.md`.
 - Never read, print or commit secrets. Use environment variables or the Keychain. Tokens go in config only as SHA-256 hashes.
 - Do not skip, delete or loosen a test to get a green check.
@@ -50,9 +50,9 @@ A "fail" result is a valid outcome. Do not change a test to make it pass.
 
 ## Commands
 - All checks: `scripts/check.sh`
-- Build the gateway: `(cd gateway && go build -trimpath -o bin/agmente-gateway ./cmd/agmente-gateway)`
-- Gateway wire tests (default target: `gateway/bin/agmente-gateway`; another with `AGMENTE_GATEWAY_CMD='["/abs/path"]'`): `npm test --prefix gateway`
+- Build the gateway: `(cd gateway && go build -trimpath -o bin/acpcode-gateway ./cmd/acpcode-gateway)`
+- Gateway wire tests (default target: `gateway/bin/acpcode-gateway`; another with `ACPCODE_GATEWAY_CMD='["/abs/path"]'`): `npm test --prefix gateway`
 - Go unit tests: `(cd gateway && go test ./...)`
-- Gateway latency (NFR-1, NFR-2): `node gateway/test/bench.mjs` (same `AGMENTE_GATEWAY_CMD`)
-- App tests (macOS): `xcodebuild -project Agmente.xcodeproj -scheme Agmente -destination 'platform=iOS Simulator,name=iPhone 17' test`
-- New token: `gateway/bin/agmente-gateway new-token <device-id> <identity>`
+- Gateway latency (NFR-1, NFR-2): `node gateway/test/bench.mjs` (same `ACPCODE_GATEWAY_CMD`)
+- App tests (macOS): `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test`
+- New token: `gateway/bin/acpcode-gateway new-token <device-id> <identity>`

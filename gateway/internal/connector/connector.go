@@ -292,6 +292,7 @@ const (
 	rpcMethodNotFound = -32601
 	rpcInvalidParams  = -32602
 	rpcInternal       = -32603
+	rpcForbidden      = -32003 // the caller may not make this call (a token's scope, or no device)
 )
 
 var errNotFound = errors.New("not found")

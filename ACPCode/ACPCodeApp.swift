@@ -7,6 +7,8 @@ struct ACPCodeApp: App {
     @UIApplicationDelegateAdaptor(ACPCodeAppDelegate.self) private var appDelegate
 #endif
     init() {
+        // One process-wide AppViewModel, created at launch. The root view and the App Intents use this instance.
+        _ = ForkProcessModel.shared
     }
     let persistenceController = PersistenceController.shared
 

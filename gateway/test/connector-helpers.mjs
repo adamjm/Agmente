@@ -130,7 +130,7 @@ export async function pairOnPhone(gw, { ws, scope = { projects: 'all' }, decide 
   const row = pending.result.pairings.find((p) => p.code === page.code);
   if (!row) throw new Error(`pairing ${page.code} not in pending: ${JSON.stringify(pending)}`);
   const answer = decide === 'approve'
-    ? await rpc(ws, '_acpcode/connector/approve', { pairingId: row.pairingId, scope })
+    ? await rpc(ws, '_acpcode/connector/approve', { pairingId: row.pairingId, scope, code: row.code })
     : await rpc(ws, '_acpcode/connector/deny', { pairingId: row.pairingId });
   return { verifier, page, answer, row };
 }

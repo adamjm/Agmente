@@ -447,6 +447,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         viewModel.onGatewaySessionUnknown = { [weak self] sessionId in
             Task { await self?.gatewaySessionActions.sessionUnknown(sessionId) }
         }
+        // A gateway has no session/list: its session list is reloaded through the gateway home's own calls.
+        viewModel.onGatewayHomeRefresh = { [weak self] in
+            Task { await self?.gatewayHome.refresh() }
+        }
         return viewModel
     }
 
@@ -784,7 +788,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
                 return true
             } catch let error as ACPServiceError {
                 switch error {
-                case .rpc(_, let rpcError):
+                case .rpc(_, let rpcError), .rpcData(_, let rpcError, _):
                     return rpcError.code == -32601 ? false : true
                 default:
                     return nil
@@ -814,15 +818,18 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
                         applyEncodingRequirements(for: parsedInfo, service: service, log: false)
                         // Some agents misreport capability flags; probe for method existence to keep
                         // the Add Server summary card and runtime behavior aligned.
-                        if let listSupport = await probeMethodSupport(service: service, method: "session/list", params: .object([:])) {
-                            parsedInfo.capabilities.listSessions = listSupport
-                        }
-                        if let loadSupport = await probeMethodSupport(
-                            service: service,
-                            method: "session/load",
-                            params: .object(["sessionId": .string("capability-probe")])
-                        ) {
-                            parsedInfo.capabilities.loadSession = loadSupport
+                        // A gateway gets neither probe: it refuses session/list ("no project") and never gets session/load.
+                        if parsed.gateway?.supports("sessions") != true {
+                            if let listSupport = await probeMethodSupport(service: service, method: "session/list", params: .object([:])) {
+                                parsedInfo.capabilities.listSessions = listSupport
+                            }
+                            if let loadSupport = await probeMethodSupport(
+                                service: service,
+                                method: "session/load",
+                                params: .object(["sessionId": .string("capability-probe")])
+                            ) {
+                                parsedInfo.capabilities.loadSession = loadSupport
+                            }
                         }
                         agentInfo = parsedInfo
                     }
@@ -1757,7 +1764,11 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         startupLog(
             "connectAndWait endpoint=\(url.absoluteString) selectedServerId=\(selectedServerId?.uuidString ?? "nil") autoInitialize=\(connectionManager.shouldAutoInitialize) networkAvailable=\(isNetworkAvailable)"
         )
-        return await connectionManager.connectAndWait(config: config)
+        let connected = await connectionManager.connectAndWait(config: config)
+        if !connected, case .failed(let error) = connectionState {
+            startupLog("connectAndWait failed endpoint=\(url.absoluteString) reason=\(error.localizedDescription)")
+        }
+        return connected
     }
 
     /// Verify the WebSocket is alive; if not, cleanly reconnect.
@@ -1790,7 +1801,11 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         initializedServers.insert(serverId)
         connectionManager.shouldAutoInitialize = true
         let payload = makeInitializationPayload()
-        return await connectionManager.initializeAndWait(payload: payload)
+        let initialized = await connectionManager.initializeAndWait(payload: payload)
+        if !initialized, case .failed(let error) = connectionState {
+            startupLog("initializeAndWait failed reason=\(error.localizedDescription)")
+        }
+        return initialized
     }
 
     func sendInitialize() {
@@ -2613,7 +2628,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     private func formatPromptError(_ error: Error) -> String {
         if let serviceError = error as? ACPServiceError {
             switch serviceError {
-            case .rpc(_, let rpcError):
+            case .rpc(_, let rpcError), .rpcData(_, let rpcError, _):
                 return rpcError.message
             case .disconnected:
                 return "Connection lost. Please reconnect and try again."

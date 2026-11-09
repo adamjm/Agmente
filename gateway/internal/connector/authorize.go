@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -18,6 +19,16 @@ import (
 
 // maxPendingPairings bounds the pairing pages a public client can hold open at once.
 const maxPendingPairings = 5
+
+// maxWrongCodes is how many wrong codes the phone may send for one pairing before the pairing is
+// removed the way deny removes it (D-097).
+const maxWrongCodes = 5
+
+// codeNeededMessage is the refusal for an approve with no six-digit code. It is not a wrong attempt.
+const codeNeededMessage = "approve needs the six-digit code shown on the client's page"
+
+// wrongCodeMessage is the refusal for a six-digit code that is not the pairing's code.
+const wrongCodeMessage = "the code does not match the one on the client's page"
 
 // authCode is an authorization code issued after an approval. It is single use and short lived.
 type authCode struct {
@@ -43,6 +54,7 @@ type pairing struct {
 	challenge   string
 	resource    string
 	decision    chan decision
+	wrongCodes  int // wrong codes the phone sent for this pairing; guarded by Connector.mu
 }
 
 type decision struct {
@@ -232,6 +244,11 @@ func (c *Connector) Phone(ctx context.Context, who audit.Who, method string, par
 	if !c.Enabled() {
 		return nil, &RPCError{Code: rpcMethodNotFound, Message: "Method not found"}
 	}
+	// Only a phone token (which has a device id) may pair or manage grants (D-097). A call with no
+	// device is a gateway's own call, and the gateway never makes one of these.
+	if who.Device == "" {
+		return nil, &RPCError{Code: rpcForbidden, Message: "only a phone may call " + method}
+	}
 	raw := json.RawMessage("null")
 	if params != nil {
 		raw = params.Marshal()
@@ -275,22 +292,33 @@ type pairingParams struct {
 	Scope     *Scope `json:"scope"`
 }
 
+// approveParams is what the phone sends on approve. Code is typed any so that a missing or
+// non-string code is refused with the code message, not as a malformed request.
+type approveParams struct {
+	PairingID string `json:"pairingId"`
+	Scope     *Scope `json:"scope"`
+	Code      any    `json:"code"`
+}
+
 func (c *Connector) approve(ctx context.Context, who audit.Who, params json.RawMessage) (any, *RPCError) {
-	var in pairingParams
+	var in approveParams
 	if err := json.Unmarshal(params, &in); err != nil || in.PairingID == "" {
 		return nil, invalidParams("approve needs pairingId and scope")
+	}
+	// The code is checked before the scope and before anything is created (D-097).
+	sent, isString := in.Code.(string)
+	if !isString || !isSixDigits(sent) {
+		return nil, invalidParams(codeNeededMessage)
+	}
+	p, rerr := c.checkCode(who, in.PairingID, sent)
+	if rerr != nil {
+		return nil, rerr
 	}
 	if in.Scope == nil {
 		return nil, invalidParams("approve needs scope")
 	}
 	if rerr := c.checkScope(ctx, *in.Scope); rerr != nil {
 		return nil, rerr
-	}
-	c.mu.Lock()
-	p, open := c.pending[in.PairingID]
-	c.mu.Unlock()
-	if !open {
-		return nil, invalidParams("no pending pairing with that pairingId (it may have timed out)")
 	}
 	g := &Grant{
 		ID:        randomString(12),
@@ -317,6 +345,47 @@ func (c *Connector) approve(ctx context.Context, who audit.Who, params json.RawM
 	c.mu.Unlock()
 	c.audit.Log("connector_pairing", audit.Fields{Identity: who.Identity, Device: who.Device, Reason: "approved grant:" + g.ID})
 	return map[string]any{"grantId": g.ID}, nil
+}
+
+// checkCode finds the pending pairing and compares the phone's code with the pairing's code in
+// constant time. A match returns the pairing. A wrong code is counted under the lock; the
+// maxWrongCodes-th removes the pairing the way deny does, so the client gets the same denial.
+func (c *Connector) checkCode(who audit.Who, pairingID, code string) (*pairing, *RPCError) {
+	c.mu.Lock()
+	p, open := c.pending[pairingID]
+	if !open {
+		c.mu.Unlock()
+		return nil, invalidParams("no pending pairing with that pairingId (it may have timed out)")
+	}
+	if subtle.ConstantTimeCompare([]byte(code), []byte(p.Code)) == 1 {
+		c.mu.Unlock()
+		return p, nil
+	}
+	p.wrongCodes++
+	removed := p.wrongCodes >= maxWrongCodes
+	if removed {
+		delete(c.pending, p.ID)
+		p.decision <- decision{denied: true, reason: "the owner denied the pairing"} // buffered; the pending entry is gone, so this is the only send
+	}
+	c.mu.Unlock()
+	c.audit.Log("connector_pairing", audit.Fields{Identity: who.Identity, Device: who.Device, Reason: "wrong code"})
+	if removed {
+		c.audit.Log("connector_pairing", audit.Fields{Identity: who.Identity, Device: who.Device, Reason: "too many wrong codes"})
+	}
+	return nil, invalidParams(wrongCodeMessage)
+}
+
+// isSixDigits reports whether s is exactly six ASCII digits.
+func isSixDigits(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // checkScope validates a scope the phone sends: projects must be registered, and sessions must be

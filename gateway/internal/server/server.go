@@ -75,6 +75,9 @@ type Server struct {
 	snaps   turnSnapshots // turn snapshots in progress (snapshot.go)
 	gits    gitStates     // the last git/status of each project: the diff allow-list (git.go)
 	watches gitWatches    // projects whose git status is being watched (watch.go)
+
+	revokedMu sync.Mutex      // guards revoked
+	revoked   map[string]bool // token ids refused at every upgrade and request (token_revoke.go)
 }
 
 func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
@@ -390,6 +393,13 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		reject(w, http.StatusUnauthorized, map[string]string{"WWW-Authenticate": "Bearer"})
 		return
 	}
+	// 3b. A revoked token is refused at every upgrade (token_revoke.go). It is a real token, so no
+	// failure is counted against the address.
+	if s.isRevoked(entry.ID) {
+		s.audit.Log("reject", audit.Fields{Identity: entry.Identity, Device: entry.ID, Client: client, Status: 401, Reason: "token_revoked"})
+		reject(w, http.StatusUnauthorized, map[string]string{"WWW-Authenticate": "Bearer"})
+		return
+	}
 	// 4. Connections per identity (FR-5, D-025). Reserve before the upgrade so parallel requests
 	// cannot pass the cap. No agent starts here: agents start per project, on a routed request.
 	s.mu.Lock()
@@ -418,7 +428,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 // handleConnection serves one admitted socket. secure says whether the connection may carry a git
 // credential (D-105); it is checked where the credential is set, not here.
 func (s *Server) handleConnection(ws *websocket.Conn, entry *config.Token, clientAddr string, secure bool) {
-	who := audit.Who{Identity: entry.Identity, Device: entry.ID, Client: clientAddr, Conn: int(s.conns.Add(1)), Secure: secure}
+	who := audit.Who{Identity: entry.Identity, Device: entry.ID, Client: clientAddr, Conn: int(s.conns.Add(1)), Scope: entry.Scope, Secure: secure}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	c := newClient(ctx, ws, who, s.cfg.Limits.MaxMessageBytes, func() { s.audit.Log("client_slow", with(who, audit.Fields{})) })
@@ -497,10 +507,24 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 	}
 	method, hasMethod := msg.Get("method").StringValue()
 	id := msg.Get("id")
+	if s.isRevoked(who.Device) {
+		// A token revoked since the socket opened: its next message closes the socket (token_revoke.go).
+		s.audit.Log("token_revoked", with(who, audit.Fields{Method: method}))
+		c.closeWith(revokedClosedCode, "token revoked")
+		return
+	}
 	if !cwdAllowed(msg, s.roots) {
 		s.audit.Log("cwd_rejected", with(who, audit.Fields{Method: method}))
 		if !id.IsNull() {
 			c.send(cwdRejection(id))
+		}
+		return
+	}
+	// The token's scope (scope.go). A refused response (a permission answer) is dropped with no reply.
+	if rerr := scopeDenial(who.Scope, method, msg.Get("params")); rerr != nil {
+		s.audit.Log("scope_denied", with(who, audit.Fields{Method: method, Reason: "not in the token's scope"}))
+		if hasMethod && !id.IsNull() {
+			reply(id, nil, rerr)
 		}
 		return
 	}
@@ -516,6 +540,15 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 		s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: method}))
 		if method == "_acpcode/sessions/subscribe" && !id.IsNull() {
 			s.subscribe(c, id, msg.Get("params"))
+			return
+		}
+		if (method == "_acpcode/sessions/create" || method == "_acpcode/sessions/prompt") && !id.IsNull() {
+			// Each waits for the agent, so it runs in its own goroutine (sessions_create.go).
+			if method == "_acpcode/sessions/create" {
+				go s.serveCreate(who, id, msg.Get("params"), reply)
+			} else {
+				go s.servePrompt(who, id, msg.Get("params"), reply)
+			}
 			return
 		}
 		if strings.HasPrefix(method, "_acpcode/connector/") { // the phone's pairing and grant methods (C5, D-095)

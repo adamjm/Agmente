@@ -194,7 +194,7 @@ test('a pairing the phone never answers times out as denied', async () => {
     assert.ok(Date.now() - started < 10_000, 'the page ends at the timeout');
     const pending = await rpc(ws, '_acpcode/connector/pending', {});
     assert.deepEqual(pending.result.pairings, []);
-    const late = await rpc(ws, '_acpcode/connector/approve', { pairingId: 'expired', scope: { projects: 'all' } });
+    const late = await rpc(ws, '_acpcode/connector/approve', { pairingId: 'expired', scope: { projects: 'all' }, code: held.code });
     assert.equal(late.error.code, -32602, 'an answer after the timeout is refused');
   } finally {
     ws.close();
@@ -206,7 +206,7 @@ test('an unknown pairing id is refused by the phone', async () => {
   const gw = await startConnectorGateway();
   const ws = await phone(gw);
   try {
-    const res = await rpc(ws, '_acpcode/connector/approve', { pairingId: 'nope', scope: { projects: 'all' } });
+    const res = await rpc(ws, '_acpcode/connector/approve', { pairingId: 'nope', scope: { projects: 'all' }, code: '000000' });
     assert.equal(res.error.code, -32602);
     const deny = await rpc(ws, '_acpcode/connector/deny', { pairingId: 'nope' });
     assert.equal(deny.error.code, -32602);
@@ -377,14 +377,43 @@ test('the phone refuses a scope that names an unknown project or a session outsi
     assert.equal(pending.result.pairings.length, 1, 'a refused approve leaves the pairing open');
     const pairingId = pending.result.pairings[0].pairingId;
 
-    const crossed = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [b.sessionId] } });
+    const crossed = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [b.sessionId] }, code: pending.result.pairings[0].code });
     assert.equal(crossed.error.code, -32602, 'a session outside the listed projects is refused');
-    const empty = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [] } });
+    const empty = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [] }, code: pending.result.pairings[0].code });
     assert.equal(empty.error.code, -32602);
-    const ok = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [a.sessionId] } });
+    const ok = await rpc(ws, '_acpcode/connector/approve', { pairingId, scope: { projects: [a.project.id], sessions: [a.sessionId] }, code: pending.result.pairings[0].code });
     assert.equal(typeof ok.result.grantId, 'string');
     const page = await held.page.finished;
     assert.match(page.body, /location\.replace/, 'the held page finishes when the approve succeeds');
+  } finally {
+    ws.close();
+    await gw.stop();
+  }
+});
+
+test('approve refuses a wrong code, keeps the pairing open, and the right code then works', async () => {
+  const gw = await startConnectorGateway();
+  const ws = await phone(gw);
+  try {
+    const { challenge } = pkce();
+    const held = await openAuthorize(gw.connectorPort, authorizeQuery({ challenge }));
+    const pending = await rpc(ws, '_acpcode/connector/pending', {});
+    const row = pending.result.pairings.find((p) => p.code === held.code);
+    assert.ok(row, 'the pairing is listed with its code');
+    const wrong = held.code === '000000' ? '000001' : '000000';
+    const bad = await rpc(ws, '_acpcode/connector/approve', { pairingId: row.pairingId, scope: { projects: 'all' }, code: wrong });
+    assert.equal(bad.error.code, -32602);
+    assert.match(bad.error.message, /does not match/);
+    const still = await rpc(ws, '_acpcode/connector/pending', {});
+    assert.equal(still.result.pairings.length, 1, 'a wrong code leaves the pairing open');
+    const none = await rpc(ws, '_acpcode/connector/grants', {});
+    assert.deepEqual(none.result.grants, [], 'a wrong code makes no grant');
+    const missing = await rpc(ws, '_acpcode/connector/approve', { pairingId: row.pairingId, scope: { projects: 'all' } });
+    assert.equal(missing.error.code, -32602, 'a missing code is refused');
+    const ok = await rpc(ws, '_acpcode/connector/approve', { pairingId: row.pairingId, scope: { projects: 'all' }, code: held.code });
+    assert.equal(typeof ok.result.grantId, 'string');
+    const redirect = redirectOf(await held.finished);
+    assert.ok(redirect.searchParams.get('code'), 'the held page is redirected with a code');
   } finally {
     ws.close();
     await gw.stop();

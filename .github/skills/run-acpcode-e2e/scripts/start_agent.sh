@@ -3,7 +3,7 @@ set -euo pipefail
 
 agent="${1:-gemini}"
 port="${2:-9000}"
-npx_tag="${3:-${AGMENTE_E2E_NPX_TAG:-latest}}"
+npx_tag="${3:-${ACPCODE_E2E_NPX_TAG:-latest}}"
 
 package_with_tag() {
   local pkg="$1"
@@ -34,8 +34,8 @@ case "$agent" in
     ;;
 esac
 
-pid_file="/tmp/agmente-e2e-stdio-to-ws-${port}.pid"
-log_file="/tmp/agmente-e2e-stdio-to-ws-${port}.log"
+pid_file="/tmp/acpcode-e2e-stdio-to-ws-${port}.pid"
+log_file="/tmp/acpcode-e2e-stdio-to-ws-${port}.log"
 
 if [[ -f "$pid_file" ]]; then
   old_pid="$(cat "$pid_file" || true)"
