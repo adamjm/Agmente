@@ -87,7 +87,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | FR-20 | The gateway never sends `session/load` or `session/resume` to the agent for a session that is live in that agent. It sends them only after an agent restart and only when no turn is running. | Must | 3 |
 | FR-21 | `_acpcode/sessions/index` returns every session with project, title, status (`idle`, `running`, `awaiting_approval`, `error`), last activity and unread count. | Must | 3 |
 | FR-22 | The gateway holds each `session/request_permission` until a device answers. The first answer wins. After a timeout it rejects. It never approves on its own. | Must | 3 |
-| FR-23 | The gateway sends an APNs push when a turn ends, an approval is needed or a session fails. The payload holds only the project name, session ID and event type. | Should | 3 |
+| FR-23 | The gateway sends an APNs push when a turn ends, an approval is needed or a session fails. The payload holds only the project name, session ID and event type, except that an approval payload also holds a short summary of the tool call (D-111). | Should | 3 |
 | FR-24 | The gateway closes an agent session after an idle time with no running turn and no subscriber. | Should | 3 |
 | FR-25 | Every device of one identity sees the same projects and sessions. | Should | 3 |
 | FR-26 | The app home screen lists sessions grouped by project, newest first, with a status badge. The new-session sheet picks a project, not a path. | Must | 3 |
@@ -125,7 +125,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | NFR-8 | Git status on a 10,000-file repository takes at most 1 s p95. Each git call times out at 5 s. A diff response is capped at 2 MiB. |
 | NFR-9 | `git/changed` is debounced 500 ms, at most 2 per second per project. |
 | NFR-10 | Default approval timeout: 12 h, then reject. Default idle close: 30 min. |
-| NFR-11 | A push payload is at most 256 bytes and holds no file content, prompt or tool output. |
+| NFR-11 | A push payload is at most 256 bytes (512 for an approval) and holds no file content, prompt or tool output. An approval holds only the tool call's title and kind, shortened (D-111). |
 | NFR-12 | Signed file URLs expire in at most 300 s. |
 | NFR-13 | The app decodes images to at most 4096 px on the longest side and refuses image data over 20 MiB. |
 | NFR-14 | The gateway config file holds no secrets. Tokens are stored as SHA-256 hashes. |
