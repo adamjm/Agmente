@@ -15,6 +15,11 @@ enum SidebarStyle {
     static let rowVerticalPadding: CGFloat = 10
     /// Round controls (search, avatar) are this size, which is the iOS minimum touch target.
     static let circleControlSize: CGFloat = 44
+
+    /// The dark capsule behind "New session" and "New project" (D-109 reuses it).
+    static func pillTint(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 0.12, green: 0.13, blue: 0.18) : .black
+    }
 }
 
 /// Scroll targets for the sidebar, so a row can be scrolled to by a project id.
