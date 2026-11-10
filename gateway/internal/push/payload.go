@@ -2,6 +2,9 @@
 //
 // A payload holds the project name, the session id and the event type, and nothing else. The
 // builder has no parameter for a prompt, a title or tool output, so none can reach a payload.
+//
+// The exception is an approval, which carries a short summary of the tool call (D-111, amends
+// D-038 and NFR-11 for approvals only). It is built by BuildApproval in approval.go.
 package push
 
 import (
@@ -25,13 +28,12 @@ const (
 )
 
 var bodies = map[Event]string{
-	TurnEnded:      "Turn finished",
-	ApprovalNeeded: "Approval needed",
-	SessionFailed:  "Session failed",
+	TurnEnded:     "Turn finished",
+	SessionFailed: "Session failed",
 }
 
-// ErrTooLong means the session id is too long for a payload of MaxBytes.
-var ErrTooLong = errors.New("push payload cannot fit in 256 bytes")
+// ErrTooLong means the session id is too long for the payload's size limit.
+var ErrTooLong = errors.New("push payload is too long for its size limit")
 
 type alert struct {
 	Title string `json:"title"`
@@ -41,6 +43,7 @@ type alert struct {
 type aps struct {
 	Alert    alert  `json:"alert"`
 	Sound    string `json:"sound"`
+	Category string `json:"category,omitempty"`
 	ThreadID string `json:"thread-id"`
 }
 
@@ -50,12 +53,16 @@ type payload struct {
 	Event     Event  `json:"event"`
 }
 
-// Build returns the JSON payload for an event. The project name is shown as the title: control
-// characters are removed, and it is cut on a character boundary, with an ellipsis, until the whole
-// payload fits. An unknown event or an empty or oversized session id is an error.
+// Build returns the JSON payload for turn_ended or session_failed. The project name is shown as the
+// title: control characters are removed, and it is cut on a character boundary, with an ellipsis,
+// until the whole payload fits. An unknown event, an approval (use BuildApproval), or an empty or
+// oversized session id is an error.
 func Build(event Event, projectName, sessionID string) ([]byte, error) {
 	body, ok := bodies[event]
 	if !ok {
+		if event == ApprovalNeeded {
+			return nil, errors.New("an approval is built by BuildApproval")
+		}
 		return nil, errors.New("unknown push event")
 	}
 	if sessionID == "" || !utf8.ValidString(sessionID) {

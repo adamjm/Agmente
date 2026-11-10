@@ -15,6 +15,7 @@ type pushJob struct {
 	event     push.Event
 	projectID string
 	sessionID string
+	summary   string // approvals only: the tool call summary (D-111); held in memory, never stored
 }
 
 // pushDelivery is the APNs sender and its queue (D-053).
@@ -32,14 +33,15 @@ func (s *Server) SetPush(c *push.Client) {
 }
 
 // pushNotify queues a push for a session event. It never blocks and never takes the server lock.
-// A session with no id has no payload, so it is skipped.
-func (s *Server) pushNotify(event push.Event, projectID, sessionID string) {
+// A session with no id has no payload, so it is skipped. summary is the approval's tool call
+// summary, and is "" for other events.
+func (s *Server) pushNotify(event push.Event, projectID, sessionID, summary string) {
 	p := s.push
 	if p == nil || sessionID == "" {
 		return
 	}
 	select {
-	case p.queue <- pushJob{event: event, projectID: projectID, sessionID: sessionID}:
+	case p.queue <- pushJob{event: event, projectID: projectID, sessionID: sessionID, summary: summary}:
 	default:
 		s.audit.Log("push_dropped", audit.Fields{Project: projectID, Reason: string(event)})
 	}
@@ -64,7 +66,13 @@ func (s *Server) deliverPush(ctx context.Context, p *pushDelivery, job pushJob) 
 	if proj, err := s.store.ProjectByID(ctx, job.projectID); err == nil && proj != nil {
 		name = proj.Name
 	}
-	payload, err := push.Build(job.event, name, job.sessionID)
+	var payload []byte
+	var err error
+	if job.event == push.ApprovalNeeded {
+		payload, err = push.BuildApproval(name, job.sessionID, job.summary)
+	} else {
+		payload, err = push.Build(job.event, name, job.sessionID)
+	}
 	if err != nil {
 		s.audit.Log("push_failed", audit.Fields{Project: job.projectID, Reason: "payload"})
 		return

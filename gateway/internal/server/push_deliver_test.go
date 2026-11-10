@@ -27,15 +27,15 @@ func TestPushNotifyNeverBlocksAndAuditsOverflow(t *testing.T) {
 	defer s.Shutdown()
 
 	// Without SetPush: no queue, no audit line.
-	s.pushNotify(push.TurnEnded, "proj", "sess")
+	s.pushNotify(push.TurnEnded, "proj", "sess", "")
 	if out.Len() != 0 {
 		t.Fatalf("push is off, but the audit has %q", out.String())
 	}
 
 	// A queue of one with no worker: the second push is dropped and audited.
 	s.push = &pushDelivery{queue: make(chan pushJob, 1)}
-	s.pushNotify(push.TurnEnded, "proj", "sess")
-	s.pushNotify(push.ApprovalNeeded, "proj", "sess")
+	s.pushNotify(push.TurnEnded, "proj", "sess", "")
+	s.pushNotify(push.ApprovalNeeded, "proj", "sess", "Run: npm test")
 	if len(s.push.queue) != 1 {
 		t.Fatalf("queue holds %d jobs, want 1", len(s.push.queue))
 	}
@@ -43,14 +43,21 @@ func TestPushNotifyNeverBlocksAndAuditsOverflow(t *testing.T) {
 	if !strings.Contains(line, `"event":"push_dropped"`) || !strings.Contains(line, `"project":"proj"`) || !strings.Contains(line, `"reason":"approval_needed"`) {
 		t.Errorf("want a push_dropped line for the approval, got %q", line)
 	}
-	if strings.Contains(line, "sess") {
-		t.Errorf("the audit line holds the session id: %q", line)
+	if strings.Contains(line, "sess") || strings.Contains(line, "npm test") {
+		t.Errorf("the audit line holds the session id or the summary: %q", line)
 	}
 
 	// A session with no id has no payload: nothing is queued or audited.
 	before := out.Len()
-	s.pushNotify(push.SessionFailed, "proj", "")
+	s.pushNotify(push.SessionFailed, "proj", "", "")
 	if out.Len() != before || len(s.push.queue) != 1 {
 		t.Error("an event with no session id must be skipped")
+	}
+
+	// The summary rides in the queued job, so the worker can build the approval payload from it.
+	s.push = &pushDelivery{queue: make(chan pushJob, 1)}
+	s.pushNotify(push.ApprovalNeeded, "proj", "sess", "Run: npm test")
+	if job := <-s.push.queue; job.summary != "Run: npm test" || job.event != push.ApprovalNeeded {
+		t.Fatalf("queued job %+v", job)
 	}
 }

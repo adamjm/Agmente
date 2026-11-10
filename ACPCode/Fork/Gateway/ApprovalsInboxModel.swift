@@ -16,6 +16,12 @@ final class ApprovalsInboxModel: ObservableObject {
 
     private var clientProvider: (() -> GatewayClient?)?
     private var generation = 0
+    /// Told when an approval is closed, so its local notification is removed (D-111).
+    private let notifications: ApprovalNotificationRemoving
+
+    init(notifications: ApprovalNotificationRemoving? = nil) {
+        self.notifications = notifications ?? ApprovalLocalNotifier.shared
+    }
 
     var count: Int { approvals.count }
 
@@ -39,6 +45,8 @@ final class ApprovalsInboxModel: ObservableObject {
         do {
             let list = try await client.pendingApprovals()
             guard mine == generation else { return }
+            let open = Set(list.map(\.approvalId))
+            for gone in approvals where !open.contains(gone.approvalId) { notifications.approvalClosed(approvalId: gone.approvalId) }
             approvals = list
             errorMessage = nil
         } catch {
@@ -51,6 +59,7 @@ final class ApprovalsInboxModel: ObservableObject {
     func closed(approvalId: String) {
         approvals.removeAll { $0.approvalId == approvalId }
         answering.remove(approvalId)
+        notifications.approvalClosed(approvalId: approvalId)
     }
 
     func answer(_ approval: GatewayApproval, option: GatewayApprovalOption) async {
@@ -69,11 +78,11 @@ final class ApprovalsInboxModel: ObservableObject {
         do {
             try await action(client)
             guard mine == generation else { return }
-            approvals.removeAll { $0.approvalId == approval.approvalId }
+            closed(approvalId: approval.approvalId)
             errorMessage = nil
         } catch let error as GatewayError where error.isAlreadyClosed {
             guard mine == generation else { return }
-            approvals.removeAll { $0.approvalId == approval.approvalId }
+            closed(approvalId: approval.approvalId)
             notice = "Already closed: \(error.message)"
         } catch {
             guard mine == generation else { return }

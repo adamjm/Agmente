@@ -7,7 +7,8 @@ import (
 	"unicode/utf8"
 )
 
-var events = []Event{TurnEnded, ApprovalNeeded, SessionFailed}
+// Build covers turn_ended and session_failed. Approvals are built by BuildApproval (approval_test.go).
+var events = []Event{TurnEnded, SessionFailed}
 
 // T-24: each event type, with hostile and very long project names, stays within 256 bytes, is
 // valid JSON, and holds only the project name, the session id and the event type.
@@ -76,7 +77,7 @@ func TestAShortNameIsKeptWhole(t *testing.T) {
 }
 
 func TestALongNameIsCutOnACharacterBoundaryWithAnEllipsis(t *testing.T) {
-	out, err := Build(ApprovalNeeded, strings.Repeat("日", 300), "s1")
+	out, err := Build(TurnEnded, strings.Repeat("日", 300), "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +99,9 @@ func TestALongNameIsCutOnACharacterBoundaryWithAnEllipsis(t *testing.T) {
 func TestBadInputIsRefused(t *testing.T) {
 	if _, err := Build("prompt_text", "p", "s"); err == nil {
 		t.Fatal("unknown event accepted")
+	}
+	if _, err := Build(ApprovalNeeded, "p", "s"); err == nil {
+		t.Fatal("an approval went through Build, which has no summary and no category")
 	}
 	for _, id := range []string{"", "bad\xff"} {
 		if _, err := Build(TurnEnded, "p", id); err == nil {

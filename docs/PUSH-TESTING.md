@@ -53,8 +53,8 @@ Status 2026-11-07: the app asks for permission, gets a device token and gives it
 
 - **Key rule.** The gateway refuses to start when the key is readable by group or others, is not a regular file, or does not parse as a P-256 PKCS#8 key. `chmod 600` fixes the first. `--dry-run` runs the same check and prints `push` with ids and paths only.
 - **Auth.** An ES256 provider token: header `{alg, kid}`, claims `{iss, iat}`, cached and rebuilt after 50 minutes. Standard library only.
-- **Send.** `POST /3/device/<token>` over HTTP/2 with `authorization`, `apns-topic`, `apns-push-type: alert`, `apns-priority: 10`, and the body from `push.Build` (at most 256 bytes, no prompt, title or tool text). The host follows the token's `environment`.
-- **Triggers.** A finished turn (`Turn finished`), a failed turn (`Session failed`, when the agent exits mid-turn or refuses the prompt), and an approval request (`Approval needed`). Each goes to every stored token.
+- **Send.** `POST /3/device/<token>` over HTTP/2 with `authorization`, `apns-topic`, `apns-push-type: alert`, `apns-priority: 10`, and the body from `push.Build` (turn and failure, at most 256 bytes) or `push.BuildApproval` (approval, at most 512 bytes). Neither holds a prompt, tool output or file content; an approval holds only the tool call's title and kind, as a short summary (D-111). The host follows the token's `environment`.
+- **Triggers.** A finished turn (`Turn finished`), a failed turn (`Session failed`, when the agent exits mid-turn or refuses the prompt), and an approval request (`Approval needed: <summary>`, for example `Approval needed: Run: npm test`, with `category` `APPROVAL`). Each goes to every stored token.
 - **Foreground suppression.** A device with a socket subscribed to that session gets no push at that moment.
 - **Cleanup.** 410, `Unregistered`, `BadDeviceToken` or `DeviceTokenNotForTopic` deletes that device's token. 429 and 5xx are retried twice (0.5 s, then 1 s). A 403 `ExpiredProviderToken` rebuilds the JWT once.
 - **Audit.** `push_sent`, `push_failed` (status, reason), `push_token_removed`, `push_dropped` (queue full). None holds a token, key, JWT or payload.
@@ -71,6 +71,27 @@ Status 2026-11-07: the app asks for permission, gets a device token and gives it
 7. Revoke notifications in iOS Settings, finish a turn: the gateway logs a 410 or the token stays unused; confirm the token row is removed after the next attempt.
 8. Wrong environment: install a build whose `environment` does not match the token. Expect `BadDeviceToken` in the gateway audit and the token removed.
 9. Record each step's result in `docs/RESULTS.md` under T-48. A step that does not pass is a FAIL with a decision entry, not a changed test.
+
+### E.3 Apple Watch (D-111)
+
+An approval says what is being approved, and the iPhone alert is shown on a paired Apple Watch too. There is no watch app and none is needed: iOS mirrors the iPhone's notifications to the watch. Apple's rule, from [Notifications on your Apple Watch](https://support.apple.com/en-us/108369): "If your iPhone is locked or asleep, you get notifications on your Apple Watch, unless your Apple Watch is locked." And: "If your iPhone is unlocked, you get notifications on your iPhone instead of your Apple Watch." A locked watch, or Do Not Disturb on the watch, sends the alert to the iPhone instead.
+
+**Check on the phone first (owner).**
+
+- The Watch app on the iPhone, My Watch, Notifications, ACP Code: set to *Mirror my iPhone* (or *Custom* with *Allow Notifications* on). Default is mirroring.
+- Notification permission for ACP Code is granted in iOS Settings (the app's own permission, not only the watch's).
+- Focus modes (Do Not Disturb, a custom Focus) can hold the alert back unless ACP Code is allowed in that Focus. Whether the watch follows the iPhone's Focus: verify on the device.
+- The watch and the iPhone use the same Apple ID.
+
+**Manual test.** Needs the device test in E.2 to have passed (the gateway sends the remote push), or the app in the background with the notification permission granted (the local alert, D-111).
+
+1. Wear the watch, unlocked. Lock the iPhone and background the app.
+2. Trigger an approval from a prompt that needs permission (`[permission]` against the fake agent, or a real Bob tool call that asks).
+3. **Pass:** the watch shows the project name as the title and `Approval needed: Run: …` (the tool call's title, for example `Run: npm test`) as the body, within a few seconds. Tapping it on the watch: verify what it opens (not sourced from Apple; not tested). Answering stays in the app (D-009).
+4. Unlock the iPhone and repeat: the alert goes to the iPhone only, not the watch. This is Apple's rule, not a fault.
+5. Record the result in `docs/RESULTS.md`.
+
+**What is not verified.** No test in this repository runs on a watch. The watch part is Apple's behaviour and needs a paired watch and an iPhone on the owner's account. The local notification path is covered by unit tests only (`ACPCodeTests/LocalApprovalNotifierTests.swift`, with a fake notification center); the content on a watch is not checked by code.
 
 ## Part F. Things that fail quietly
 
