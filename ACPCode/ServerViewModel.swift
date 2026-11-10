@@ -675,6 +675,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         connectionManager.markSessionMaterialized(resolvedId)
         lastLoadedSession = resolvedId
         setActiveSession(resolvedId, cwd: resolvedCwd, modes: modesInfo)
+        currentSessionViewModel?.applySessionModels(parsed?.models, serverId: id, sessionId: resolvedId)
         currentSessionViewModel?.saveChatState()
 
         if resolvedId != placeholderId {
@@ -728,6 +729,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         if let viewModel = sessionViewModels[resolvedId] {
             viewModel.migrateSessionCommandsCache(for: id, from: placeholderId, to: resolvedId)
             viewModel.migrateSessionModeCache(for: id, from: placeholderId, to: resolvedId)
+            viewModel.migrateSessionModelCache(for: id, from: placeholderId, to: resolvedId)
         }
     }
 
@@ -806,6 +808,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         }
         // Note: defaultModeId is set from initialize response and applied to new sessions
 
+        currentSessionViewModel?.restoreSessionModels(serverId: self.id, sessionId: id)
         currentSessionViewModel?.restoreAvailableCommands(for: self.id, sessionId: id, isNew: isNew)
 
         if pendingLocalSessions.contains(id) {

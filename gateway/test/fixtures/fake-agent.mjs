@@ -109,6 +109,13 @@ const MODES = [
   { id: 'ask', name: 'Ask', description: 'Answers questions only' },
 ];
 const modesOf = (record) => ({ currentModeId: record.mode ?? 'agent', availableModes: MODES }); // currentModeId: verify
+// Unstable model list (verify: not in upstream ACP schema). Sent only to a session/new that asks for it
+// with _meta['bob/models'], so the other wire tests keep their result shapes.
+const MODELS = [
+  { modelId: 'fast', name: 'Fast', description: 'Quick answers' },
+  { modelId: 'deep', name: 'Deep', description: 'Thinks longer' },
+];
+const modelsOf = (record) => ({ availableModels: MODELS, currentModelId: record.model ?? 'fast' });
 const COMMANDS = [{ name: 'init', description: 'Create an AGENTS.md for this project', input: null }];
 
 /** sessionId -> { record, turn: null | { id, cancelled, permission } } */
@@ -295,13 +302,18 @@ const handlers = {
       cwd: msg.params?.cwd ?? null,
       title: null,
       mode: msg.params?._meta?.['bob/mode'] ?? 'agent',
+      models: msg.params?._meta?.['bob/models'] === true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       messages: [],
     };
     live.set(record.sessionId, { record, turn: null });
     saveSession(record);
-    reply(msg.id, { sessionId: record.sessionId, modes: modesOf(record) });
+    reply(msg.id, {
+      sessionId: record.sessionId,
+      modes: modesOf(record),
+      ...(record.models ? { models: modelsOf(record) } : {}),
+    });
   },
   'session/load': reopen,
   'session/resume': reopen,
@@ -350,6 +362,15 @@ const handlers = {
     entry.record.mode = msg.params.modeId;
     reply(msg.id, {});
     update(entry.record.sessionId, { sessionUpdate: 'current_mode_update', currentModeId: entry.record.mode });
+  },
+  // Unstable (verify: not in upstream ACP schema). An unknown modelId is refused, so a test can tell
+  // that the gateway forwarded the request.
+  'session/set_model': (msg) => {
+    const entry = live.get(msg.params?.sessionId);
+    if (!entry) return fail(msg.id, -32602, `Session not found: ${msg.params?.sessionId}`);
+    if (!MODELS.some((m) => m.modelId === msg.params?.modelId)) return fail(msg.id, -32602, `Unknown model: ${msg.params?.modelId}`);
+    entry.record.model = msg.params.modelId;
+    reply(msg.id, {});
   },
 
   // Test-only methods.

@@ -168,8 +168,32 @@ final class ServiceModelTests: XCTestCase {
         XCTAssertEqual(dict["modeId"]?.stringValue, "code-mode")
     }
     
+    // MARK: - ACPSessionSetModelPayload Tests (unstable; verify: not in upstream ACP schema)
+
+    func testSessionSetModelPayloadParams() {
+        let payload = ACPSessionSetModelPayload(
+            sessionId: "model-session",
+            modelId: "deep-model"
+        )
+
+        let params = payload.params()
+
+        guard case let .object(dict) = params else {
+            XCTFail("Expected object params")
+            return
+        }
+
+        XCTAssertEqual(dict.count, 2)
+        XCTAssertEqual(dict["sessionId"]?.stringValue, "model-session")
+        XCTAssertEqual(dict["modelId"]?.stringValue, "deep-model")
+    }
+
+    func testSessionSetModelMethodName() {
+        XCTAssertEqual(ACPMethods.sessionSetModel, "session/set_model")
+    }
+
     // MARK: - ACPSessionCancelPayload Tests
-    
+
     func testSessionCancelPayloadParams() {
         let payload = ACPSessionCancelPayload(sessionId: "cancel-session")
         
