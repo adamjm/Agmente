@@ -433,11 +433,7 @@ private extension ContentView {
     }
 
     func settingsSheet() -> some View {
-        SettingsView(
-            devModeEnabled: $model.devModeEnabled,
-            codexSessionLoggingEnabled: $model.codexSessionLoggingEnabled,
-            sessionLogger: model.codexSessionLoggerForExport
-        )
+        SettingsView(model: model)
     }
 
     @ToolbarContentBuilder
