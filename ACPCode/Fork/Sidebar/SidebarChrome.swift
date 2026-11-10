@@ -29,7 +29,7 @@ struct SidebarBottomBar: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var pillTint: Color {
-        colorScheme == .dark ? Color(red: 0.12, green: 0.13, blue: 0.18) : .black
+        SidebarStyle.pillTint(for: colorScheme)
     }
 
     private var pillHeight: CGFloat {
