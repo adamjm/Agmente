@@ -806,9 +806,9 @@ func (a *projectAgent) logTurnEnded(sessionID string, response *jsonv.Value) {
 	a.noteTurnEnd(sessionID, stopReason) // D-106: the turn-scope stop waits for this
 	// FR-23: a finished turn, or a failed one (the agent exited or refused it) pushes once.
 	if status == "error" {
-		a.s.pushNotify(push.SessionFailed, a.id, sessionID)
+		a.s.pushNotify(push.SessionFailed, a.id, sessionID, "")
 	} else {
-		a.s.pushNotify(push.TurnEnded, a.id, sessionID)
+		a.s.pushNotify(push.TurnEnded, a.id, sessionID, "")
 	}
 	a.snapshotTurnEnd(sessionID)
 }
