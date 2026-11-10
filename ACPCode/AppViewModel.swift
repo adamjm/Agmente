@@ -114,6 +114,15 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         selectedServerViewModelAny?.sessionSummaries ?? []
     }
 
+    /// The sessions this app already holds for a connection (D-113): its in-memory list if it has one, else the
+    /// local Core Data cache. It opens no connection.
+    func cachedSessionSummaries(forServerId serverId: UUID) -> [SessionSummary] {
+        if let inMemory = serverViewModels[serverId]?.sessionSummaries, !inMemory.isEmpty {
+            return inMemory
+        }
+        return storage.fetchSessions(forServerId: serverId).map { $0.toSessionSummary() }
+    }
+
     /// Current session ID for the selected server (works for both ACP and Codex).
     var serverSessionId: String {
         selectedServerViewModelAny?.sessionId ?? ""

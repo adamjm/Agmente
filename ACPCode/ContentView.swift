@@ -246,6 +246,7 @@ private extension ContentView {
                 splitSelection: $splitSelection,
                 onOpen: openFromDrawer,
                 onOpenProjects: openProjectsFromDrawer,
+                onOpenLink: { handleDeepLink($0) },
                 onOpenSettings: { showingSettings = true }
             )
             .readableColumn()
@@ -594,6 +595,8 @@ private struct SessionListPage: View {
     var onOpen: (NavigationDestination) -> Void = { _ in }
     /// iOS (D-109): shows the Projects view in the main area and closes the drawer.
     var onOpenProjects: () -> Void = {}
+    /// iOS (D-113): opens a session link. A link to another connection selects that connection first.
+    var onOpenLink: (URL) -> Void = { _ in }
     /// Opens the Settings sheet from the sidebar's avatar button.
     let onOpenSettings: () -> Void
     /// Reveals the search field from the header's search button.
@@ -710,6 +713,29 @@ private struct SessionListPage: View {
             let lhsDate = lhs.sessions.first?.summary.updatedAt ?? .distantPast
             let rhsDate = rhs.sessions.first?.summary.updatedAt ?? .distantPast
             return lhsDate > rhsDate
+        }
+    }
+
+    /// iOS (D-113): every connection's sessions for the drawer, newest first, filtered by the search text.
+#if os(iOS)
+    private var allSessionRows: [AllSessionRow] { model.allSessionRows(query: sessionSearchText) }
+#else
+    private var allSessionRows: [AllSessionRow] { [] }
+#endif
+
+    /// The row id of the session that is streaming on the selected connection, if any.
+    private var activeRowId: String? {
+        guard model.serverIsStreaming, let serverId = model.selectedServerId, !model.serverSessionId.isEmpty else { return nil }
+        return AllSessionRow.key(serverId: serverId, sessionId: model.serverSessionId)
+    }
+
+    /// iOS (D-113): a row on the selected connection opens as before. A row on another connection goes through
+    /// the deep-link path, which selects that connection and then opens the session. The drawer then closes.
+    private func openFromAllSessions(_ row: AllSessionRow) {
+        if row.serverId == model.selectedServerId {
+            navigate(to: .session(row.sessionId))
+        } else {
+            onOpenLink(DeepLink.session(serverId: row.serverId, sessionId: row.sessionId).url)
         }
     }
 
@@ -887,7 +913,12 @@ private struct SessionListPage: View {
                                 navigate(to: .session(sessionId))
                             }
                             .gitHomeTabSheet(store: model.gitStore)
-                        } else if model.serverSessionSummaries.isEmpty {
+                            if !allSessionRows.isEmpty {
+                                // D-113: the other connections' sessions, below the gateway's own project sections.
+                                SidebarSectionHeader(title: "Other connections")
+                                AllSessionsSection(rows: allSessionRows, activeRowId: activeRowId, onOpen: openFromAllSessions)
+                            }
+                        } else if model.serverSessionSummaries.isEmpty && (groupingMode == .byFolder || allSessionRows.isEmpty) {
                             VStack(spacing: 8) {
                                 Text("Start a new session to chat with your agent")
                                     .font(.subheadline)
@@ -905,9 +936,14 @@ private struct SessionListPage: View {
                             SidebarSectionHeader(title: "Recents")
                             switch groupingMode {
                             case .byTime:
+#if os(iOS)
+                                // D-113: every connection's sessions, with each row's agent badge (folder mode stays per connection).
+                                AllSessionsSection(rows: allSessionRows, activeRowId: activeRowId, onOpen: openFromAllSessions)
+#else
                                 ForEach(groupedSessions, id: \.group) { group, sessions in
                                     sessionSection(title: group.title, sessions: sessions)
                                 }
+#endif
                             case .byFolder:
                                 ForEach(groupedByFolder, id: \.group) { group, sessions, hasMore in
                                     folderSection(group: group, sessions: sessions, hasMore: hasMore)
@@ -1386,7 +1422,7 @@ private enum SessionGroupingMode: String, CaseIterable {
     }
 }
 
-private enum SessionTimeGroup: CaseIterable, Hashable {
+enum SessionTimeGroup: CaseIterable, Hashable {
     case today
     case yesterday
     case thisWeek
