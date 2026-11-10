@@ -570,6 +570,12 @@ private extension SessionDetailView {
                         modePicker
                     }
 
+                    SessionModelMenu(
+                        sessionViewModel: sessionViewModel,
+                        sessionId: serverViewModel.sessionId,
+                        serverId: model.selectedServerId
+                    )
+
                     ForEach(sessionViewModel.visibleConfigOptions(), id: \.id) { option in
                         configOptionControl(for: option)
                     }

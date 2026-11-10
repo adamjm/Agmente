@@ -80,6 +80,11 @@ public final class ACPService {
         try await sendRequest(method: ACPMethods.sessionSetMode, params: payload.params())
     }
 
+    /// Sends `session/set_model` (unstable; verify: not in upstream ACP schema as of 2026-11-10).
+    public func setSessionModel(_ payload: ACPSessionSetModelPayload) async throws -> ACP.AnyResponse {
+        try await sendRequest(method: ACPMethods.sessionSetModel, params: payload.params())
+    }
+
     public func deleteSession(_ payload: ACPSessionDeletePayload) async throws -> ACP.AnyResponse {
         try await sendRequest(method: ACPMethods.sessionDelete, params: payload.params())
     }

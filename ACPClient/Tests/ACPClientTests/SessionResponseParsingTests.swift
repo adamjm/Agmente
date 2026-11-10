@@ -504,4 +504,165 @@ final class SessionResponseParsingTests: XCTestCase {
         
         XCTAssertEqual(msg1, msg2)
     }
+
+    // MARK: - Models (unstable `models` field, verify: not in upstream ACP schema)
+
+    func testParseSessionNewWithModels() {
+        let result: ACP.Value = .object([
+            "sessionId": .string("session-models"),
+            "models": .object([
+                "availableModels": .array([
+                    .object([
+                        "modelId": .string("fast"),
+                        "name": .string("Fast"),
+                        "description": .string("Quick answers")
+                    ]),
+                    .object([
+                        "modelId": .string("deep"),
+                        "name": .string("Deep")
+                    ])
+                ]),
+                "currentModelId": .string("deep")
+            ])
+        ])
+
+        let parsed = ACPSessionResponseParser.parseSessionNew(result: result)
+
+        XCTAssertEqual(parsed?.models?.availableModels, [
+            AgentModelOption(id: "fast", name: "Fast", description: "Quick answers"),
+            AgentModelOption(id: "deep", name: "Deep", description: nil)
+        ])
+        XCTAssertEqual(parsed?.models?.currentModelId, "deep")
+    }
+
+    func testParseSessionNewWithoutModelsHasNilModels() {
+        let result: ACP.Value = .object([
+            "sessionId": .string("session-plain")
+        ])
+
+        let parsed = ACPSessionResponseParser.parseSessionNew(result: result)
+
+        XCTAssertNotNil(parsed)
+        XCTAssertNil(parsed?.models)
+    }
+
+    func testParseSessionLoadWithModels() {
+        let result: ACP.Value = .object([
+            "models": .object([
+                "availableModels": .array([
+                    .object([
+                        "modelId": .string("fast"),
+                        "name": .string("Fast")
+                    ])
+                ]),
+                "currentModelId": .string("fast")
+            ])
+        ])
+
+        let parsed = ACPSessionResponseParser.parseSessionLoad(result: result, requestedSessionId: "loaded")
+
+        XCTAssertEqual(parsed.models?.availableModels, [AgentModelOption(id: "fast", name: "Fast")])
+        XCTAssertEqual(parsed.models?.currentModelId, "fast")
+    }
+
+    func testParseSessionLoadWithoutModelsHasNilModels() {
+        let parsed = ACPSessionResponseParser.parseSessionLoad(result: .object([:]), requestedSessionId: "loaded")
+
+        XCTAssertNil(parsed.models)
+    }
+
+    func testParseModelsSkipsMalformedEntries() {
+        let resultDict: [String: ACP.Value] = [
+            "models": .object([
+                "availableModels": .array([
+                    .object([
+                        "modelId": .string("valid"),
+                        "name": .string("Valid")
+                    ]),
+                    .object([
+                        // Missing modelId
+                        "name": .string("No id")
+                    ]),
+                    .object([
+                        // Missing name
+                        "modelId": .string("no-name")
+                    ]),
+                    .string("not an object"),
+                    .object([
+                        "modelId": .string("also-valid"),
+                        "name": .string("Also Valid")
+                    ])
+                ])
+            ])
+        ]
+
+        let parsed = ACPSessionResponseParser.parseModels(from: resultDict)
+
+        XCTAssertEqual(parsed?.availableModels.map(\.id), ["valid", "also-valid"])
+    }
+
+    func testParseModelsKeepsCurrentModelIdNotInList() {
+        let resultDict: [String: ACP.Value] = [
+            "models": .object([
+                "availableModels": .array([
+                    .object([
+                        "modelId": .string("fast"),
+                        "name": .string("Fast")
+                    ])
+                ]),
+                "currentModelId": .string("unlisted")
+            ])
+        ]
+
+        let parsed = ACPSessionResponseParser.parseModels(from: resultDict)
+
+        XCTAssertEqual(parsed?.availableModels, [AgentModelOption(id: "fast", name: "Fast")])
+        XCTAssertEqual(parsed?.currentModelId, "unlisted")
+    }
+
+    func testParseModelsOnlyCurrentModelId() {
+        let resultDict: [String: ACP.Value] = [
+            "models": .object([
+                "currentModelId": .string("only")
+            ])
+        ]
+
+        let parsed = ACPSessionResponseParser.parseModels(from: resultDict)
+
+        XCTAssertEqual(parsed?.availableModels, [])
+        XCTAssertEqual(parsed?.currentModelId, "only")
+        XCTAssertEqual(parsed?.isEmpty, false)
+    }
+
+    func testParseModelsEmptyObjectReturnsNil() {
+        let resultDict: [String: ACP.Value] = [
+            "models": .object([
+                "availableModels": .array([])
+            ])
+        ]
+
+        XCTAssertNil(ACPSessionResponseParser.parseModels(from: resultDict))
+        XCTAssertNil(ACPSessionResponseParser.parseModels(from: nil))
+        XCTAssertNil(ACPSessionResponseParser.parseModels(from: ["models": .string("nope")]))
+    }
+
+    // MARK: - Config option model selector
+
+    func testConfigOptionIsModelSelectorByCategoryOrId() {
+        func option(id: String, category: String?) -> ACPSessionConfigOption {
+            ACPSessionConfigOption(
+                id: id,
+                name: "Option",
+                category: category,
+                kind: .select(options: []),
+                currentValue: .string("")
+            )
+        }
+
+        XCTAssertTrue(option(id: "llm", category: "model").isModelSelector)
+        XCTAssertTrue(option(id: "model", category: nil).isModelSelector)
+        XCTAssertFalse(option(id: "temperature", category: "model_config").isModelSelector)
+        XCTAssertTrue(option(id: "mode", category: "mode").isModeSelector)
+        XCTAssertFalse(option(id: "mode", category: "mode").isModelSelector)
+    }
 }

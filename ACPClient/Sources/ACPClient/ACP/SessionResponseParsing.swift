@@ -17,16 +17,21 @@ public struct ACPSessionNewResult: Sendable, Equatable {
     /// Session config options if returned by the server.
     public let configOptions: [ACPSessionConfigOption]
 
+    /// Model information from the unstable `models` field, if returned by the server (verify: not in upstream schema).
+    public let models: ACPSessionModelInfo?
+
     public init(
         sessionId: String,
         cwd: String? = nil,
         modes: ACPModesInfo? = nil,
-        configOptions: [ACPSessionConfigOption] = []
+        configOptions: [ACPSessionConfigOption] = [],
+        models: ACPSessionModelInfo? = nil
     ) {
         self.sessionId = sessionId
         self.cwd = cwd
         self.modes = modes
         self.configOptions = configOptions
+        self.models = models
     }
 }
 
@@ -46,19 +51,56 @@ public struct ACPSessionLoadResult: Sendable, Equatable {
     
     /// Chat history if returned by the server.
     public let history: [ACPHistoryMessage]?
-    
+
+    /// Model information from the unstable `models` field, if returned by the server (verify: not in upstream schema).
+    public let models: ACPSessionModelInfo?
+
     public init(
         sessionId: String,
         cwd: String? = nil,
         modes: ACPModesInfo? = nil,
         configOptions: [ACPSessionConfigOption] = [],
-        history: [ACPHistoryMessage]? = nil
+        history: [ACPHistoryMessage]? = nil,
+        models: ACPSessionModelInfo? = nil
     ) {
         self.sessionId = sessionId
         self.cwd = cwd
         self.modes = modes
         self.configOptions = configOptions
         self.history = history
+        self.models = models
+    }
+}
+
+/// A model the agent offers for a session (unstable `models.availableModels` entry, verify: not in upstream schema).
+public struct AgentModelOption: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let description: String?
+
+    public init(id: String, name: String, description: String? = nil) {
+        self.id = id
+        self.name = name
+        self.description = description
+    }
+}
+
+/// Model information from a session response (unstable `models` object, verify: not in upstream schema).
+public struct ACPSessionModelInfo: Sendable, Equatable {
+    /// Models the agent offers for this session.
+    public let availableModels: [AgentModelOption]
+
+    /// The currently active model ID, as reported by the server. May not match an entry in `availableModels`.
+    public let currentModelId: String?
+
+    public init(availableModels: [AgentModelOption] = [], currentModelId: String? = nil) {
+        self.availableModels = availableModels
+        self.currentModelId = currentModelId
+    }
+
+    /// Whether this contains any meaningful model information.
+    public var isEmpty: Bool {
+        availableModels.isEmpty && currentModelId == nil
     }
 }
 
@@ -148,8 +190,15 @@ public enum ACPSessionResponseParser {
         // Parse modes
         let configOptions = ACPSessionConfigOptionParser.parse(from: resultDict)
         let modes = parseModes(from: resultDict) ?? ACPSessionConfigOptionParser.modeInfo(from: configOptions)
-        
-        return ACPSessionNewResult(sessionId: sessionId, cwd: cwd, modes: modes, configOptions: configOptions)
+        let models = parseModels(from: resultDict)
+
+        return ACPSessionNewResult(
+            sessionId: sessionId,
+            cwd: cwd,
+            modes: modes,
+            configOptions: configOptions,
+            models: models
+        )
     }
     
     // MARK: - Session Load/Resume
@@ -181,13 +230,16 @@ public enum ACPSessionResponseParser {
         
         // Parse history if present
         let history = parseHistory(from: resultDict)
-        
+
+        let models = parseModels(from: resultDict)
+
         return ACPSessionLoadResult(
             sessionId: sessionId,
             cwd: cwd,
             modes: modes,
             configOptions: configOptions,
-            history: history
+            history: history,
+            models: models
         )
     }
     
@@ -248,6 +300,39 @@ public enum ACPSessionResponseParser {
         return ACPModesInfo(availableModes: modes, currentModeId: currentModeId)
     }
     
+    /// Parse the unstable `models` object from a session response (verify: not in upstream schema).
+    /// Entries without a string `modelId` or `name` are skipped.
+    public static func parseModels(from result: [String: ACP.Value]?) -> ACPSessionModelInfo? {
+        guard let result = result,
+              let modelsObj = result["models"]?.objectValue else {
+            return nil
+        }
+
+        var models: [AgentModelOption] = []
+        if case let .array(availableModels)? = modelsObj["availableModels"] {
+            models = availableModels.compactMap { modelValue -> AgentModelOption? in
+                guard let modelObj = modelValue.objectValue,
+                      let modelId = modelObj["modelId"]?.stringValue,
+                      let modelName = modelObj["name"]?.stringValue else {
+                    return nil
+                }
+                return AgentModelOption(
+                    id: modelId,
+                    name: modelName,
+                    description: modelObj["description"]?.stringValue
+                )
+            }
+        }
+
+        let currentModelId = modelsObj["currentModelId"]?.stringValue
+
+        if models.isEmpty && currentModelId == nil {
+            return nil
+        }
+
+        return ACPSessionModelInfo(availableModels: models, currentModelId: currentModelId)
+    }
+
     /// Parse chat history from a session/load response.
     private static func parseHistory(from result: [String: ACP.Value]?) -> [ACPHistoryMessage]? {
         guard let result = result,

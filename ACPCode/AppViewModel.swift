@@ -2120,6 +2120,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         }
 
         setActiveSession(resolvedId, cwd: resolvedCwd, modes: modesInfo)
+        sessionViewModel?.applySessionModels(parsed?.models, serverId: selectedServerId, sessionId: resolvedId)
         if resolvedId != placeholderId {
             removePlaceholderSession(placeholderId, replacedBy: resolvedId)
         }
@@ -2164,6 +2165,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         if let viewModel = selectedServerViewModelAny?.currentSessionViewModel {
             viewModel.migrateSessionCommandsCache(for: serverId, from: placeholderId, to: resolvedId)
             viewModel.migrateSessionModeCache(for: serverId, from: placeholderId, to: resolvedId)
+            viewModel.migrateSessionModelCache(for: serverId, from: placeholderId, to: resolvedId)
         }
     }
 
@@ -2542,6 +2544,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         case .sessionActivated(let activation):
             debugLog("applyResponseAction: sessionActivated with \(activation.sessionId)")
             setActiveSession(activation.sessionId, cwd: activation.cwd, modes: activation.modes)
+            sessionViewModel?.applySessionModels(activation.models, serverId: serverId, sessionId: activation.sessionId)
             sessionViewModel?.applySessionConfigOptions(
                 activation.configOptions,
                 serverId: serverId,
