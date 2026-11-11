@@ -1,0 +1,31 @@
+{
+  "sessionId": "ses_e3329674cffeivA7BQd0cKG4pK",
+  "toolCall": {
+    "toolCallId": "call_deb7414c",
+    "status": "pending",
+    "title": "edit",
+    "rawInput": {
+      "filepath": "<HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt",
+      "diff": "Index: <HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt\n===================================================================\n--- <HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt\n+++ <HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt\n@@ -0,0 +1,1 @@\n+hi\n\\ No newline at end of file\n"
+    },
+    "kind": "edit",
+    "locations": []
+  },
+  "options": [
+    {
+      "optionId": "once",
+      "kind": "allow_once",
+      "name": "Allow once"
+    },
+    {
+      "optionId": "always",
+      "kind": "allow_always",
+      "name": "Always allow"
+    },
+    {
+      "optionId": "reject",
+      "kind": "reject_once",
+      "name": "Reject"
+    }
+  ]
+}

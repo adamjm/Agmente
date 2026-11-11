@@ -1,0 +1,10 @@
+{
+  "sessionId": "ses_e3332144effelCocImGd50K9Re",
+  "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+      "type": "text",
+      "text": "\n\npong"
+    }
+  }
+}
