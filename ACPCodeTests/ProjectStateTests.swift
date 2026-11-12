@@ -183,16 +183,15 @@ final class ProjectStateRouterTests: XCTestCase {
         let connection = Recording()
         let client = ACPClient(configuration: .init(endpoint: URL(string: "ws://localhost:1234")!, pingInterval: nil), socketProvider: Provider(connection: connection))
         let service = ACPService(client: client)
-        try await service.connect()
         let suite = "ProjectStateTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
-        let manager = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false)
+        // The manager hands out the fake service. addServer connects the new server, as the app does, so that
+        // connection runs over the fake socket instead of replacing it.
+        let manager = ACPClientManager(defaults: defaults, shouldStartNetworkMonitoring: false, serviceFactory: { _, _ in service })
         let model = AppViewModel(storage: .inMemory(), defaults: defaults, connectionManager: manager, shouldStartNetworkMonitoring: false, shouldConnectOnStartup: false)
         model.addServer(name: "Gateway", scheme: "ws", host: "localhost:1234", token: "", cfAccessClientId: "", cfAccessClientSecret: "", workingDirectory: "/tmp")
         let server = try XCTUnwrap(model.selectedServerViewModel)
-        manager.setServiceForTesting(service)
-        service.delegate = manager // connect() sets this (ACPClientManager.connect); the test seam does not, so notifications would never reach the router
         Task {
             for _ in 0..<500 {
                 if let request = connection.requests().first(where: { $0["method"] as? String == "initialize" }), let id = request["id"] as? Int {
@@ -202,7 +201,10 @@ final class ProjectStateRouterTests: XCTestCase {
                 try? await Task.sleep(nanoseconds: 5_000_000)
             }
         }
-        let initialized = await manager.initializeAndWait(payload: ACPInitializationPayload(clientName: "ACP Code iOS", clientVersion: "0.1.0"))
+        // addServer's connection initializes on its own. Wait for it instead of sending a second initialize.
+        let connected = await waitUntil { manager.connectionState == .connected }
+        XCTAssertTrue(connected, "addServer did not connect through the fake service")
+        let initialized = await waitUntil { manager.isInitialized }
         XCTAssertTrue(initialized)
         let responder = Task { [self] in
             var answered = Set<Int>()
@@ -223,6 +225,12 @@ final class ProjectStateRouterTests: XCTestCase {
                                             capabilities: AgentCapabilityState(loadSession: true), verifications: []))
         server.updateGatewayInfo(GatewayInfo(version: "0.3.0-dev", extensions: ["projects", "sessions", "approvals", "git"]))
         return Harness(model: model, server: server, connection: connection, responder: responder)
+    }
+
+    /// Polls `condition` for up to five seconds. The connect and initialize run on the main actor.
+    private func waitUntil(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<500 where !condition() { try? await Task.sleep(nanoseconds: 10_000_000) }
+        return condition()
     }
 
     private func settle(until condition: () -> Bool) async {

@@ -1009,7 +1009,12 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             initializedServers.insert(server.id)
         }
 
+        // selectServer reconnects only when a connection already exists. With none, connect the new server here.
+        let hadConnection = service != nil
         selectServer(server.id)
+        if !hadConnection {
+            connectInitializeAndFetchSessions()
+        }
     }
 
     func selectServer(_ id: UUID) {
