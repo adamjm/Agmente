@@ -993,6 +993,16 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             appendClosure("Pick a project on the gateway to start a session.")
             return
         }
+        // A plain ACP connection with a blank working directory has no folder to start in: it is told so,
+        // and no session/new is sent (the blank never becomes "/").
+        if plainACPNewSessionBlocked(
+            isGateway: isGatewayServer,
+            requested: workingDirectory,
+            connectionWorkingDirectory: self.workingDirectory
+        ) {
+            appendClosure(plainACPBlankWorkingDirectoryMessage)
+            return
+        }
         let sanitizedCwd = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? sanitizeWorkingDirectory(workingDirectory!)
             : nil

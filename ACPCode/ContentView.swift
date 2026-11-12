@@ -1036,6 +1036,7 @@ private struct SessionListPage: View {
                 GatewayNewSessionSheet(
                     projects: gatewayHome.projects,
                     initialSelection: gatewayHome.selectedProjectId,
+                    blankWorkingDirectory: model.defaultWorkingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                     mcpClient: { [weak model] in model?.selectedGatewayClient() },
                     onCancel: { showingNewSessionSheet = false },
                     onCreate: { project, mcpIDs in

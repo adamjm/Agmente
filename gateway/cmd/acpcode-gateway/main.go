@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -87,6 +88,11 @@ func run(args []string) int {
 	// A damaged revoked-token list stops the start: a revocation must never be lost silently.
 	if err := srv.LoadRevoked(); err != nil {
 		fmt.Fprintf(os.Stderr, "cannot read the revoked-token list: %v\n", err)
+		return 1
+	}
+	// The default working directory is made and registered before the gateway listens (working_dir.go).
+	if err := srv.EnsureWorkingDir(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot prepare the working_dir folder: %v\n", err)
 		return 1
 	}
 	ln, err := srv.Listen()

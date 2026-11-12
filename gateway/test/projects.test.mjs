@@ -1,10 +1,10 @@
 // Project registry over the wire: T-25 (FR-17, PLAN 3.3, D-024).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { auth, connect, dryRun, makeDirs, rawConfig, rpc, spawnGateway, startGateway, useProject } from './helpers.mjs';
+import { WORKING_DIR_NAME, auth, connect, dryRun, makeDirs, rawConfig, rpc, spawnGateway, startGateway, useProject, userProjects } from './helpers.mjs';
 
 const homesOf = (gw) => join(gw.config.stateDir, 'homes');
 
@@ -37,8 +37,9 @@ test('T-25: a project outside the roots, or reached through a symlink that leave
       assert.equal(res.error?.code, -32602, JSON.stringify(path));
       assert.match(res.error.message, message, JSON.stringify(path));
     }
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result, { projects: [] });
-    assert.equal(existsSync(homesOf(gw)), false, 'no project home was created');
+    assert.deepEqual({ projects: userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects) }, { projects: [] });
+    const [workingDir] = (await rpc(ws, '_acpcode/projects/list', {})).result.projects.filter((p) => p.name === WORKING_DIR_NAME);
+    assert.deepEqual(readdirSync(homesOf(gw)), [workingDir.id], 'no project home was created for the refused paths');
     ws.close();
   } finally {
     await gw.stop();
@@ -59,7 +60,7 @@ test('names and default modes are checked', async () => {
       assert.equal(res.error?.code, -32602, JSON.stringify(defaultMode));
       assert.match(res.error.message, /defaultMode must be/);
     }
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
+    assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), []);
     ws.close();
   } finally {
     await gw.stop();
@@ -94,7 +95,7 @@ test('a project inside a root is registered with its realpath, a HOME and a trus
 
     const second = (await rpc(ws, '_acpcode/projects/create', { name: 'Root itself', path: gw.dirs.root })).result.project;
     assert.equal(second.defaultMode, null);
-    const list = (await rpc(ws, '_acpcode/projects/list', {})).result.projects;
+    const list = userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects);
     assert.deepEqual(list.map((p) => p.id), [project.id, second.id]);
 
     const line = await gw.waitForAudit((l) => l.event === 'project_created' && l.project === project.id);
@@ -118,7 +119,7 @@ test('_acpcode/* requests are answered by the gateway and never reach the agent'
     assert.equal(guarded.error.code, -32602);
     assert.match(guarded.error.message, /cwd is outside/);
     // The notification created nothing.
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
+    assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), []);
     // Now give the socket a project, and ask its agent what it received.
     await useProject(gw, ws);
     await rpc(ws, '_acpcode/projects/list', {});
@@ -143,7 +144,7 @@ test('projects persist across a gateway restart', async () => {
     gw = await spawnGateway(config, { configDir: dirs.base });
     try {
       ({ ws } = await connect(gw.url, auth()));
-      assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, [{ ...project }]);
+      assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), [{ ...project }]);
       ws.close();
     } finally {
       await gw.stop();

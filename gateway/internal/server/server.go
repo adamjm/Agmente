@@ -39,14 +39,15 @@ var defaultInitialize []byte // Bob 2.0.9's initialize result (F-11), until an a
 
 // Server is one gateway.
 type Server struct {
-	cfg     *config.Config
-	audit   *audit.Logger
-	store   *store.Store
-	runner  runner
-	limiter *failureLimiter
-	roots   []string
-	http    *http.Server
-	conns   atomic.Int64
+	cfg        *config.Config
+	audit      *audit.Logger
+	store      *store.Store
+	runner     runner
+	limiter    *failureLimiter
+	roots      []string
+	workingDir string // realpath of the default folder (working_dir.go); empty until EnsureWorkingDir
+	http       *http.Server
+	conns      atomic.Int64
 	// connector is the remote connector's listener (D-095). Disabled by default: no listener starts.
 	connector *connector.Connector
 
@@ -513,7 +514,7 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 		c.closeWith(revokedClosedCode, "token revoked")
 		return
 	}
-	if !cwdAllowed(msg, s.roots) {
+	if !cwdAllowed(msg, s.allowedCwdRoots()) {
 		s.audit.Log("cwd_rejected", with(who, audit.Fields{Method: method}))
 		if !id.IsNull() {
 			c.send(cwdRejection(id))

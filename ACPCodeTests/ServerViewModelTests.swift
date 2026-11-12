@@ -929,7 +929,11 @@ final class ServerViewModelTests: XCTestCase {
 
     /// A ServerViewModel on an initialized, recording connection. `gateway` sets the gateway identity the way
     /// the initialize result does.
-    private func makeInitializedServer(gateway: Bool) async throws -> (RecordingWebSocketConnection, ServerViewModel, ACPClientManager) {
+    private func makeInitializedServer(
+        gateway: Bool,
+        workingDirectory: String = "/tmp",
+        append: @escaping (String) -> Void = { _ in }
+    ) async throws -> (RecordingWebSocketConnection, ServerViewModel, ACPClientManager) {
         let connection = RecordingWebSocketConnection()
         let client = ACPClient(
             configuration: .init(endpoint: URL(string: "ws://localhost:1234")!, pingInterval: nil),
@@ -975,10 +979,10 @@ final class ServerViewModelTests: XCTestCase {
             scheme: "ws",
             host: "localhost:1234",
             token: "",
-            workingDirectory: "/tmp",
+            workingDirectory: workingDirectory,
             connectionManager: manager,
             getService: { manager.service },
-            append: { _ in },
+            append: append,
             logWire: { _, _ in },
             cacheDelegate: StorageBackedCacheDelegate(storage: storage),
             storage: storage
@@ -987,6 +991,40 @@ final class ServerViewModelTests: XCTestCase {
             ? GatewayInfo(version: "0.3.0-dev", extensions: ["projects", "sessions"])
             : nil)
         return (connection, serverViewModel, manager)
+    }
+
+    private final class MessageLog: @unchecked Sendable {
+        var lines: [String] = []
+    }
+
+    /// A plain ACP connection with a blank working directory never sends session/new, so it never runs at "/".
+    /// The user is told what to set (the same blocked-session path the gateway uses).
+    func testBlankPlainACPConnectionDoesNotStartASession() async throws {
+        let log = MessageLog()
+        let (connection, serverViewModel, _) = try await makeInitializedServer(
+            gateway: false,
+            workingDirectory: "",
+            append: { log.lines.append($0) }
+        )
+
+        serverViewModel.sendNewSession()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertFalse(hasSentRequest(connection: connection, method: "session/new"),
+                       "a blank plain connection must not send session/new")
+        XCTAssertTrue(log.lines.contains(plainACPBlankWorkingDirectoryMessage),
+                      "the user is told to set a working directory; got \(log.lines)")
+    }
+
+    /// A stored "/" connection still starts its session at "/" (no migration of existing connections).
+    func testStoredRootConnectionStillStartsASessionAtRoot() async throws {
+        let (connection, serverViewModel, _) = try await makeInitializedServer(gateway: false, workingDirectory: "/")
+
+        serverViewModel.sendNewSession()
+
+        let request = await waitForSentRequest(connection: connection, method: "session/new")
+        let params = request?["params"] as? [String: Any]
+        XCTAssertEqual(params?["cwd"] as? String, "/")
     }
 
     func testConnectThatNeverCompletesFailsAfterTheDeadlineWithTheMessage() async throws {

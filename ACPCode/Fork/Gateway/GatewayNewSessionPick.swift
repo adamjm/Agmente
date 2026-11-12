@@ -1,10 +1,15 @@
 import Foundation
 import ACPClient
 
-/// The project the new-session sheet starts on: the chosen one while it is still listed, else the
+/// The project the new-session sheet starts on: the chosen one while it is still listed. Otherwise, for a
+/// gateway connection with a blank working directory, the gateway's working_dir project. Otherwise the
 /// first project, else nil when the gateway has none (FR-26).
-func gatewayNewSessionChosenProject(_ projects: [GatewayProject], selection: String?) -> GatewayProject? {
-    projects.first { $0.id == selection } ?? projects.first
+func gatewayNewSessionChosenProject(_ projects: [GatewayProject], selection: String?, blankWorkingDirectory: Bool = false) -> GatewayProject? {
+    if let picked = projects.first(where: { $0.id == selection }) { return picked }
+    if blankWorkingDirectory, let workingDir = projects.first(where: { $0.name == gatewayDefaultProjectName }) {
+        return workingDir
+    }
+    return projects.first
 }
 
 /// The cwd sent to `session/new` for a gateway server: the chosen project's path, trimmed. Nil for a

@@ -237,6 +237,11 @@ export function nextClose(ws) {
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The gateway's default project, working_dir (gateway internal/server/working_dir.go), is listed on
+// every start. Tests about the projects a phone made leave it out; test/working-dir.test.mjs checks it.
+export const WORKING_DIR_NAME = 'working_dir';
+export const userProjects = (list) => list.filter((p) => p.name !== WORKING_DIR_NAME);
+
 /**
  * Register gw.dirs.project (or `path`) as a project and open a session in it on this socket.
  * Requests with no cwd or sessionId then go to this project (D-025). Returns { project, sessionId }.
