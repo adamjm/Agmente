@@ -439,8 +439,14 @@ private extension AddServerView {
                 isSaving = false
                 switch result {
                 case .success(let validation):
-                    pendingValidation = validation
-                    showingSummaryOverlay = true
+                    if let editingServer, Self.changesOnlyName(validation, from: editingServer) {
+                        // A rename needs no acknowledgement: the connection and what the agent reports are unchanged.
+                        onInsert(validation)
+                        dismiss()
+                    } else {
+                        pendingValidation = validation
+                        showingSummaryOverlay = true
+                    }
                 case .failure(let error):
                     // Check if this is a local network permission error
                     // If so, don't show an error alert to avoid interfering with the OS permission prompt
@@ -519,6 +525,30 @@ private extension AddServerView {
     }
 }
 
+extension AddServerView {
+    /// True only for a working directory typed as "/" (surrounding whitespace ignored).
+    static func isRootWorkingDirectory(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines) == "/"
+    }
+
+    /// True when an edit changes only the display name. The agent's reported capabilities and the
+    /// connection (endpoint, token, Cloudflare Access, TLS pins and identity, local-only, agent kind,
+    /// working directory) stay the same, so the agent-limitations acknowledgement is not needed.
+    static func changesOnlyName(_ validation: ValidatedServerConfiguration, from original: ACPServerConfiguration) -> Bool {
+        validation.scheme == original.scheme &&
+        validation.host == original.host &&
+        validation.token == original.token &&
+        validation.cfAccessClientId == original.cfAccessClientId &&
+        validation.cfAccessClientSecret == original.cfAccessClientSecret &&
+        validation.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+            == original.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines) &&
+        validation.serverType == original.serverType &&
+        validation.localOnly == original.localOnly &&
+        validation.spkiPins == original.spkiPins &&
+        !validation.clientIdentityChanged
+    }
+}
+
 private struct ServerSummaryOverlay: View {
     let validation: ValidatedServerConfiguration
     let workingDirectory: String
@@ -535,7 +565,7 @@ private struct ServerSummaryOverlay: View {
     }
     
     private var isWorkingDirectoryRoot: Bool {
-        workingDirectory == "/"
+        AddServerView.isRootWorkingDirectory(workingDirectory)
     }
 
     private var isCodexServer: Bool {
