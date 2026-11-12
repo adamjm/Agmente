@@ -39,6 +39,22 @@ final class GatewayConnectionsModel: ObservableObject {
 
     func isBusy(_ id: String) -> Bool { busy.contains(id) }
 
+    /// The sentence a person sees for a failed gateway call. The raw error goes to the log, not the screen.
+    /// A gateway without Claude connections answers -32601 (method not found). A refusal of the state, -32001,
+    /// is the gateway's own sentence and is kept. Any other error gets the generic sentence.
+    static func userMessage(for error: Error, log: (String) -> Void = { NSLog("%@", $0) }) -> String {
+        log("Claude connections gateway error: \(error)")
+        let generic = "The gateway could not finish this. Try again."
+        guard let gatewayError = error as? GatewayError else { return generic }
+        if gatewayError.isMethodNotFound { return "This gateway does not support Claude connections yet." }
+        switch gatewayError {
+        case .rpc(-32001, let message): return message
+        case .disconnected: return "Not connected to the gateway."
+        case .missingPairingCode: return gatewayError.message
+        case .rpc, .invalidResponse, .sessionCreatedPromptNotSent: return generic
+        }
+    }
+
     /// The scope a choice means right now, or nil when one session is chosen and no session is picked.
     func scope(for choice: ScopeChoice) -> GatewayConnectorScope? {
         switch choice {
@@ -68,7 +84,7 @@ final class GatewayConnectionsModel: ObservableObject {
             errorMessage = nil
         } catch {
             guard mine == generation else { return }
-            errorMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            errorMessage = Self.userMessage(for: error)
         }
     }
 
@@ -89,7 +105,7 @@ final class GatewayConnectionsModel: ObservableObject {
             }
         } catch {
             guard mine == generation else { return }
-            sessionsMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            sessionsMessage = Self.userMessage(for: error)
         }
     }
 
@@ -117,7 +133,7 @@ final class GatewayConnectionsModel: ObservableObject {
         } catch {
             guard mine == generation else { return false }
             await refresh()
-            errorMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            errorMessage = Self.userMessage(for: error)
             return false
         }
     }
@@ -138,7 +154,7 @@ final class GatewayConnectionsModel: ObservableObject {
         } catch {
             guard mine == generation else { return }
             await refresh()
-            errorMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            errorMessage = Self.userMessage(for: error)
         }
     }
 
@@ -158,7 +174,7 @@ final class GatewayConnectionsModel: ObservableObject {
         } catch {
             guard mine == generation else { return }
             await refresh()
-            errorMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+            errorMessage = Self.userMessage(for: error)
         }
     }
 

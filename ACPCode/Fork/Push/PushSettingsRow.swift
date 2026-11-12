@@ -1,9 +1,15 @@
 #if os(iOS)
 import SwiftUI
 
+/// The words the notifications row shows. Each sentence is checked against the code: approval alerts post
+/// from `ApprovalLocalNotifier` only while the app is in the background and notifications are allowed;
+/// remote alerts need a device token, and this build has no Push Notifications entitlement, so iOS gives none.
+enum PushSettingsCopy {
+    static let deliveryNote = "Approval alerts can appear while the app is in the background, if notifications are allowed. Alerts when the app is closed are not available yet."
+}
+
 /// Settings row for notifications (PLAN 3.20). It asks for permission only when tapped, and it shows what
-/// is true: the device token stays on this device, because the gateway has no method to take it yet and
-/// the app has no push entitlement (BLOCKED in RESULTS, D-041).
+/// is true for this build.
 struct PushSettingsRow: View {
     @ObservedObject private var push = PushRegistration.shared
 
@@ -25,7 +31,7 @@ struct PushSettingsRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Text("Push messages are not delivered yet: this build has no push entitlement and the gateway does not send them. The token is given to a gateway that accepts it. Opening a link such as acpcode://session/<server>/<session> works.")
+            Text(PushSettingsCopy.deliveryNote)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
