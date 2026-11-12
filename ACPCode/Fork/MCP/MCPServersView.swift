@@ -1,9 +1,21 @@
 import SwiftUI
 
+/// The footer words of the phone's own MCP server list (FR-40). A gateway sends this list on session/new and
+/// session/resume. A plain ACP connection sends none of it (`ServerViewModel.mcpServersForSession()`).
+enum MCPServersCopy {
+    static func footer(isGateway: Bool) -> String {
+        isGateway
+            ? "Servers on this phone are sent when a session starts or resumes. A running session keeps them until it is reopened."
+            : "MCP servers are used only on gateway connections, so none are sent on this connection."
+    }
+}
+
 /// The MCP server list (FR-40, PLAN 6B.2): add, edit, enable or disable, and delete.
 /// Values typed here go to the Keychain. The list itself never shows a stored value.
 struct MCPServersView: View {
     @ObservedObject var model: MCPServersModel
+    /// The connection the list belongs to. The screen is offered for gateway connections only (MCPEntryPoint).
+    let isGateway: Bool
     @State private var editing: MCPServerEntry?
     @State private var isAdding = false
     @State private var errorText: String?
@@ -17,7 +29,7 @@ struct MCPServersView: View {
             }
             Section {
                 if model.servers.isEmpty {
-                    Text("No servers. Bob uses only the MCP servers in its own settings.")
+                    Text("No servers on this phone.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(model.servers) { entry in
@@ -25,7 +37,7 @@ struct MCPServersView: View {
                 }
                 .onDelete(perform: delete)
             } footer: {
-                Text("Servers are sent when a session starts or resumes. A running session keeps its servers until it is reopened.")
+                Text(MCPServersCopy.footer(isGateway: isGateway))
             }
         }
         .navigationTitle("MCP servers")
