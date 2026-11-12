@@ -910,7 +910,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             token: config.token,
             cfAccessClientId: config.cfAccessClientId,
             cfAccessClientSecret: config.cfAccessClientSecret,
-            workingDirectory: sanitizeWorkingDirectory(config.workingDirectory),
+            // Blank stays blank; only the runtime fallback (resolvedWorkingDirectory) uses "/".
+            workingDirectory: config.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines),
             serverType: config.serverType,
             localOnly: config.localOnly
         )
@@ -937,6 +938,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         servers[index] = updated
         serverLifecycleController.persistServer(updated)
         updateServerViewModel(for: updated)
+        // The selected server's fields are mirrored here and written back on a server switch; keep them current.
+        if selectedServerId == id {
+            applySelectedServerConfig(updated)
+        }
 
         // Cache new agentInfo if provided
         if let agentInfo = config.agentInfo {
@@ -977,7 +982,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             token: token,
             cfAccessClientId: cfAccessClientId,
             cfAccessClientSecret: cfAccessClientSecret,
-            workingDirectory: sanitizeWorkingDirectory(workingDirectory),
+            workingDirectory: workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines),
             serverType: serverType,
             localOnly: localOnly
         )
