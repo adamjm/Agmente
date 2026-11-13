@@ -12,6 +12,10 @@ extension Notification.Name {
 final class ACPCodeAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // D-111: the approval category has no actions. Answering stays in the app (D-009). Set once, here.
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: ApprovalLocalNotifier.categoryIdentifier, actions: [], intentIdentifiers: [], options: []),
+        ])
         Task { @MainActor in await PushRegistration.shared.refreshStatus() }
         Task { @MainActor in ApprovalLiveActivityCoordinator.installAnswerRouter() } // Once and Deny intents (la-decision)
         return true

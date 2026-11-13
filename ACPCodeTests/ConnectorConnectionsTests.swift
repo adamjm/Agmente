@@ -251,6 +251,40 @@ final class ConnectorConnectionsModelTests: XCTestCase {
         XCTAssertTrue(model.pairings.isEmpty)
     }
 
+    /// A gateway without Claude connections answers -32601. The screen shows a plain sentence, not the raw text.
+    func testAGatewayWithoutConnectionsShowsAPlainSentenceOnRefresh() async {
+        let fake = ConnectionsFakeGateway()
+        fake.errors["_acpcode/connector/pending"] = ACPServiceError.rpc(id: .number(1), error: .serverError(code: -32601, message: "Method not found"))
+        let model = makeModel(fake)
+        await model.refresh()
+        XCTAssertEqual(model.errorMessage, "This gateway does not support Claude connections yet.")
+        XCTAssertFalse(model.errorMessage?.contains("Method not found") ?? true)
+    }
+
+    func testAGatewayWithoutConnectionsShowsAPlainSentenceOnApprove() async {
+        let fake = ConnectionsFakeGateway()
+        fake.pairings = [pairingValue("p1")]
+        fake.sessions = [sessionValue("s1", project: "p1", activity: "2026-11-07T09:00:00.000Z")]
+        let model = makeModel(fake)
+        await model.refresh()
+        await model.loadSessions()
+        fake.errors["_acpcode/connector/approve"] = ACPServiceError.rpc(id: .number(2), error: .serverError(code: -32601, message: "Method not found"))
+        let approved = await model.approve(model.pairings[0], choice: .oneSession)
+        XCTAssertFalse(approved)
+        XCTAssertEqual(model.errorMessage, "This gateway does not support Claude connections yet.")
+        XCTAssertEqual(model.pairings.map(\.pairingId), ["p1"], "the row is kept")
+    }
+
+    /// An error the app does not know gets a generic sentence. The gateway's own text stays in the log.
+    func testAnUnknownGatewayErrorShowsAGenericSentenceOnRefresh() async {
+        let fake = ConnectionsFakeGateway()
+        fake.errors["_acpcode/connector/grants"] = ACPServiceError.rpc(id: .number(1), error: .serverError(code: -32603, message: "cannot store token"))
+        let model = makeModel(fake)
+        await model.refresh()
+        XCTAssertEqual(model.errorMessage, "The gateway could not finish this. Try again.")
+        XCTAssertFalse(model.errorMessage?.contains("cannot store token") ?? true)
+    }
+
     func testWithoutAGatewayTheScreenSaysSo() async {
         let model = GatewayConnectionsModel(clientProvider: { nil })
         await model.refresh()

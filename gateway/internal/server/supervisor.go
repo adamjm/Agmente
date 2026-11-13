@@ -41,8 +41,9 @@ type pendingRequest struct {
 	session string            // load and resume: the session to record on success
 	turn    string            // session/prompt: the session whose turn this is (event log, D-027)
 	turnID  string            // session/prompt: the gateway's id for the turn, given to the caller once the agent accepts it
-	sid     string            // set_mode, delete and close: the session they change
+	sid     string            // set_mode, set_model, delete and close: the session they change
 	modeID  string            // set_mode: the mode asked for
+	modelID string            // set_model: the model asked for (unstable; verify: not in upstream ACP schema)
 	reload  *reload           // a load or resume the gateway let through after a restart (FR-20)
 	fence   *reload           // the gateway's session/list that ends that load's replay window
 	mcp     *jsonv.Value      // session/new, load, resume: the mcpServers list the phone sent (D-088)
@@ -477,6 +478,10 @@ func (a *projectAgent) agentResponse(msg, id *jsonv.Value) {
 			a.mu.Lock()
 			a.setMode(p.sid, p.modeID)
 			a.mu.Unlock()
+		case "session/set_model":
+			a.mu.Lock()
+			a.setModel(p.sid, p.modelID)
+			a.mu.Unlock()
 		case "session/delete", "session/close":
 			a.mu.Lock()
 			delete(a.live, p.sid)
@@ -536,6 +541,24 @@ func (a *projectAgent) setMode(sid, mode string) {
 	next.Set("currentModeId", jsonv.Str(mode))
 	res := copyResult(ls.result, "")
 	res.Set("modes", next)
+	ls.result = res
+}
+
+// setModel records a session's current model in its cached result, as setMode does for modes. It
+// must be called with a.mu held. The gateway never chooses a model: it keeps the one the agent accepted.
+func (a *projectAgent) setModel(sid, model string) {
+	ls := a.live[sid]
+	if ls == nil || model == "" {
+		return
+	}
+	models := ls.result.Get("models")
+	if models == nil || models.Kind != jsonv.Object {
+		return
+	}
+	next := copyResult(models, "") // the cached value may be marshalled concurrently: replace, do not edit
+	next.Set("currentModelId", jsonv.Str(model))
+	res := copyResult(ls.result, "")
+	res.Set("models", next)
 	ls.result = res
 }
 
@@ -718,6 +741,9 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 			case "session/set_mode":
 				p.sid = sid
 				p.modeID, _ = msg.Get("params").Get("modeId").StringValue()
+			case "session/set_model":
+				p.sid = sid
+				p.modelID, _ = msg.Get("params").Get("modelId").StringValue()
 			case "session/delete", "session/close":
 				p.sid = sid
 			}
@@ -809,9 +835,9 @@ func (a *projectAgent) logTurnEnded(sessionID string, response *jsonv.Value) {
 	a.noteTurnEnd(sessionID, stopReason) // D-106: the turn-scope stop waits for this
 	// FR-23: a finished turn, or a failed one (the agent exited or refused it) pushes once.
 	if status == "error" {
-		a.s.pushNotify(push.SessionFailed, a.id, sessionID)
+		a.s.pushNotify(push.SessionFailed, a.id, sessionID, "")
 	} else {
-		a.s.pushNotify(push.TurnEnded, a.id, sessionID)
+		a.s.pushNotify(push.TurnEnded, a.id, sessionID, "")
 	}
 	a.snapshotTurnEnd(sessionID)
 }

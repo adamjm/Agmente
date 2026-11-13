@@ -130,7 +130,7 @@ test('a production token goes to the production host, a sandbox token to the san
   }
 });
 
-test('an approval request sends "Approval needed"; a payload never carries the tool text', async () => {
+test('an approval request sends "Approval needed: <tool summary>"; a payload never carries the prompt or tool output', async () => {
   const s = await setup();
   try {
     const turn = rpc(s.phone.ws, 'session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: `${PROMPT_SECRET} [permission]` }] });
@@ -141,7 +141,9 @@ test('an approval request sends "Approval needed"; a payload never carries the t
     await turn;
     const req = s.fake.requests.find((r) => JSON.parse(r.body).event === 'approval_needed');
     const body = JSON.parse(req.body);
-    assert.equal(body.aps.alert.body, 'Approval needed');
+    // D-111: the fake agent's tool call is titled "Run echo" with kind execute, so the summary is "Run echo".
+    assert.equal(body.aps.alert.body, 'Approval needed: Run echo');
+    assert.equal(body.aps.category, 'APPROVAL');
     assert.equal(body.sessionId, s.sessionId);
     assert.ok(!req.body.includes(PROMPT_SECRET) && !req.body.includes('[permission]'));
   } finally {

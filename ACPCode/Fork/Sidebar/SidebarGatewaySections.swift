@@ -52,6 +52,9 @@ struct SidebarGatewaySections: View {
     var git: GitStore?
     /// Stop, stop agent and the stalled notice (D-106). Its prompts are shown by the root view.
     let actions: GatewaySessionActions
+    /// The gateway connection's colour and whether it is open (D-113). Every row of this gateway shares them.
+    var serverColour: Color?
+    var isConnected: Bool?
     let open: (String) -> Void
 
     var body: some View {
@@ -90,7 +93,9 @@ struct SidebarGatewaySections: View {
                                     title: session.title ?? "New Chat",
                                     status: ForkStatusKind(session.status),
                                     unread: session.unread,
-                                    isHighlighted: session.status == .running
+                                    isHighlighted: session.status == .running,
+                                    serverColour: serverColour,
+                                    isConnected: isConnected
                                 )
                                 .overlay(alignment: .bottom) {
                                     GatewayContextBar(usage: home.usage[session.sessionId])

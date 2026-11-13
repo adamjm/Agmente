@@ -7,7 +7,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { auth, connect, OTHER_TOKEN, rpc, sleep, startGateway } from './helpers.mjs';
+import { OTHER_TOKEN, WORKING_DIR_NAME, auth, connect, rpc, sleep, startGateway, userProjects } from './helpers.mjs';
 
 // Collects every project state notification the socket gets, in arrival order.
 function stateFeed(ws) {
@@ -39,10 +39,15 @@ test('a new socket that lists a project with a running agent is told "running" f
 
     const phone = (await connect(gw.url, auth(OTHER_TOKEN))).ws; // a socket that connects after the agent started
     const feed = stateFeed(phone);
-    const { projects } = (await rpc(phone, '_acpcode/projects/list', {})).result;
-    assert.deepEqual(projects.map((p) => p.id), [project.id]);
-    assert.deepEqual(pairs(feed), [[project.id, 'running']], 'the snapshot arrives with the listing');
-    assert.match(feed[0].since, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    const listed = (await rpc(phone, '_acpcode/projects/list', {})).result.projects;
+    assert.deepEqual(userProjects(listed).map((p) => p.id), [project.id]);
+    const workingDirId = listed.find((p) => p.name === WORKING_DIR_NAME).id;
+    assert.deepEqual(
+      pairs(feed).sort(),
+      [[project.id, 'running'], [workingDirId, 'stopped']].sort(),
+      'the snapshot arrives with the listing, one entry per listed project',
+    );
+    assert.match(feed.find((n) => n.projectId === project.id).since, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
     phone.close();
     owner.close();
   } finally {
@@ -111,11 +116,12 @@ test('one listing sends each listed project one snapshot, with no duplicates and
     const phone = (await connect(gw.url, auth(OTHER_TOKEN))).ws;
     const feed = stateFeed(phone);
     const audits = stateAudits(gw);
-    await rpc(phone, '_acpcode/projects/list', {});
+    const listed = (await rpc(phone, '_acpcode/projects/list', {})).result.projects;
+    const workingDirId = listed.find((p) => p.name === WORKING_DIR_NAME).id;
     await sleep(700); // long enough for a duplicate, if one were sent
     assert.deepEqual(
       pairs(feed).sort(),
-      [[first.id, 'running'], [second.id, 'stopped']].sort(),
+      [[first.id, 'running'], [second.id, 'stopped'], [workingDirId, 'stopped']].sort(),
       'one snapshot per listed project',
     );
     assert.equal(stateAudits(gw), audits, 'a snapshot is not audited');

@@ -203,6 +203,8 @@ struct GatewaySessionRow: View {
 /// default; Create stays off while there is no project to start in.
 struct GatewayNewSessionSheet: View {
     let projects: [GatewayProject]
+    /// True when the connection's working directory is blank: the sheet starts on the gateway's working_dir project.
+    let blankWorkingDirectory: Bool
     /// The chosen MCP ids (D-107), or nil to send no key. The list is loaded from the gateway.
     let onCancel: () -> Void
     let onCreate: (GatewayProject, [String]?) -> Void
@@ -214,18 +216,22 @@ struct GatewayNewSessionSheet: View {
     init(
         projects: [GatewayProject],
         initialSelection: String? = nil,
+        blankWorkingDirectory: Bool = false,
         mcpClient: @escaping () -> GatewayClient? = { nil },
         onCancel: @escaping () -> Void,
         onCreate: @escaping (GatewayProject, [String]?) -> Void
     ) {
         self.projects = projects
+        self.blankWorkingDirectory = blankWorkingDirectory
         self.onCancel = onCancel
         self.onCreate = onCreate
         _selection = State(initialValue: initialSelection)
         _mcp = StateObject(wrappedValue: GatewayMCPCatalogModel(clientProvider: mcpClient))
     }
 
-    private var chosen: GatewayProject? { gatewayNewSessionChosenProject(projects, selection: selection) }
+    private var chosen: GatewayProject? {
+        gatewayNewSessionChosenProject(projects, selection: selection, blankWorkingDirectory: blankWorkingDirectory)
+    }
 
     var body: some View {
         NavigationStack {

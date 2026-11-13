@@ -114,6 +114,15 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         selectedServerViewModelAny?.sessionSummaries ?? []
     }
 
+    /// The sessions this app already holds for a connection (D-113): its in-memory list if it has one, else the
+    /// local Core Data cache. It opens no connection.
+    func cachedSessionSummaries(forServerId serverId: UUID) -> [SessionSummary] {
+        if let inMemory = serverViewModels[serverId]?.sessionSummaries, !inMemory.isEmpty {
+            return inMemory
+        }
+        return storage.fetchSessions(forServerId: serverId).map { $0.toSessionSummary() }
+    }
+
     /// Current session ID for the selected server (works for both ACP and Codex).
     var serverSessionId: String {
         selectedServerViewModelAny?.sessionId ?? ""
@@ -901,7 +910,8 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             token: config.token,
             cfAccessClientId: config.cfAccessClientId,
             cfAccessClientSecret: config.cfAccessClientSecret,
-            workingDirectory: sanitizeWorkingDirectory(config.workingDirectory),
+            // Blank stays blank; only the runtime fallback (resolvedWorkingDirectory) uses "/".
+            workingDirectory: config.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines),
             serverType: config.serverType,
             localOnly: config.localOnly
         )
@@ -928,6 +938,10 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         servers[index] = updated
         serverLifecycleController.persistServer(updated)
         updateServerViewModel(for: updated)
+        // The selected server's fields are mirrored here and written back on a server switch; keep them current.
+        if selectedServerId == id {
+            applySelectedServerConfig(updated)
+        }
 
         // Cache new agentInfo if provided
         if let agentInfo = config.agentInfo {
@@ -968,7 +982,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             token: token,
             cfAccessClientId: cfAccessClientId,
             cfAccessClientSecret: cfAccessClientSecret,
-            workingDirectory: sanitizeWorkingDirectory(workingDirectory),
+            workingDirectory: workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines),
             serverType: serverType,
             localOnly: localOnly
         )
@@ -1000,7 +1014,12 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
             initializedServers.insert(server.id)
         }
 
+        // selectServer reconnects only when a connection already exists. With none, connect the new server here.
+        let hadConnection = service != nil
         selectServer(server.id)
+        if !hadConnection {
+            connectInitializeAndFetchSessions()
+        }
     }
 
     func selectServer(_ id: UUID) {
@@ -2120,6 +2139,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         }
 
         setActiveSession(resolvedId, cwd: resolvedCwd, modes: modesInfo)
+        sessionViewModel?.applySessionModels(parsed?.models, serverId: selectedServerId, sessionId: resolvedId)
         if resolvedId != placeholderId {
             removePlaceholderSession(placeholderId, replacedBy: resolvedId)
         }
@@ -2164,6 +2184,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         if let viewModel = selectedServerViewModelAny?.currentSessionViewModel {
             viewModel.migrateSessionCommandsCache(for: serverId, from: placeholderId, to: resolvedId)
             viewModel.migrateSessionModeCache(for: serverId, from: placeholderId, to: resolvedId)
+            viewModel.migrateSessionModelCache(for: serverId, from: placeholderId, to: resolvedId)
         }
     }
 
@@ -2542,6 +2563,7 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
         case .sessionActivated(let activation):
             debugLog("applyResponseAction: sessionActivated with \(activation.sessionId)")
             setActiveSession(activation.sessionId, cwd: activation.cwd, modes: activation.modes)
+            sessionViewModel?.applySessionModels(activation.models, serverId: serverId, sessionId: activation.sessionId)
             sessionViewModel?.applySessionConfigOptions(
                 activation.configOptions,
                 serverId: serverId,

@@ -241,6 +241,24 @@ public struct ACPSessionSetModePayload: Sendable {
     }
 }
 
+/// Params for `session/set_model` (unstable; verify: not in upstream ACP schema as of 2026-11-10).
+public struct ACPSessionSetModelPayload: Sendable {
+    public var sessionId: String
+    public var modelId: String
+
+    public init(sessionId: String, modelId: String) {
+        self.sessionId = sessionId
+        self.modelId = modelId
+    }
+
+    func params() -> ACP.Value {
+        .object([
+            "sessionId": .string(sessionId),
+            "modelId": .string(modelId)
+        ])
+    }
+}
+
 public struct ACPSessionSetConfigOptionPayload: Sendable {
     public var sessionId: String
     public var configId: String

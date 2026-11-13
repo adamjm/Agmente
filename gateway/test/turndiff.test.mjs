@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { auth, connect, rpc, startGateway, useProject } from './helpers.mjs';
+import { auth, connect, rpc, startGateway, useProject, userProjects } from './helpers.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, encoding: 'utf8' });
 const put = (dir, name, text) => { mkdirSync(join(dir, name, '..'), { recursive: true }); writeFileSync(join(dir, name), text); };
@@ -41,8 +41,8 @@ test('T-31: a turn in which the agent writes new.txt has a turn diff that lists 
     assert.match(res.toTree, /^[0-9a-f]{40}$/);
     assert.notEqual(res.fromTree, res.toTree);
     // The two trees can be diffed again through git/diff, for one file.
-    await rpc(ws, '_acpcode/git/status', { projectId: (await rpc(ws, '_acpcode/projects/list', {})).result.projects[0].id });
-    const projectId = (await rpc(ws, '_acpcode/projects/list', {})).result.projects[0].id;
+    await rpc(ws, '_acpcode/git/status', { projectId: userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects)[0].id });
+    const projectId = userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects)[0].id;
     const one = (await rpc(ws, '_acpcode/git/diff', { projectId, fromTree: res.fromTree, toTree: res.toTree, path: 'new.txt' })).result;
     assert.match(one.diff, /\+x/);
     ws.close();

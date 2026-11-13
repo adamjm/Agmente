@@ -675,6 +675,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         connectionManager.markSessionMaterialized(resolvedId)
         lastLoadedSession = resolvedId
         setActiveSession(resolvedId, cwd: resolvedCwd, modes: modesInfo)
+        currentSessionViewModel?.applySessionModels(parsed?.models, serverId: id, sessionId: resolvedId)
         currentSessionViewModel?.saveChatState()
 
         if resolvedId != placeholderId {
@@ -728,6 +729,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         if let viewModel = sessionViewModels[resolvedId] {
             viewModel.migrateSessionCommandsCache(for: id, from: placeholderId, to: resolvedId)
             viewModel.migrateSessionModeCache(for: id, from: placeholderId, to: resolvedId)
+            viewModel.migrateSessionModelCache(for: id, from: placeholderId, to: resolvedId)
         }
     }
 
@@ -806,6 +808,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         }
         // Note: defaultModeId is set from initialize response and applied to new sessions
 
+        currentSessionViewModel?.restoreSessionModels(serverId: self.id, sessionId: id)
         currentSessionViewModel?.restoreAvailableCommands(for: self.id, sessionId: id, isNew: isNew)
 
         if pendingLocalSessions.contains(id) {
@@ -988,6 +991,16 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         // FR-26: a gateway session starts in a registered project. A blank path is never sent as "/".
         if gatewayNewSessionBlocked(isGateway: isGatewayServer, selectedProjectPath: workingDirectory) {
             appendClosure("Pick a project on the gateway to start a session.")
+            return
+        }
+        // A plain ACP connection with a blank working directory has no folder to start in: it is told so,
+        // and no session/new is sent (the blank never becomes "/").
+        if plainACPNewSessionBlocked(
+            isGateway: isGatewayServer,
+            requested: workingDirectory,
+            connectionWorkingDirectory: self.workingDirectory
+        ) {
+            appendClosure(plainACPBlankWorkingDirectoryMessage)
             return
         }
         let sanitizedCwd = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false

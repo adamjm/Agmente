@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { auth, connect, makeDirs, rawConfig, rpc, sleep, spawnGateway, startGateway } from './helpers.mjs';
+import { auth, connect, makeDirs, rawConfig, rpc, sleep, spawnGateway, startGateway, userProjects } from './helpers.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, encoding: 'utf8' });
 const put = (dir, name, text) => { mkdirSync(join(dir, name, '..'), { recursive: true }); writeFileSync(join(dir, name), text); };
@@ -23,7 +23,7 @@ async function setup(denyPaths) {
 
 const addDeny = (ws, params) => rpc(ws, '_acpcode/projects/addDenyPaths', params);
 const addSkip = (ws, params) => rpc(ws, '_acpcode/projects/addWatchSkip', params);
-const storedDeny = async (ws, id) => (await rpc(ws, '_acpcode/projects/list', {})).result.projects.find((p) => p.id === id)?.denyPaths;
+const storedDeny = async (ws, id) => userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects).find((p) => p.id === id)?.denyPaths;
 
 test('addDenyPaths refusals change nothing', async () => {
   const { gw, ws, project } = await setup(['*.db']);
@@ -127,7 +127,7 @@ test('addDenyPaths and addWatchSkip persist across a gateway restart', async () 
     gw = await spawnGateway(config, { configDir: dirs.base });
     try {
       ({ ws } = await connect(gw.url, auth()));
-      const [kept] = (await rpc(ws, '_acpcode/projects/list', {})).result.projects;
+      const [kept] = userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects);
       assert.deepEqual(kept.denyPaths, ['*.db', 'config/prod.yml']);
       assert.deepEqual(kept.watchSkip, ['cache']);
       ws.close();

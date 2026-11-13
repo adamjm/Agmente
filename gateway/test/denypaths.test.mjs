@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { auth, connect, rpc, startGateway } from './helpers.mjs';
+import { auth, connect, rpc, startGateway, userProjects } from './helpers.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, encoding: 'utf8' });
 const put = (dir, name, text) => { mkdirSync(join(dir, name, '..'), { recursive: true }); writeFileSync(join(dir, name), text); };
@@ -54,7 +54,7 @@ test('denyPaths is validated: bad entries are refused, nothing is registered', a
     }
     const tooMany = Array.from({ length: 33 }, (_, i) => `f${i}`);
     assert.equal((await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project, denyPaths: tooMany })).error?.code, -32602);
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
+    assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), []);
     // The boundaries pass.
     const ok = await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project, denyPaths: Array.from({ length: 32 }, (_, i) => `f${i}`) });
     assert.equal(ok.result.project.denyPaths.length, 32);
@@ -68,7 +68,7 @@ test('denyPaths is returned by create and list, left out when empty, and kept in
   const { gw, ws, project } = await setup(['*.db', 'config/prod.yml', '*.DB']);
   try {
     assert.deepEqual(project.denyPaths, ['*.db', 'config/prod.yml'], 'a duplicate is dropped');
-    const list = (await rpc(ws, '_acpcode/projects/list', {})).result.projects;
+    const list = userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects);
     assert.deepEqual(list, [project]);
     ws.close();
   } finally {

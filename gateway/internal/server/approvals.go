@@ -74,8 +74,16 @@ func (s *Server) addPermission(a *projectAgent, proc *agentProcess, agentID *jso
 	if err != nil {
 		s.audit.Log("store_error", a.fields(audit.Fields{Reason: "insert_approval"}))
 	}
-	s.pushNotify(push.ApprovalNeeded, a.id, sessionID)
+	s.pushNotify(push.ApprovalNeeded, a.id, sessionID, approvalSummary(p.toolCall))
 	return p.id
+}
+
+// approvalSummary is the short text the approval push shows: the tool call's title with a verb for
+// its kind (D-111). Only the title and kind are read. The summary is never logged.
+func approvalSummary(toolCall *jsonv.Value) string {
+	title, _ := toolCall.Get("title").StringValue()
+	kind, _ := toolCall.Get("kind").StringValue()
+	return push.Summary(title, kind)
 }
 
 func orNull(v *jsonv.Value) *jsonv.Value {

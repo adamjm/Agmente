@@ -49,17 +49,20 @@ public struct ACPSessionActivation: Sendable, Equatable {
     public let cwd: String?
     public let modes: ACPModesInfo?
     public let configOptions: [ACPSessionConfigOption]
+    public let models: ACPSessionModelInfo?
 
     public init(
         sessionId: String,
         cwd: String? = nil,
         modes: ACPModesInfo? = nil,
-        configOptions: [ACPSessionConfigOption] = []
+        configOptions: [ACPSessionConfigOption] = [],
+        models: ACPSessionModelInfo? = nil
     ) {
         self.sessionId = sessionId
         self.cwd = cwd
         self.modes = modes
         self.configOptions = configOptions
+        self.models = models
     }
 }
 
@@ -266,7 +269,8 @@ public enum ACPResponseDispatcher {
                     sessionId: parsed.sessionId,
                     cwd: parsed.cwd,
                     modes: parsed.modes,
-                    configOptions: parsed.configOptions
+                    configOptions: parsed.configOptions,
+                    models: parsed.models
                 )
             }
         } else if method == "session/load" || method == "session/resume" {
@@ -281,7 +285,8 @@ public enum ACPResponseDispatcher {
                     sessionId: parsed.sessionId,
                     cwd: parsed.cwd,
                     modes: parsed.modes,
-                    configOptions: parsed.configOptions
+                    configOptions: parsed.configOptions,
+                    models: parsed.models
                 )
             }
         } else if let id = result?.objectValue?["sessionId"]?.stringValue
@@ -290,7 +295,8 @@ public enum ACPResponseDispatcher {
             let modes = ACPSessionResponseParser.parseModes(from: result?.objectValue)
             let cwd = result?.objectValue?["cwd"]?.stringValue
             let configOptions = ACPSessionResponseParser.parseConfigOptions(result: result)
-            return ACPSessionActivation(sessionId: id, cwd: cwd, modes: modes, configOptions: configOptions)
+            let models = ACPSessionResponseParser.parseModels(from: result?.objectValue)
+            return ACPSessionActivation(sessionId: id, cwd: cwd, modes: modes, configOptions: configOptions, models: models)
         }
         
         return nil

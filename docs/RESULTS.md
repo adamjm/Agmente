@@ -1819,3 +1819,12 @@ Not run or not built:
 - The dedicated upload WebSocket (the critic's head-of-line recommendation). Upload uses the main socket with the 8 MiB cap. Known gap.
 - The Upload entry in the sidebar project header (`SidebarProjectHeader`). Only the home project header has it.
 - Production deploy (`~/acpcode`). Not done.
+## 2026-11-10: drawer, project image tools, approval summary, model selection, all-sessions list, settings panel (D-109 to D-114)
+
+- **Branch:** `feat/integration-ui-2026-11-10`, merged from `feat/d109-slide-over-drawer`, `feat/settings-panel`, `feat/acp-model-selection`, `feat/approval-detail-notification`, `feat/project-image-tools`, then `feat/d113-all-sessions-agent-icons`. No merge conflicts. Not merged to `main`.
+- **App tests (five branches merged, before D-113):** `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test`: 554 unit tests, 0 failures; UI launch tests pass; the opt-in Codex UI test is skipped. `** TEST SUCCEEDED **`.
+- **Gateway (five branches merged):** `go vet ./...` and `go test ./...` pass. `scripts/check.sh`: "All checks passed", exit 0.
+- **Image:** `container build --dns 192.168.86.1 -t localhost/acpcode-bob:2.0.9-tools1 -f deploy/bob-project.Containerfile deploy`, then `deploy/verify-project-image.sh --dns 192.168.86.1 localhost/acpcode-bob:2.0.9-tools1`: 21 passed, 0 failed (agent run, not repeated at integration). Size 139.4 MB to 509.5 MB. Without `--dns` the two network checks fail on name resolution (D-081).
+- **Mutation checks (agent runs):** `session/set_model` method name changed: 2 tests fail. The 80-character cut removed: 1 test fails. Whole-word match for "pi" removed: 1 test fails. Each file restored from a backup copy.
+- **Load-related failures seen in agent runs, not at integration:** `connector-tools.test.mjs` (up to 4 tests) and `GatewaySessionStopTests.testARecoveryThatLoadsButStillFailsDoesNotLoopAndOffersRemoval` failed while other builds ran, and passed when run alone.
+- **Not verified:** any new screen in the simulator or on a device; the macOS build (fails in `ACPCodeLiveApproval`, iOS-only code, before the app compiles); a push to a device or watch; a live agent that offers models; Podman and amd64 for the image.

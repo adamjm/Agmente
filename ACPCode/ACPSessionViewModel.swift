@@ -65,10 +65,15 @@ final class ACPSessionViewModel: ObservableObject {
         let getService: () -> ACPService?
         let append: (String) -> Void
         let logWire: (String, ACPWireMessage) -> Void
+        /// Test seam: when set, `sendSetModel` uses this instead of the live service.
+        var setSessionModel: ((ACPSessionSetModelPayload) async throws -> Void)? = nil
     }
 
     @Published private(set) var currentModeId: String?
     @Published private(set) var availableModes: [AgentModeOption] = []
+    /// Models from the unstable `models` session field (verify: not in upstream ACP schema).
+    @Published private(set) var availableModels: [AgentModelOption] = []
+    @Published private(set) var currentModelId: String?
     /// Plan, title and usage from session updates (FR-33).
     @Published private(set) var forkMeta = ForkSessionMeta()
     @Published private(set) var sessionConfigOptions: [ACPSessionConfigOption] = []
@@ -88,6 +93,7 @@ final class ACPSessionViewModel: ObservableObject {
     private var currentServerId: UUID?
     private var currentSessionId: String?
     private var sessionModeCache: [UUID: [String: String]] = [:] // serverId -> sessionId -> currentModeId
+    private var sessionModelCache: [UUID: [String: ACPSessionModelInfo]] = [:] // serverId -> sessionId -> models
     private var pendingPermissionRequests: [ACP.ID: (sessionId: String, toolCallId: String?)] = [:]
     private var pendingApprovalRequests: [JSONRPCID: String?] = [:]
     @Published var activeUserInputRequest: PendingUserInputRequest?
@@ -180,7 +186,9 @@ final class ACPSessionViewModel: ObservableObject {
     }
 
     func visibleConfigOptions() -> [ACPSessionConfigOption] {
-        sessionConfigOptions.filter { !$0.isModeSelector }
+        // The model picker is rendered by SessionModelMenu, so its config option is excluded here.
+        let modelOptionId = modelConfigOption?.id
+        return sessionConfigOptions.filter { !$0.isModeSelector && $0.id != modelOptionId }
     }
 
     func cacheCurrentMode(serverId: UUID?, sessionId: String) {
@@ -205,6 +213,110 @@ final class ACPSessionViewModel: ObservableObject {
            serverModes[resolvedId] == nil {
             serverModes[resolvedId] = mode
             sessionModeCache[serverId] = serverModes
+        }
+    }
+
+    // MARK: - Models (unstable `models` field, verify: not in upstream ACP schema)
+
+    /// Model picker offered as a select config option with category `model` (or id `model`).
+    /// When this exists, the app shows it instead of the `models` menu, so a session has one model picker.
+    var modelConfigOption: ACPSessionConfigOption? {
+        sessionConfigOptions.first { option in
+            guard option.isModelSelector, case .select = option.kind else { return false }
+            return true
+        }
+    }
+
+    /// Applies the models from a session response and caches them for the session.
+    /// A nil or empty value clears the model state and the cache entry for this session.
+    func applySessionModels(_ info: ACPSessionModelInfo?, serverId: UUID?, sessionId: String) {
+        guard let info, !info.isEmpty else {
+            availableModels = []
+            currentModelId = nil
+            removeCachedModels(serverId: serverId, sessionId: sessionId)
+            return
+        }
+        availableModels = info.availableModels
+        currentModelId = info.currentModelId
+        cacheSessionModels(serverId: serverId, sessionId: sessionId)
+    }
+
+    /// Restores the cached models for a session, or clears model state when there are none.
+    func restoreSessionModels(serverId: UUID, sessionId: String) {
+        if let cached = sessionModelCache[serverId]?[sessionId], !cached.isEmpty {
+            availableModels = cached.availableModels
+            currentModelId = cached.currentModelId
+        } else {
+            availableModels = []
+            currentModelId = nil
+        }
+    }
+
+    func cachedModels(for serverId: UUID, sessionId: String) -> ACPSessionModelInfo? {
+        sessionModelCache[serverId]?[sessionId]
+    }
+
+    func migrateSessionModelCache(for serverId: UUID, from placeholderId: String, to resolvedId: String) {
+        guard placeholderId != resolvedId else { return }
+        if var serverModels = sessionModelCache[serverId],
+           let models = serverModels[placeholderId],
+           serverModels[resolvedId] == nil {
+            serverModels[resolvedId] = models
+            sessionModelCache[serverId] = serverModels
+        }
+    }
+
+    private func cacheSessionModels(serverId: UUID?, sessionId: String) {
+        guard let serverId, !sessionId.isEmpty else { return }
+        let info = ACPSessionModelInfo(availableModels: availableModels, currentModelId: currentModelId)
+        var serverModels = sessionModelCache[serverId] ?? [:]
+        if info.isEmpty {
+            serverModels.removeValue(forKey: sessionId)
+        } else {
+            serverModels[sessionId] = info
+        }
+        sessionModelCache[serverId] = serverModels
+    }
+
+    private func removeCachedModels(serverId: UUID?, sessionId: String) {
+        guard let serverId, !sessionId.isEmpty else { return }
+        var serverModels = sessionModelCache[serverId] ?? [:]
+        serverModels.removeValue(forKey: sessionId)
+        sessionModelCache[serverId] = serverModels
+    }
+
+    /// Sends `session/set_model`. On success the current model changes; on failure the old model is kept.
+    /// Like `sendSetMode`, this is not gated on streaming.
+    func sendSetModel(
+        _ modelId: String,
+        sessionId: String,
+        serverId: UUID?
+    ) {
+        guard !sessionId.isEmpty else {
+            dependencies.append("No active session")
+            return
+        }
+
+        let send: (ACPSessionSetModelPayload) async throws -> Void
+        if let override = dependencies.setSessionModel {
+            send = override
+        } else if let service = dependencies.getService() {
+            send = { payload in _ = try await service.setSessionModel(payload) }
+        } else {
+            dependencies.append("Not connected")
+            return
+        }
+
+        let payload = ACPSessionSetModelPayload(sessionId: sessionId, modelId: modelId)
+        Task { @MainActor in
+            do {
+                try await send(payload)
+                currentModelId = modelId
+                cacheSessionModels(serverId: serverId, sessionId: sessionId)
+                dependencies.append("Set model to: \(modelId)")
+            } catch {
+                dependencies.append("Failed to set model: \(error)")
+            }
         }
     }
 

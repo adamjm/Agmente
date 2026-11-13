@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
-import { auth, connect, makeDirs, rawConfig, rpc, sleep, spawnGateway, startGateway, useProject } from './helpers.mjs';
+import { auth, connect, makeDirs, rawConfig, rpc, sleep, spawnGateway, startGateway, useProject, userProjects } from './helpers.mjs';
 
 function readEvents(stateDir, sessionId) {
   const db = new DatabaseSync(join(stateDir, 'gateway.db'), { readOnly: true });
@@ -136,7 +136,7 @@ test('T-20: after SIGKILL of the gateway and a restart, every event a phone rece
     assert.deepEqual(logged.slice(0, received.length), received, 'each received event is logged, in order');
     // The restarted gateway serves the same project.
     const again = (await connect(gw.url, auth())).ws;
-    assert.equal((await rpc(again, '_acpcode/projects/list', {})).result.projects.length, 1);
+    assert.equal(userProjects((await rpc(again, '_acpcode/projects/list', {})).result.projects).length, 1);
     again.close();
     console.log(`# T-20: received ${received.length} updates before SIGKILL; logged ${logged.length}; ${events.length} events, seq 1..${events.length}`);
   } finally {

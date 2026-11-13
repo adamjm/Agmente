@@ -36,6 +36,34 @@ final class CapturingServiceDelegate: ACPServiceDelegate {
 }
 
 struct ACPServiceTests {
+    // Unstable model API (verify: not in upstream ACP schema as of 2026-11-10).
+    @Test func setSessionModelSendsSetModelRequestAndResolvesResponse() async throws {
+        let provider = MockWebSocketProvider()
+        let client = ACPClient(
+            configuration: .init(endpoint: URL(string: "wss://example.com/socket")!),
+            socketProvider: provider
+        )
+        let delegate = CapturingServiceDelegate()
+        let service = ACPService(client: client)
+        service.delegate = delegate
+
+        try await service.connect()
+
+        Task {
+            let response = ACPWireMessage.response(.init(id: .int(1), result: .object([:])))
+            let encoded = try JSONEncoder().encode(response)
+            let text = String(decoding: encoded, as: UTF8.self)
+            provider.connection.enqueue(.text(text))
+        }
+
+        let payload = ACPSessionSetModelPayload(sessionId: "session-1", modelId: "deep-model")
+        let response = try await service.setSessionModel(payload)
+
+        #expect(response.resultValue == .object([:]))
+        let requests = await MainActor.run { delegate.sentRequests }
+        #expect(requests.last?.method == "session/set_model")
+    }
+
     @Test func initializesAndResolvesResponse() async throws {
         let provider = MockWebSocketProvider()
         let client = ACPClient(

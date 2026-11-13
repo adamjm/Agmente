@@ -10,6 +10,7 @@ extension AppViewModel {
             token: push.deviceToken, allowed: push.isAllowed,
             info: gatewayInfos[serverId],
             client: (serverViewModels[serverId] as? ServerViewModel)?.gatewayClient)
+        RemotePushRegistry.record(outcome, serverId: serverId) // D-111: a local alert is not added on top of a push
         if case .failed(let message) = outcome {
             NSLog("Push registration with the gateway failed: %@", message)
         }

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { auth, connect, makeDirs, rawConfig, rpc, sleep, spawnGateway, startGateway } from './helpers.mjs';
+import { auth, connect, makeDirs, rawConfig, rpc, sleep, spawnGateway, startGateway, userProjects } from './helpers.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, encoding: 'utf8' });
 const put = (dir, name, text) => { mkdirSync(join(dir, name, '..'), { recursive: true }); writeFileSync(join(dir, name), text); };
@@ -58,7 +58,7 @@ test('watchSkip is checked at create: refusals register nothing', async () => {
     const tooMany = Array.from({ length: 33 }, (_, i) => `f${i}`);
     const many = await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project, watchSkip: tooMany });
     assert.equal(many.error?.code, -32602);
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, []);
+    assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), []);
     const edge = await rpc(ws, '_acpcode/projects/create', { name: 'p', path: gw.dirs.project, watchSkip: Array.from({ length: 32 }, (_, i) => `f${i}`) });
     assert.equal(edge.result.project.watchSkip.length, 32, 'the 32nd entry passes');
     ws.close();
@@ -71,7 +71,7 @@ test('watchSkip is returned by create and list, and left out when empty', async 
   const { gw, ws, project } = await setup(['cache', 'out/tmp', 'cache']);
   try {
     assert.deepEqual(project.watchSkip, ['cache', 'out/tmp'], 'a duplicate is dropped');
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, [project]);
+    assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), [project]);
     ws.close();
   } finally {
     await gw.stop();
@@ -79,7 +79,7 @@ test('watchSkip is returned by create and list, and left out when empty', async 
   const plain = await setup([]);
   try {
     assert.equal('watchSkip' in plain.project, false, 'no key when the list is empty');
-    assert.equal((await rpc(plain.ws, '_acpcode/projects/list', {})).result.projects[0].watchSkip, undefined);
+    assert.equal(userProjects((await rpc(plain.ws, '_acpcode/projects/list', {})).result.projects)[0].watchSkip, undefined);
     plain.ws.close();
   } finally {
     await plain.gw.stop();
@@ -141,7 +141,7 @@ test('watchSkip survives a gateway restart and keeps skipping', async () => {
     gw = await spawnGateway(config, { configDir: dirs.base });
     try {
       ({ ws } = await connect(gw.url, auth()));
-      assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects, [{ ...project }]);
+      assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects), [{ ...project }]);
       const seen = listen(ws);
       await rpc(ws, '_acpcode/git/status', { projectId: project.id });
       put(dirs.project, 'cache/x.bin', 'x\n');

@@ -22,7 +22,7 @@ extension AppViewModel {
         // reach the approval inbox and the Live Activity, so the inbox is refreshed for it too.
         if let event = GatewayEvent.parse(params), event.sessionId != sessionId,
            case .permissionRequest = event.action {
-            Task { await gatewayApprovals.refresh() }
+            Task { await refreshGatewayApprovals() }
         }
         guard let event = GatewayEvent.parse(params),
               let serverId = selectedServerId,
@@ -53,7 +53,7 @@ extension AppViewModel {
             }
         case .permissionRequest(let request):
             sessionViewModel?.handlePermissionRequest(request)
-            Task { await gatewayApprovals.refresh() }
+            Task { await refreshGatewayApprovals() }
         case .turnEnded(let stopReason, _):
             sessionViewModel?.handleStopReason(stopReason ?? "end_turn", serverId: serverId, sessionId: event.sessionId)
             if let client = server.gatewayClient {
@@ -66,6 +66,20 @@ extension AppViewModel {
             gatewayApprovals.closed(approvalId: approvalId)
         case .other(let method):
             handleGatewayElicitationEvent(event, method: method, server: server) // FR-44, PLAN 6C.3
+        }
+    }
+
+    /// Refreshes the approval inbox after a permission request arrived on the live connection. An approval that
+    /// is new in the list gets a local notification when the app is in the background (D-111). A refresh from
+    /// launch or reconnect does not, because only a live event means the approval is new now.
+    func refreshGatewayApprovals() async {
+        let before = Set(gatewayApprovals.approvals.map(\.approvalId))
+        await gatewayApprovals.refresh()
+        guard let serverId = selectedServerId else { return }
+        let appIsActive = ApprovalLocalNotifier.appIsActive
+        for approval in gatewayApprovals.approvals where !before.contains(approval.approvalId) {
+            let projectName = gatewayHome.projects.first { $0.id == approval.projectId }?.name ?? "Project"
+            await ApprovalLocalNotifier.shared.approvalArrived(approval, serverId: serverId, projectName: projectName, appIsActive: appIsActive)
         }
     }
 }

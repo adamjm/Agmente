@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, chmodSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { auth, connect, rpc, startGateway, useProject } from './helpers.mjs';
+import { auth, connect, rpc, startGateway, useProject, userProjects } from './helpers.mjs';
 
 const git = (dir, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir, encoding: 'utf8' });
 const put = (dir, name, text) => {
@@ -279,7 +279,7 @@ test('a slow git call does not hold up the same socket\'s other requests', async
     const t0 = Date.now();
     const calls = await Promise.all([1, 2, 3].map(() => rpc(ws, '_acpcode/git/status', { projectId: id })));
     assert.ok(calls.every((c) => c.result.branch === 'main'));
-    assert.deepEqual((await rpc(ws, '_acpcode/projects/list', {})).result.projects.length, 1);
+    assert.deepEqual(userProjects((await rpc(ws, '_acpcode/projects/list', {})).result.projects).length, 1);
     assert.ok(Date.now() - t0 < 5000);
     ws.close();
   } finally {

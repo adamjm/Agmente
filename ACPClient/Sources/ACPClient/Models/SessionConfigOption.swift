@@ -89,6 +89,14 @@ public struct ACPSessionConfigOption: Identifiable, Sendable, Equatable {
         let normalizedCategory = category?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalizedId == "mode" || normalizedCategory == "mode"
     }
+
+    /// Model picker: category `model` (ACP schema SessionConfigOptionCategory) or id `model`.
+    /// The `model_config` category is a model parameter, not the picker, so it is not matched.
+    public var isModelSelector: Bool {
+        let normalizedId = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedCategory = category?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalizedId == "model" || normalizedCategory == "model"
+    }
 }
 
 public enum ACPSessionConfigOptionParser {

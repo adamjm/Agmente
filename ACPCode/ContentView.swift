@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var showingMCPServers = false // gateway MCP list (FR-40), opened from the More menu
     @State private var navigationPath: [NavigationDestination] = []
     @State private var splitSelection: NavigationDestination?
+    /// iOS only (D-109): the session drawer. It starts open, so the session list is the first thing shown.
+    @State private var drawerOpen = true
     @State private var serverToDelete: ACPServerConfiguration?
     @State private var serverToEdit: ACPServerConfiguration?
     @State private var previousServerId: UUID?
@@ -46,6 +48,7 @@ struct ContentView: View {
             }
         }
         navigationPath = preserved + [.session(sessionId)]
+        drawerOpen = false
 #endif
     }
 
@@ -65,14 +68,16 @@ struct ContentView: View {
             macDetailContent
         }
 #else
-        NavigationStack(path: $navigationPath) {
-            rootContent
-                .navigationTitle("")
-#if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-#endif
-                .toolbar { toolbarContent }
-                .navigationDestination(for: NavigationDestination.self, destination: destinationView)
+        // D-109: the session list is a drawer over the main area, which shows the open session or the Projects view.
+        SlideOverDrawer(isOpen: $drawerOpen) {
+            mainStack
+        } drawer: {
+            NavigationStack {
+                rootContent
+                    .navigationTitle("")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { toolbarContent }
+            }
         }
 #endif
     }
@@ -147,8 +152,11 @@ struct ContentView: View {
 
             if newValue.isEmpty {
                 navigationPath = preserved
-            } else if navigationPath.last != .session(newValue) {
-                navigationPath = preserved + [.session(newValue)]
+            } else {
+                if navigationPath.last != .session(newValue) {
+                    navigationPath = preserved + [.session(newValue)]
+                }
+                drawerOpen = false // D-109: a session shown by the app closes the drawer
             }
 #endif
         }
@@ -172,6 +180,7 @@ struct ContentView: View {
                     }
                 }
                 navigationPath = preserved + [.session(sessionId)]
+                drawerOpen = false
             }
 #endif
         }
@@ -234,11 +243,65 @@ private extension ContentView {
         } else {
             SessionListPage(
                 model: model,
-                navigationPath: $navigationPath,
                 splitSelection: $splitSelection,
+                onOpen: openFromDrawer,
+                onOpenProjects: openProjectsFromDrawer,
+                onOpenLink: { handleDeepLink($0) },
                 onOpenSettings: { showingSettings = true }
             )
             .readableColumn()
+        }
+    }
+
+#if !os(macOS)
+    /// iOS main area (D-109): the open session, or the root. `navigationPath` decides what shows.
+    var mainStack: some View {
+        NavigationStack(path: $navigationPath) {
+            mainRoot
+                .toolbar {
+                    DrawerMenuItem(openDrawer: { drawerOpen = true })
+                    toolbarContent
+                }
+                .navigationDestination(for: NavigationDestination.self, destination: destinationView)
+        }
+    }
+
+    /// The root of the iOS main area: the Projects view for a gateway server, else a "No session open" view.
+    @ViewBuilder
+    var mainRoot: some View {
+        if model.selectedServerIsGatewayHome {
+            ProjectsView(
+                home: model.gatewayHome,
+                isConnected: model.connectionState == .connected,
+                clientProvider: { [weak model] in model?.selectedGatewayClient() },
+                connectionScheme: model.servers.first(where: { $0.id == model.selectedServerId })?.scheme ?? "wss",
+                onOpenProject: { projectId in navigationPath.append(.projectDetail(projectId)) }
+            )
+        } else {
+            NoSessionOpenView(onOpenDrawer: { drawerOpen = true })
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+#endif
+
+    /// A row or button in the drawer shows its destination in the main area and closes the drawer (D-109).
+    func openFromDrawer(_ destination: NavigationDestination) {
+        navigationPath = [destination]
+        drawerOpen = false
+    }
+
+    /// The drawer's Projects row (D-109): the Projects view is the root of the main area.
+    func openProjectsFromDrawer() {
+        navigationPath = []
+        drawerOpen = false
+    }
+
+    /// Starts a session in a project from the project screen, as the gateway's new-session sheet does (FR-26).
+    func startSession(in project: GatewayProject, mcpIDs: [String]?) {
+        if let cwd = gatewayNewSessionCwd(selectedProjectPath: project.path) {
+            model.sendNewGatewaySession(workingDirectory: cwd, mcpEnabledIDs: mcpIDs)
         }
     }
 
@@ -287,11 +350,26 @@ private extension ContentView {
                 }
             }
             .navigationTitle(title)
+            // D-113: the top element names the session and the colour of the connection it runs on.
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    SessionTopTitle(
+                        title: title,
+                        serverName: model.currentServerName,
+                        colour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
+                        isConnected: model.connectionState == .connected
+                    )
+                }
+            }
             // Force view re-evaluation when session state changes
             .id(model.serverSessionId)
             .task(id: sessionId) {
                 model.openSession(sessionId)
             }
+            .modifier(DrawerEntryModifier(
+                isOnlyEntry: navigationPath == [.session(sessionId)],
+                openDrawer: { drawerOpen = true }
+            ))
         case .developerLogs:
             DeveloperLogsView(model: model)
 #if DEBUG && canImport(UIKit)
@@ -299,6 +377,15 @@ private extension ContentView {
             ChatComponentGalleryView()
                 .navigationTitle("Test Transcript")
 #endif
+        case .projectDetail(let projectId):
+            ProjectDetailView(
+                home: model.gatewayHome,
+                projectId: projectId,
+                isConnected: model.connectionState == .connected,
+                mcpClient: { [weak model] in model?.selectedGatewayClient() },
+                onOpenSession: { sessionId in navigationPath.append(.session(sessionId)) },
+                onCreateSession: { project, mcpIDs in startSession(in: project, mcpIDs: mcpIDs) }
+            )
         case .folderSessions(let path, let displayName):
             FolderSessionsView(
                 model: model,
@@ -358,76 +445,19 @@ private extension ContentView {
     }
 
     func settingsSheet() -> some View {
-        SettingsView(
-            devModeEnabled: $model.devModeEnabled,
-            codexSessionLoggingEnabled: $model.codexSessionLoggingEnabled,
-            sessionLogger: model.codexSessionLoggerForExport
-        )
+        SettingsView(model: model)
     }
 
     @ToolbarContentBuilder
     var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            Menu {
-                ForEach(model.servers) { server in
-                    Button {
-                        model.selectServer(server.id)
-                    } label: {
-                        HStack {
-                            Text(server.name)
-                            Spacer()
-                            if server.id == model.selectedServerId {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-                Divider()
-                Button {
-                    addServerSheet = .acp
-                } label: {
-                    Label("Add ACP Server", systemImage: "plus")
-                }
-                .accessibilityIdentifier("addACPServerMenuAction")
-
-                Button {
-                    addServerSheet = .codexAppServer
-                } label: {
-                    Label("Add Codex App Server", systemImage: "plus")
-                }
-                .accessibilityIdentifier("addCodexServerMenuAction")
-            } label: {
-                if #available(iOS 26.0, macOS 26.0, *) {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(model.connectionState == .connected ? Color.green : Color.orange)
-                            .frame(width: 9, height: 9)
-                        Text(model.currentServerName)
-                            .font(.headline.weight(.semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .glassEffect()
-                } else {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(model.connectionState == .connected ? Color.green : Color.orange)
-                            .frame(width: 9, height: 9)
-                        Text(model.currentServerName)
-                            .font(.headline.weight(.semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .buttonStyle(.plain)
-                }
-            }
+            // The connection the open session runs on. Switching and adding connections is in Settings (D-113).
+            ServerTopChip(
+                name: model.currentServerName,
+                colour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
+                isConnected: model.connectionState == .connected,
+                isConnecting: model.isConnecting
+            )
         }
         
         let trailingPlacement: ToolbarItemPlacement = {
@@ -518,8 +548,13 @@ private enum AddServerSheet: String, Identifiable {
 
 private struct SessionListPage: View {
     @ObservedObject var model: AppViewModel
-    @Binding var navigationPath: [NavigationDestination]
     @Binding var splitSelection: NavigationDestination?
+    /// iOS (D-109): shows a destination in the main area and closes the drawer.
+    var onOpen: (NavigationDestination) -> Void = { _ in }
+    /// iOS (D-109): shows the Projects view in the main area and closes the drawer.
+    var onOpenProjects: () -> Void = {}
+    /// iOS (D-113): opens a session link. A link to another connection selects that connection first.
+    var onOpenLink: (URL) -> Void = { _ in }
     /// Opens the Settings sheet from the sidebar's avatar button.
     let onOpenSettings: () -> Void
     /// Reveals the search field from the header's search button.
@@ -639,11 +674,34 @@ private struct SessionListPage: View {
         }
     }
 
+    /// iOS (D-113): every connection's sessions for the drawer, newest first, filtered by the search text.
+#if os(iOS)
+    private var allSessionRows: [AllSessionRow] { model.allSessionRows(query: sessionSearchText) }
+#else
+    private var allSessionRows: [AllSessionRow] { [] }
+#endif
+
+    /// The row id of the session that is streaming on the selected connection, if any.
+    private var activeRowId: String? {
+        guard model.serverIsStreaming, let serverId = model.selectedServerId, !model.serverSessionId.isEmpty else { return nil }
+        return AllSessionRow.key(serverId: serverId, sessionId: model.serverSessionId)
+    }
+
+    /// iOS (D-113): a row on the selected connection opens as before. A row on another connection goes through
+    /// the deep-link path, which selects that connection and then opens the session. The drawer then closes.
+    private func openFromAllSessions(_ row: AllSessionRow) {
+        if row.serverId == model.selectedServerId {
+            navigate(to: .session(row.sessionId))
+        } else {
+            onOpenLink(DeepLink.session(serverId: row.serverId, sessionId: row.sessionId).url)
+        }
+    }
+
     private func navigate(to destination: NavigationDestination) {
 #if os(macOS)
         splitSelection = destination
 #else
-        navigationPath.append(destination)
+        onOpen(destination)
 #endif
     }
 
@@ -691,24 +749,19 @@ private struct SessionListPage: View {
     }
     #endif
 
+    /// Every platform uses the Button path in this list (D-109): the row calls `navigate`, which sets the
+    /// main area on iOS and the detail on macOS.
     @ViewBuilder
     private func destinationTrigger<Label: View>(
         _ destination: NavigationDestination,
         @ViewBuilder label: () -> Label
     ) -> some View {
-#if os(macOS)
         Button {
             navigate(to: destination)
         } label: {
             label()
         }
         .buttonStyle(.plain)
-#else
-        NavigationLink(value: destination) {
-            label()
-        }
-        .buttonStyle(.plain)
-#endif
     }
 
     @ViewBuilder
@@ -745,6 +798,16 @@ private struct SessionListPage: View {
 #endif
     }
 
+    /// macOS shows the Projects row only when there are projects, as before. iOS always shows it (D-109): a
+    /// gateway with no projects still has the Projects view, with its empty state.
+    private var showsProjectsRow: Bool {
+#if os(macOS)
+        !gatewayHome.projects.isEmpty
+#else
+        true
+#endif
+    }
+
     private var newProjectPlacement: ToolbarItemPlacement {
 #if os(macOS)
         .automatic
@@ -773,14 +836,18 @@ private struct SessionListPage: View {
                         if model.selectedServerIsGatewayHome {
                             ApprovalsBanner(inbox: model.gatewayApprovals) { showingApprovals = true }
 
-                            if !gatewayHome.projects.isEmpty {
+                            if showsProjectsRow {
                                 SidebarNavRow(
                                     title: "Projects",
                                     systemImage: "folder",
                                     count: gatewayHome.projects.count,
                                     identifier: "sidebarProjectsRow"
                                 ) {
+#if os(macOS)
                                     showingProjects = true
+#else
+                                    onOpenProjects()
+#endif
                                 }
                             }
 
@@ -800,11 +867,23 @@ private struct SessionListPage: View {
                             if !gatewayHome.projects.isEmpty {
                                 SidebarSectionHeader(title: "Recents")
                             }
-                            SidebarGatewaySections(home: gatewayHome, search: sessionSearchText, git: model.gitStore, actions: model.gatewaySessionActions) { sessionId in
+                            SidebarGatewaySections(
+                                home: gatewayHome,
+                                search: sessionSearchText,
+                                git: model.gitStore,
+                                actions: model.gatewaySessionActions,
+                                serverColour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
+                                isConnected: model.connectionState == .connected
+                            ) { sessionId in
                                 navigate(to: .session(sessionId))
                             }
                             .gitHomeTabSheet(store: model.gitStore)
-                        } else if model.serverSessionSummaries.isEmpty {
+                            if !allSessionRows.isEmpty {
+                                // D-113: the other connections' sessions, below the gateway's own project sections.
+                                SidebarSectionHeader(title: "Other connections")
+                                AllSessionsSection(rows: allSessionRows, activeRowId: activeRowId, onOpen: openFromAllSessions)
+                            }
+                        } else if model.serverSessionSummaries.isEmpty && (groupingMode == .byFolder || allSessionRows.isEmpty) {
                             VStack(spacing: 8) {
                                 Text("Start a new session to chat with your agent")
                                     .font(.subheadline)
@@ -822,9 +901,14 @@ private struct SessionListPage: View {
                             SidebarSectionHeader(title: "Recents")
                             switch groupingMode {
                             case .byTime:
+#if os(iOS)
+                                // D-113: every connection's sessions, with each row's agent badge (folder mode stays per connection).
+                                AllSessionsSection(rows: allSessionRows, activeRowId: activeRowId, onOpen: openFromAllSessions)
+#else
                                 ForEach(groupedSessions, id: \.group) { group, sessions in
                                     sessionSection(title: group.title, sessions: sessions)
                                 }
+#endif
                             case .byFolder:
                                 ForEach(groupedByFolder, id: \.group) { group, sessions, hasMore in
                                     folderSection(group: group, sessions: sessions, hasMore: hasMore)
@@ -917,6 +1001,7 @@ private struct SessionListPage: View {
                 GatewayNewSessionSheet(
                     projects: gatewayHome.projects,
                     initialSelection: gatewayHome.selectedProjectId,
+                    blankWorkingDirectory: model.defaultWorkingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                     mcpClient: { [weak model] in model?.selectedGatewayClient() },
                     onCancel: { showingNewSessionSheet = false },
                     onCreate: { project, mcpIDs in
@@ -1303,7 +1388,7 @@ private enum SessionGroupingMode: String, CaseIterable {
     }
 }
 
-private enum SessionTimeGroup: CaseIterable, Hashable {
+enum SessionTimeGroup: CaseIterable, Hashable {
     case today
     case yesterday
     case thisWeek
@@ -1902,6 +1987,46 @@ private enum NavigationDestination: Hashable {
     case testTranscript
 #endif
     case folderSessions(path: String, displayName: String)
+    /// A gateway project's screen, in the iOS main area (D-109). Never pushed on macOS.
+    case projectDetail(String)
+}
+
+#if !os(macOS)
+/// The round menu button that opens the session drawer (D-109). Its label and identifier are what UI tests use.
+struct DrawerMenuItem: ToolbarContent {
+    let openDrawer: () -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button(action: openDrawer) {
+                Image(systemName: "line.3.horizontal")
+            }
+            .accessibilityLabel("Sessions")
+            .accessibilityIdentifier("drawerMenuButton")
+        }
+    }
+}
+#endif
+
+/// iOS (D-109): a session that is the only entry of the path hides the back button and shows the menu button.
+/// Deeper entries keep the system back button. macOS gets the view unchanged.
+private struct DrawerEntryModifier: ViewModifier {
+    let isOnlyEntry: Bool
+    let openDrawer: () -> Void
+
+    func body(content: Content) -> some View {
+#if os(macOS)
+        content
+#else
+        content
+            .navigationBarBackButtonHidden(isOnlyEntry)
+            .toolbar {
+                if isOnlyEntry {
+                    DrawerMenuItem(openDrawer: openDrawer)
+                }
+            }
+#endif
+    }
 }
 
 extension View {
