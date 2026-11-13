@@ -1,0 +1,7 @@
+providers:
+  omlx:
+    baseUrl: http://192.168.64.1:18000/v1
+    api: openai-completions
+    apiKey: OMLX_API_KEY
+    discovery:
+      type: openai-models-list

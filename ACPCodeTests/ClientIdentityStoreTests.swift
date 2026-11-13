@@ -60,4 +60,41 @@ final class ClientIdentityStoreTests: XCTestCase {
         let attributes = try XCTUnwrap(result as? [String: Any])
         XCTAssertEqual(attributes[kSecAttrAccessible as String] as? String, kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
     }
+
+    /// The phone's local and remote servers use one certificate. The Keychain keeps one copy, and both load it.
+    func testTwoServersShareOneCertificate() throws {
+        let identity = try ClientIdentityStore.importPKCS12(Self.testP12, passphrase: "agmente-test")
+        let other = UUID()
+        defer { try? store.delete(serverId: other) }
+        try store.save(identity, serverId: serverId)
+        try store.save(identity, serverId: other)
+        XCTAssertNotNil(store.load(serverId: serverId))
+        XCTAssertNotNil(store.load(serverId: other))
+        // Removing it from one server leaves the other's copy.
+        try store.delete(serverId: serverId)
+        XCTAssertNil(store.load(serverId: serverId))
+        XCTAssertNotNil(store.load(serverId: other))
+        try store.delete(serverId: other)
+        XCTAssertNil(store.load(serverId: other))
+    }
+
+    /// An identity saved by the earlier build has a label and no recorded fingerprint. A second server
+    /// can still share it, and removing the first leaves the second working.
+    func testSharesAnIdentitySavedBeforeFingerprints() throws {
+        let identity = try ClientIdentityStore.importPKCS12(Self.testP12, passphrase: "agmente-test")
+        let other = UUID()
+        defer { try? store.delete(serverId: other) }
+        let legacy: [String: Any] = [
+            kSecValueRef as String: identity,
+            kSecAttrLabel as String: "\(store.labelPrefix).\(serverId.uuidString)",
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        XCTAssertEqual(SecItemAdd(legacy as CFDictionary, nil), errSecSuccess)
+        XCTAssertNotNil(store.load(serverId: serverId))
+        try store.save(identity, serverId: other)
+        XCTAssertNotNil(store.load(serverId: other))
+        try store.delete(serverId: serverId)
+        XCTAssertNil(store.load(serverId: serverId))
+        XCTAssertNotNil(store.load(serverId: other))
+    }
 }

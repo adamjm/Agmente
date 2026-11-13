@@ -1,0 +1,6 @@
+providers:
+  webSearchOrder: []
+setupVersion: 2
+modelRoles:
+  default: omlx/Tiel-Coder-35B-A3B-MLX-oQ4e-MTP
+defaultThinkingLevel: auto
