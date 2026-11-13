@@ -77,6 +77,9 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 	if result, rerr, handled := s.serveSkills(ctx, who, method, params); handled {
 		return result, rerr
 	}
+	if result, rerr, handled := s.serveUploads(ctx, who, method, params); handled {
+		return result, rerr
+	}
 	switch method {
 	case "_acpcode/projects/list":
 		projects, err := s.store.Projects(ctx)

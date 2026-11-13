@@ -93,6 +93,8 @@ struct GatewayHomeSections: View {
     let search: String
     var git: GitStore?
     let open: (String) -> Void
+    /// The project whose Upload File sheet is open (D-115).
+    @State private var uploadProject: GatewayProject?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -130,6 +132,16 @@ struct GatewayHomeSections: View {
                         if let git, section.project != nil, git.supportsGit {
                             GitHomeChip(store: git, projectId: section.id)
                         }
+                        if let project = section.project {
+                            Menu {
+                                Button("Upload File", systemImage: "square.and.arrow.up") { uploadProject = project }
+                                    .accessibilityIdentifier("gatewayUploadFile.\(project.id)")
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                            }
+                            .accessibilityLabel("Project actions for \(project.name)")
+                            .accessibilityIdentifier("gatewayProjectActions.\(project.id)")
+                        }
                     }
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .contain)
@@ -144,6 +156,9 @@ struct GatewayHomeSections: View {
                     }
                 }
             }
+        }
+        .sheet(item: $uploadProject) { project in
+            GatewayFileUploadSheet(projectId: project.id, projectName: project.name, clientProvider: { home.uploadClient() }, onClose: { uploadProject = nil })
         }
     }
 }
