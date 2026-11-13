@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -92,6 +92,13 @@ var schemaV4 = []string{
 		updated TEXT NOT NULL,
 		PRIMARY KEY (identity, device)
 	) WITHOUT ROWID`,
+}
+
+// schemaV9 adds the project's runner (multi-runner): the id of one agent in the gateway config.
+// Existing rows stay NULL until the gateway starts and assigns its configured default runner once
+// (AssignUnsetRunners), so a project keeps the agent it was made with.
+var schemaV9 = []string{
+	`ALTER TABLE projects ADD COLUMN runner TEXT`,
 }
 
 // schemaV5 adds a project's watcher skip list (D-065): a JSON array, NULL when none.
@@ -182,7 +189,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}, {9, schemaV9}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -262,6 +269,9 @@ type Project struct {
 	Created     string
 	DenyPaths   []string // additions to the secret deny-list (D-050); the built-ins always apply
 	WatchSkip   []string // folders the git watcher adds to its skip list (D-065)
+	// Runner is the id of the agent this project runs, from the gateway config's runners. It is
+	// fixed at creation. "" only before the startup backfill (AssignUnsetRunners).
+	Runner string
 }
 
 // ErrDuplicatePath means a project with the same path is already registered.
@@ -282,22 +292,33 @@ func (s *Store) CreateProject(ctx context.Context, p Project) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths, watch_skip) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, mode, p.Created, deny, skip)
+		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths, watch_skip, runner) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, mode, p.Created, deny, skip, p.Runner)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: projects.path") {
 		return ErrDuplicatePath
 	}
 	return err
 }
 
+// AssignUnsetRunners gives every project with no runner the id runner, once. The gateway calls it
+// at start with its configured default, so projects made before multi-runner keep the agent they
+// were made with. It returns how many projects it changed.
+func (s *Store) AssignUnsetRunners(ctx context.Context, runner string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET runner = ? WHERE runner IS NULL OR runner = ''`, runner)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // projectColumns is the SELECT list of every project read, in the order scanProject reads it.
-const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, '')`
+const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, ''), COALESCE(runner, '')`
 
 // scanProject reads one row of projectColumns.
 func scanProject(row interface{ Scan(...any) error }) (Project, error) {
 	var p Project
 	var deny, skip string
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip, &p.Runner); err != nil {
 		return Project{}, err
 	}
 	var err error

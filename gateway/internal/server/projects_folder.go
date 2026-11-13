@@ -92,7 +92,7 @@ func folderNameByte(c byte) bool {
 // same as for an existing folder (registerProject). If it fails, the folder this call created is
 // removed again, and only while it is still an empty folder. With git (D-105) the new folder also
 // gets `git init` and an origin, and a failure removes the .git this call made as well.
-func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, name, mode string, deny, skip []string, git gitOptions) (*store.Project, *gitInitResult, *rpcError) {
+func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, name, mode string, deny, skip []string, git gitOptions, runner string) (*store.Project, *gitInitResult, *rpcError) {
 	parent, ok := params.Get("path").StringValue()
 	if !ok || !filepath.IsAbs(parent) {
 		return nil, nil, invalidParams("path must be an absolute path")
@@ -174,14 +174,14 @@ func (s *Server) createFolderProject(ctx context.Context, params *jsonv.Value, n
 	home := s.projectHome(id)
 	var gitRes *gitInitResult
 	if git.init {
-		res, rerr := s.gitInitFolder(ctx, store.Project{ID: id, Path: target}, git)
+		res, rerr := s.gitInitFolder(ctx, store.Project{ID: id, Path: target, Runner: runner}, git)
 		if rerr != nil {
 			rollbackNewFolder(dir, name, home, true)
 			return nil, nil, rerr
 		}
 		gitRes = res
 	}
-	p, rerr := s.registerProjectID(ctx, id, name, target, mode, deny, skip)
+	p, rerr := s.registerProjectID(ctx, id, name, target, mode, deny, skip, runner)
 	if rerr != nil {
 		rollbackNewFolder(dir, name, home, git.init)
 		return nil, nil, rerr

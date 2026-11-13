@@ -78,6 +78,7 @@ func appleAgentName(p store.Project) string { return "acpcode-" + p.ID }
 // agentArgs is the `container run` command for the agent. Allow-listed variables are passed by
 // name only, so their values never appear on the command line.
 func (r *appleRunner) agentArgs(p store.Project, home string) []string {
+	a, _ := r.cfg.Agent(p.Runner) // start checks the runner first (agentFor)
 	args := []string{"run", "-i", "--rm", "--progress", "none", "--name", appleAgentName(p), "--init"}
 	args = append(args, r.userArgs()...)
 	args = append(args, r.dnsArgs()...)
@@ -87,12 +88,12 @@ func (r *appleRunner) agentArgs(p store.Project, home string) []string {
 		"-v", p.Path+":"+p.Path,
 		"-w", p.Path,
 	)
-	for _, name := range r.cfg.EnvPassthrough {
+	for _, name := range a.EnvPassthrough {
 		if name != "HOME" && name != "PATH" {
 			args = append(args, "-e", name)
 		}
 	}
-	return append(args, imageAndCommand(r.cfg.Runner.Image, r.cfg.AgentCommand)...)
+	return append(args, imageAndCommand(a.Image, a.Command)...)
 }
 
 // listedRunning reports whether a container with this name is in `container list`.
@@ -211,7 +212,7 @@ func (r *appleRunner) gitRunArgs(name string, p store.Project, home string, argv
 	for _, kv := range gitEnv(home, extraEnv) {
 		args = append(args, "-e", kv)
 	}
-	args = append(args, "--entrypoint", argv[0], r.cfg.Runner.Image)
+	args = append(args, "--entrypoint", argv[0], imageOf(r.cfg, p))
 	return append(args, argv[1:]...)
 }
 

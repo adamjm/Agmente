@@ -14,9 +14,9 @@ import (
 
 func TestPodmanArgsMountPathsAsIsAndPassSecretsByNameOnly(t *testing.T) {
 	cfg := &config.Config{
-		AgentCommand:   []string{"bob", "acp", "--accept-license"},
-		EnvPassthrough: []string{"PATH", "HOME", "LANG", "BOB_API_KEY"},
-		Runner:         config.Runner{Kind: "podman", Image: "acpcode-bob:2.0.9", Podman: "podman"},
+		Runners:       []config.AgentRunner{{ID: "default", Command: []string{"bob", "acp", "--accept-license"}, EnvPassthrough: []string{"PATH", "HOME", "LANG", "BOB_API_KEY"}, Image: "acpcode-bob:2.0.9"}},
+		DefaultRunner: "default",
+		Runner:        config.Runner{Kind: "podman", Podman: "podman"},
 	}
 	t.Setenv("BOB_API_KEY", "must-not-appear")
 	args := podmanRunner{cfg: cfg}.args(store.Project{ID: "0123456789ab", Path: "/srv/p/x"}, "/var/lib/acpcode/state/homes/0123456789ab")

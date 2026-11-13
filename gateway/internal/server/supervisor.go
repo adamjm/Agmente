@@ -73,6 +73,8 @@ type reload struct {
 type projectAgent struct {
 	s  *Server
 	id string
+	// runner is the config runner this agent runs, set at start. Its capabilities are cached under it.
+	runner string
 
 	mu       sync.Mutex
 	state    agentState
@@ -183,6 +185,7 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 		return failStart("project", &rpcError{Code: rpcAgentUnavailable, Message: "unknown project"})
 	}
 	a.reapIfNeeded(*project) // D-106: a leftover container under the name would fail this start
+	a.runner = project.Runner
 	proc, err := a.s.runner.start(*project, a.s.projectHome(a.id))
 	if errors.Is(err, errProjectLocked) {
 		return failStart("locked", &rpcError{Code: rpcAgentUnavailable, Message: err.Error()})
@@ -226,7 +229,7 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 		if result == nil || result.Kind != jsonv.Object {
 			return fail("initialize")
 		}
-		a.s.captureCapabilities(result)
+		a.s.captureCapabilities(a.runner, result)
 		a.mu.Lock()
 		a.canClose = result.Get("agentCapabilities").Get("sessionCapabilities").Get("close") != nil
 		a.mu.Unlock()

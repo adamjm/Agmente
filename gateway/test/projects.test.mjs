@@ -76,7 +76,7 @@ test('a project inside a root is registered with its realpath, a HOME and a trus
     const created = await rpc(ws, '_acpcode/projects/create', { name: '  My project  ', path: link, defaultMode: 'plan' });
     const { project } = created.result;
     assert.match(project.id, /^[0-9a-f]{12}$/);
-    assert.deepEqual(project, { id: project.id, name: 'My project', path: gw.dirs.project, defaultMode: 'plan' });
+    assert.deepEqual(project, { id: project.id, name: 'My project', path: gw.dirs.project, defaultMode: 'plan', runner: 'default' });
 
     const home = join(homesOf(gw), project.id);
     assert.equal(statSync(home).mode & 0o777, 0o700);

@@ -80,7 +80,7 @@ func (r podmanRunner) oneOffArgs(name string, p store.Project, home string, c on
 	for _, n := range c.secretNames() {
 		args = append(args, "-e", n) // the value comes from the CLI's environment, not argv
 	}
-	args = append(args, "--entrypoint", c.argv[0], r.cfg.Runner.Image)
+	args = append(args, "--entrypoint", c.argv[0], imageOf(r.cfg, p))
 	return append(args, c.argv[1:]...)
 }
 
@@ -124,7 +124,7 @@ func (r *appleRunner) oneOffArgs(name string, p store.Project, home string, c on
 	for _, n := range c.secretNames() {
 		args = append(args, "-e", n)
 	}
-	args = append(args, "--entrypoint", c.argv[0], r.cfg.Runner.Image)
+	args = append(args, "--entrypoint", c.argv[0], imageOf(r.cfg, p))
 	return append(args, c.argv[1:]...)
 }
 

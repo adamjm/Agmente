@@ -48,7 +48,8 @@ func TestSnapshotRunsNoFilterUnderPodman(t *testing.T) {
 		t.Skipf("skipped: image %s is not available (set ACPCODE_TEST_IMAGE)", image)
 	}
 	s, p := gitTestServer(t)
-	s.cfg.Runner = config.Runner{Kind: "podman", Image: image, Podman: podman}
+	s.cfg.Runner = config.Runner{Kind: "podman", Podman: podman}
+	withRunner(s.cfg, nil, nil, image)
 	s.runner = podmanRunner{cfg: s.cfg}
 	// Owner-only folders, as the gateway makes them: the container user reaches them through
 	// `--userns=keep-id` (D-051), not through open modes.

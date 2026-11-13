@@ -184,7 +184,7 @@ func (r podmanRunner) gitArgs(name string, p store.Project, home string, argv, e
 	for _, kv := range gitEnv(home, extraEnv) {
 		args = append(args, "-e", kv)
 	}
-	args = append(args, "--entrypoint", argv[0], r.cfg.Runner.Image)
+	args = append(args, "--entrypoint", argv[0], imageOf(r.cfg, p))
 	return append(args, argv[1:]...)
 }
 
