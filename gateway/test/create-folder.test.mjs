@@ -18,7 +18,7 @@ test('createFolder makes <path>/<name> with mode 0755, registers it and audits t
     assert.equal(res.error, undefined, JSON.stringify(res.error));
     const { project } = res.result;
     const folder = join(gw.dirs.root, 'Fresh project');
-    assert.deepEqual(project, { id: project.id, name: 'Fresh project', path: folder, defaultMode: 'plan' });
+    assert.deepEqual(project, { id: project.id, name: 'Fresh project', path: folder, defaultMode: 'plan', runner: 'default' });
     assert.match(project.id, /^[0-9a-f]{12}$/);
     assert.equal(statSync(folder).isDirectory(), true);
     assert.equal(statSync(folder).mode & 0o777, 0o755);
@@ -228,8 +228,8 @@ test('the path-based call is unchanged: an existing folder, the project name rul
     // createFolder false and absent behave the same: the path is the project folder.
     const plain = await create(ws, { name: '  Plain  ', path: gw.dirs.project, createFolder: false });
     assert.equal(plain.error, undefined, JSON.stringify(plain.error));
-    assert.deepEqual(plain.result.project, { id: plain.result.project.id, name: 'Plain', path: gw.dirs.project, defaultMode: null });
-    assert.deepEqual(Object.keys(plain.result.project).sort(), ['defaultMode', 'id', 'name', 'path']);
+    assert.deepEqual(plain.result.project, { id: plain.result.project.id, name: 'Plain', path: gw.dirs.project, defaultMode: null, runner: 'default' });
+    assert.deepEqual(Object.keys(plain.result.project).sort(), ['defaultMode', 'id', 'name', 'path', 'runner']);
     const line = await gw.waitForAudit((l) => l.event === 'project_created' && l.project === plain.result.project.id);
     assert.equal(line.folderCreated, undefined, 'no folderCreated field on a path-based create');
 

@@ -23,13 +23,11 @@ func secretsRunnerConfig(t *testing.T, mode os.FileMode, agentCommand []string) 
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatal(err)
 	}
-	return &config.Config{
-		AgentCommand:   agentCommand,
-		EnvPassthrough: []string{"PATH", "BOB_API_KEY"},
-		SecretsFile:    path,
-		SecretNames:    []string{"BOB_API_KEY"},
-		Runner:         config.Runner{Kind: "host"},
-	}
+	return withRunner(&config.Config{
+		SecretsFile: path,
+		SecretNames: []string{"BOB_API_KEY"},
+		Runner:      config.Runner{Kind: "host"},
+	}, agentCommand, []string{"PATH", "BOB_API_KEY"}, "")
 }
 
 // lastEnv is the value a child process would see for name: the last entry wins (exec's rule).
@@ -75,7 +73,8 @@ func TestContainerRunnersPassSecretByNameOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := secretsRunnerConfig(t, 0o600, []string{"bob", "acp", "--accept-license"})
-	cfg.Runner = config.Runner{Kind: "podman", Image: "acpcode-bob:2.0.9", Podman: stub}
+	cfg.Runner = config.Runner{Kind: "podman", Podman: stub}
+	withImage(cfg, "acpcode-bob:2.0.9")
 	t.Setenv("BOB_API_KEY", "gateway-env-value-must-lose")
 	home := filepath.Join(t.TempDir(), "home")
 	project := store.Project{ID: "0123456789ab", Path: t.TempDir()}
@@ -101,7 +100,8 @@ func TestContainerRunnersPassSecretByNameOnly(t *testing.T) {
 
 	// The Apple runner builds the same kind of command: the name only.
 	apple := cfg
-	apple.Runner = config.Runner{Kind: "apple", Image: "localhost/acpcode-bob:2.0.9", Container: "/opt/homebrew/bin/container"}
+	apple.Runner = config.Runner{Kind: "apple", Container: "/opt/homebrew/bin/container"}
+	withImage(apple, "localhost/acpcode-bob:2.0.9")
 	if aargs := newAppleRunner(apple).agentArgs(project, home); argvHasValue(aargs) || !containsPair(aargs, "-e", "BOB_API_KEY") {
 		t.Fatalf("apple args: %q", aargs)
 	}
@@ -138,14 +138,13 @@ func TestAgentArgvNeverHasTrust(t *testing.T) {
 	command := []string{"bob", "acp", "--accept-license", "--log-level", "warn"}
 	project := store.Project{ID: "0123456789ab", Path: t.TempDir()}
 	home := "/var/lib/acpcode/state/homes/0123456789ab"
-	cfg := &config.Config{AgentCommand: command, EnvPassthrough: []string{"PATH", "HOME", "BOB_API_KEY"},
-		Runner: config.Runner{Kind: "podman", Image: "acpcode-bob:2.0.9", Podman: "podman"}}
+	cfg := withRunner(&config.Config{Runner: config.Runner{Kind: "podman", Podman: "podman"}}, command, []string{"PATH", "HOME", "BOB_API_KEY"}, "acpcode-bob:2.0.9")
 	argvs := map[string][]string{
 		"podman": podmanRunner{cfg: cfg}.args(project, home),
-		"apple":  newAppleRunner(&config.Config{AgentCommand: command, EnvPassthrough: []string{"PATH", "HOME"}, Runner: config.Runner{Kind: "apple", Image: "localhost/acpcode-bob:2.0.9"}}).agentArgs(project, home),
+		"apple":  newAppleRunner(withRunner(&config.Config{Runner: config.Runner{Kind: "apple"}}, command, []string{"PATH", "HOME"}, "localhost/acpcode-bob:2.0.9")).agentArgs(project, home),
 	}
 	// Host runner: its command is built inline by start, so run a real command with the same argv.
-	hostCfg := &config.Config{AgentCommand: []string{"/bin/sh", "-c", "sleep 5", "bob", "acp", "--accept-license", "--log-level", "warn"}, EnvPassthrough: []string{"PATH"}, Runner: config.Runner{Kind: "host"}}
+	hostCfg := withRunner(&config.Config{Runner: config.Runner{Kind: "host"}}, []string{"/bin/sh", "-c", "sleep 5", "bob", "acp", "--accept-license", "--log-level", "warn"}, []string{"PATH"}, "")
 	proc, err := hostRunner{cfg: hostCfg}.start(project, t.TempDir())
 	if err != nil {
 		t.Fatal(err)

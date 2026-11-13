@@ -10,9 +10,9 @@ import (
 
 func appleTestConfig() *config.Config {
 	return &config.Config{
-		AgentCommand:   []string{"bob", "acp", "--accept-license"},
-		EnvPassthrough: []string{"PATH", "HOME", "LANG", "BOB_API_KEY"},
-		Runner:         config.Runner{Kind: "apple", Image: "acpcode-bob:2.0.9", Container: "/opt/homebrew/bin/container"},
+		Runners:       []config.AgentRunner{{ID: "default", Command: []string{"bob", "acp", "--accept-license"}, EnvPassthrough: []string{"PATH", "HOME", "LANG", "BOB_API_KEY"}, Image: "acpcode-bob:2.0.9"}},
+		DefaultRunner: "default",
+		Runner:        config.Runner{Kind: "apple", Container: "/opt/homebrew/bin/container"},
 	}
 }
 

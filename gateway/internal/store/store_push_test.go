@@ -47,7 +47,7 @@ func TestASchema3DatabaseGainsThePushTable(t *testing.T) {
 	if _, err := s.AppendEvent(ctx, "sess-1", "update", []byte(`{"a":1}`)); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`DROP TABLE session_mcp`, `DROP TABLE git_credentials`, `DROP TABLE session_usage`, `DROP TABLE push_tokens`, `ALTER TABLE projects DROP COLUMN watch_skip`, `PRAGMA user_version = 3`} {
+	for _, q := range []string{`DROP TABLE session_mcp`, `DROP TABLE git_credentials`, `DROP TABLE session_usage`, `DROP TABLE push_tokens`, `ALTER TABLE projects DROP COLUMN watch_skip`, `ALTER TABLE projects DROP COLUMN runner`, `PRAGMA user_version = 3`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

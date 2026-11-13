@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -83,6 +84,11 @@ func run(args []string) int {
 	defer db.Close()
 
 	logger := audit.New(os.Stderr)
+	// Multi-runner: the stored projects must name runners the config still has (PrepareRunners).
+	if err := server.PrepareRunners(context.Background(), cfg, db); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot start: %v\n", err)
+		return 1
+	}
 	srv := server.New(cfg, logger, db)
 	// A damaged revoked-token list stops the start: a revocation must never be lost silently.
 	if err := srv.LoadRevoked(); err != nil {
@@ -171,29 +177,29 @@ func printSummary(cfg *config.Config) int {
 		roots = append(roots, r)
 	}
 	summary := struct {
-		Listen         string        `json:"listen"`
-		Runner         config.Runner `json:"runner"`
-		TrustProxy     bool          `json:"trustProxy"`
-		Tokens         []string      `json:"tokens"`
-		AgentCommand   string        `json:"agentCommand"`
-		EnvPassthrough []string      `json:"envPassthrough"`
-		Roots          []string      `json:"roots"`
-		StateDir       string        `json:"stateDir"`
-		Limits         config.Limits `json:"limits"`
-		Push           any           `json:"push"`
-		Files          any           `json:"files"`
+		Listen        string        `json:"listen"`
+		Runner        config.Runner `json:"runner"`
+		TrustProxy    bool          `json:"trustProxy"`
+		Tokens        []string      `json:"tokens"`
+		DefaultRunner string        `json:"defaultRunner"`
+		Runners       []runnerLine  `json:"runners"`
+		Roots         []string      `json:"roots"`
+		StateDir      string        `json:"stateDir"`
+		Limits        config.Limits `json:"limits"`
+		Push          any           `json:"push"`
+		Files         any           `json:"files"`
 	}{
-		Files:          filesSummary(cfg.Files),
-		Listen:         fmt.Sprintf("%s:%d", cfg.ListenHost, cfg.ListenPort),
-		Runner:         cfg.Runner,
-		TrustProxy:     cfg.TrustProxy,
-		Tokens:         tokens,
-		AgentCommand:   strings.Join(cfg.AgentCommand, " "),
-		EnvPassthrough: append([]string{}, cfg.EnvPassthrough...),
-		Roots:          roots,
-		StateDir:       cfg.StateDir,
-		Limits:         cfg.Limits,
-		Push:           pushSummary(cfg.Push),
+		Files:         filesSummary(cfg.Files),
+		Listen:        fmt.Sprintf("%s:%d", cfg.ListenHost, cfg.ListenPort),
+		Runner:        cfg.Runner,
+		TrustProxy:    cfg.TrustProxy,
+		Tokens:        tokens,
+		DefaultRunner: cfg.DefaultRunner,
+		Runners:       runnerLines(cfg.Runners),
+		Roots:         roots,
+		StateDir:      cfg.StateDir,
+		Limits:        cfg.Limits,
+		Push:          pushSummary(cfg.Push),
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetEscapeHTML(false)
@@ -325,4 +331,21 @@ func runningGateway(stateDir string) (int, bool) {
 		return 0, false
 	}
 	return pid, syscall.Kill(pid, 0) == nil
+}
+
+// runnerLine is one runner in the --dry-run summary: its command and environment names, never values.
+type runnerLine struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Command        string   `json:"command"`
+	EnvPassthrough []string `json:"envPassthrough"`
+	Image          string   `json:"image,omitempty"`
+}
+
+func runnerLines(rs []config.AgentRunner) []runnerLine {
+	out := []runnerLine{}
+	for _, r := range rs {
+		out = append(out, runnerLine{ID: r.ID, Name: r.Name, Command: strings.Join(r.Command, " "), EnvPassthrough: append([]string{}, r.EnvPassthrough...), Image: r.Image})
+	}
+	return out
 }

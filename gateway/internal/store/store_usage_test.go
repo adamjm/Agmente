@@ -68,6 +68,9 @@ func TestMigrationFromV5AddsSessionUsage(t *testing.T) {
 	if _, err := s.db.Exec(`DROP TABLE session_usage`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`ALTER TABLE projects DROP COLUMN runner`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`PRAGMA user_version = 5`); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +81,7 @@ func TestMigrationFromV5AddsSessionUsage(t *testing.T) {
 	}
 	defer again.Close()
 	var version int
-	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion || SchemaVersion != 8 { // D-107: schema 8 adds session_mcp (D-105: schema 7 adds git_credentials)
+	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion || SchemaVersion != 9 { // schema 9 adds projects.runner (multi-runner); schema 8 adds session_mcp (D-107)
 		t.Fatalf("version = %d, %v", version, err)
 	}
 	var n int

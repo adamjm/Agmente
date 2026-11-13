@@ -48,7 +48,8 @@ func TestPodmanUserArgsDefaultsAndConfig(t *testing.T) {
 func TestPodmanContainerUserWritesOwnerOnlyFolders(t *testing.T) {
 	podman, image := podmanOrSkip(t)
 	s, p := gitTestServer(t)
-	s.cfg.Runner = config.Runner{Kind: "podman", Image: image, Podman: podman}
+	s.cfg.Runner = config.Runner{Kind: "podman", Podman: podman}
+	withRunner(s.cfg, nil, nil, image)
 	r := podmanRunner{cfg: s.cfg}
 	home := s.projectHome(p.ID)
 	snaps := filepath.Join(s.snapshotDir(p), "objects")

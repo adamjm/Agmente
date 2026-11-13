@@ -136,7 +136,12 @@ test('the gateway answers initialize itself, with the captured agent capabilitie
     const { ws } = await connect(gw.url, auth());
     const before = await rpc(ws, 'initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true } } });
     assert.equal(before.result.agentInfo.version, '2.0.9', 'the Bob 2.0.9 fixture before any agent ran');
-    assert.deepEqual(before.result._meta['acpcode/gateway'], { version: '0.3.0-dev', extensions: ['projects', 'sessions', 'approvals', 'git', 'push', 'files'] });
+    assert.deepEqual(before.result._meta['acpcode/gateway'], {
+      version: '0.3.0-dev',
+      extensions: ['projects', 'sessions', 'approvals', 'git', 'push', 'files'],
+      runners: [{ id: 'default', name: 'default' }],
+      defaultRunner: 'default',
+    });
     await gw.settle();
     assert.equal(gw.spawned(), 0, 'initialize starts no agent');
     await useProject(gw, ws);

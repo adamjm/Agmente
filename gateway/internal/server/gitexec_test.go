@@ -192,7 +192,7 @@ func TestGitFailureKeepsStderrOffTheError(t *testing.T) {
 }
 
 func TestPodmanGitArgs(t *testing.T) {
-	cfg := &config.Config{Runner: config.Runner{Kind: "podman", Image: "img:1", Podman: "podman"}}
+	cfg := withRunner(&config.Config{Runner: config.Runner{Kind: "podman", Podman: "podman"}}, nil, nil, "img:1")
 	t.Setenv("BOB_API_KEY", "must-not-appear")
 	args := strings.Join(podmanRunner{cfg: cfg}.gitArgs("acpcode-git-x", store.Project{ID: "p", Path: "/srv/p"}, "/h", gitCommand("/srv/p", "status"), []string{"GIT_INDEX_FILE=/h/i"}), " ")
 	for _, want := range []string{"run --rm -i --name acpcode-git-x --pull=never --init --network=none --userns=keep-id:uid=10001,gid=10001 --user 10001:10001", "-v /h:/h -v /srv/p:/srv/p -w /srv/p", "-e GIT_CONFIG_NOSYSTEM=1", "-e GIT_INDEX_FILE=/h/i", "--entrypoint git img:1 --no-pager --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null -c safe.directory=/srv/p status"} {
@@ -224,7 +224,8 @@ func TestCleanFilterRunsOnlyInsideTheContainer(t *testing.T) {
 		t.Skipf("T-27 skipped: image %s is not available (set ACPCODE_TEST_IMAGE)", image)
 	}
 	s, p := gitTestServer(t)
-	s.cfg.Runner = config.Runner{Kind: "podman", Image: image, Podman: podman}
+	s.cfg.Runner = config.Runner{Kind: "podman", Podman: podman}
+	withRunner(s.cfg, nil, nil, image)
 	s.runner = podmanRunner{cfg: s.cfg}
 	if err := os.Chmod(p.Path, 0o777); err != nil {
 		t.Fatal(err)
@@ -285,7 +286,7 @@ func fakePodman(t *testing.T, failures int, stderr string, code int) (path, coun
 func podmanGitRun(t *testing.T, failures int, stderr string, code int) (gitResult, error, int) {
 	t.Helper()
 	bin, counter := fakePodman(t, failures, stderr, code)
-	r := podmanRunner{cfg: &config.Config{Runner: config.Runner{Kind: "podman", Image: "img:1", Podman: bin}}}
+	r := podmanRunner{cfg: withRunner(&config.Config{Runner: config.Runner{Kind: "podman", Podman: bin}}, nil, nil, "img:1")}
 	proj := t.TempDir()
 	res, err := r.exec(context.Background(), store.Project{ID: "p", Path: proj}, filepath.Join(t.TempDir(), "home"), gitCommand(proj, "status"), nil, nil)
 	data, _ := os.ReadFile(counter)

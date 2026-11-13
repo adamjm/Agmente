@@ -149,7 +149,10 @@ test('the dry run applies defaults and prints no token hashes', async () => {
     idleSeconds: 1800,
     stallSeconds: 600, // D-106
   });
-  assert.deepEqual(summary.envPassthrough, ['PATH', 'HOME']);
+  // Multi-runner: the summary lists runners (D-n multi-runner); a single agent is runner "default".
+  assert.equal(summary.defaultRunner, 'default');
+  assert.deepEqual(summary.runners.map((r) => r.id), ['default']);
+  assert.deepEqual(summary.runners[0].envPassthrough, ['PATH', 'HOME']);
   assert.deepEqual(summary.tokens, ['phone (owner)', 'other (guest)']);
   assert.equal(summary.listen, '127.0.0.1:0');
   assert.equal(summary.trustProxy, false);

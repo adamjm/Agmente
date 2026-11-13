@@ -89,8 +89,29 @@ func secretEnv(cfg *config.Config) ([]string, error) {
 // locked file (fd 3), so the lock lasts while the agent runs, even if the gateway dies first.
 type hostRunner struct{ cfg *config.Config }
 
+// agentFor is the agent a project runs: its command, environment and image. A project's runner is
+// checked against the config when the gateway starts (checkProjectRunners), so a project never
+// falls back to another agent; an unknown id here is an error, not a default.
+func agentFor(cfg *config.Config, p store.Project) (config.AgentRunner, error) {
+	a, ok := cfg.Agent(p.Runner)
+	if !ok {
+		return config.AgentRunner{}, fmt.Errorf("runner %q of this project is not in the gateway config", p.Runner)
+	}
+	return a, nil
+}
+
+// imageOf is the project image of the project's runner, for git and the one-off commands.
+func imageOf(cfg *config.Config, p store.Project) string {
+	a, _ := cfg.Agent(p.Runner) // checked by checkProjectRunners at start
+	return a.Image
+}
+
 func (r hostRunner) start(p store.Project, home string) (*agentProcess, error) {
 	secrets, err := secretEnv(r.cfg)
+	if err != nil {
+		return nil, err
+	}
+	a, err := agentFor(r.cfg, p)
 	if err != nil {
 		return nil, err
 	}
@@ -98,10 +119,10 @@ func (r hostRunner) start(p store.Project, home string) (*agentProcess, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(r.cfg.AgentCommand[0], r.cfg.AgentCommand[1:]...)
+	cmd := exec.Command(a.Command[0], a.Command[1:]...)
 	cmd.Dir = p.Path
 	// Later entries win for a duplicate name, so a secret overrides the same name from the gateway's env.
-	cmd.Env = append(agentEnv(r.cfg.EnvPassthrough, home), secrets...)
+	cmd.Env = append(agentEnv(a.EnvPassthrough, home), secrets...)
 	proc, err := startProcess(cmd, []*os.File{lock})
 	if err != nil {
 		lock.Close()
@@ -156,6 +177,7 @@ func (r podmanRunner) userArgs() []string {
 }
 
 func (r podmanRunner) args(p store.Project, home string) []string {
+	a, _ := r.cfg.Agent(p.Runner) // start checks the runner first (agentFor)
 	args := []string{"run", "--rm", "-i", "--name", "acpcode-" + p.ID, "--pull=never", "--init"}
 	args = append(args, r.userArgs()...)
 	args = append(args,
@@ -164,15 +186,18 @@ func (r podmanRunner) args(p store.Project, home string) []string {
 		"-v", p.Path+":"+p.Path,
 		"-w", p.Path,
 	)
-	for _, name := range r.cfg.EnvPassthrough {
+	for _, name := range a.EnvPassthrough {
 		if name != "HOME" && name != "PATH" { // PATH and HOME come from the image and the line above
 			args = append(args, "-e", name)
 		}
 	}
-	return append(args, imageAndCommand(r.cfg.Runner.Image, r.cfg.AgentCommand)...)
+	return append(args, imageAndCommand(a.Image, a.Command)...)
 }
 
 func (r podmanRunner) start(p store.Project, home string) (*agentProcess, error) {
+	if _, err := agentFor(r.cfg, p); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, err
 	}

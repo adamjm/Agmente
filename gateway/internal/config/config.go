@@ -63,7 +63,6 @@ type Limits struct {
 // "podman" (one container per project, D-008).
 type Runner struct {
 	Kind   string `json:"kind"`
-	Image  string `json:"image,omitempty"`
 	Podman string `json:"podman,omitempty"`
 	// Container is the Apple `container` CLI for kind "apple" (D-079). Absolute when set.
 	Container string `json:"container,omitempty"`
@@ -96,18 +95,20 @@ type Push struct {
 }
 
 type Config struct {
-	Push           *Push // nil when the push block is absent: delivery is off
-	Runner         Runner
-	ListenHost     string
-	ListenPort     int
-	TrustProxy     bool
-	Tokens         []Token
-	AgentCommand   []string
-	EnvPassthrough []string
-	Roots          []string
-	StateDir       string
-	Limits         Limits
-	Files          *Files // signed file URLs (PLAN 5.3); nil when off
+	Push       *Push // nil when the push block is absent: delivery is off
+	Runner     Runner
+	ListenHost string
+	ListenPort int
+	TrustProxy bool
+	Tokens     []Token
+	// Runners are the agents this gateway can run, in config order. DefaultRunner is the id a
+	// project gets when it names none. A project keeps the runner it was made with (store.Project).
+	Runners       []AgentRunner
+	DefaultRunner string
+	Roots         []string
+	StateDir      string
+	Limits        Limits
+	Files         *Files // signed file URLs (PLAN 5.3); nil when off
 	// SecretsFile is the absolute path of agent.secretsFile, "" when absent (PLAN 4.2). It holds
 	// NAME=value lines; the gateway reads it at each agent start and never stores the values.
 	SecretsFile string
@@ -229,44 +230,8 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		tokens = append(tokens, Token{ID: id, Identity: identity, SHA256: sha, Scope: scope})
 	}
 
-	agent := raw.Get("agent")
-	var command []string
-	cmdOK := false
-	if c := agent.Get("command"); c != nil && c.Kind == jsonv.Array && len(c.Arr) > 0 {
-		cmdOK = true
-		for _, part := range c.Arr {
-			s, ok := part.StringValue()
-			if !ok || s == "" {
-				cmdOK = false
-				break
-			}
-			command = append(command, s)
-		}
-	}
-	if !cmdOK {
-		add("agent.command must be a non-empty array of strings (no shell string)")
-	}
-	envPassthrough := []string{"PATH", "HOME"}
-	if e := agent.Get("envPassthrough"); !e.IsNull() {
-		envOK := e.Kind == jsonv.Array
-		var names []string
-		if envOK {
-			for _, n := range e.Arr {
-				s, ok := n.StringValue()
-				if !ok || !envName.MatchString(s) {
-					envOK = false
-					break
-				}
-				names = append(names, s)
-			}
-		}
-		if !envOK {
-			add("agent.envPassthrough must be an array of environment variable names")
-		}
-		envPassthrough = names
-	}
-	secretsFile, secretNames, secretsIgnored, secretErrs := validateSecrets(agent.Get("secretsFile"), envPassthrough)
-	errs = append(errs, secretErrs...)
+	agents := parseAgents(raw, add)
+	secretsFile, secretNames, secretsIgnored := agents.secretsFile, agents.secretNames, agents.secretsIgnored
 
 	var roots []string
 	r := raw.Get("projects").Get("roots")
@@ -307,9 +272,13 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		}
 		runner = Runner{Kind: "host"}
 	case "podman", "apple":
-		image, ok := rv.Get("image").StringValue()
-		if !ok || image == "" || strings.HasPrefix(image, "-") {
-			add("runner.image must name the project image, for example \"acpcode-bob:2.0.9\"")
+		for i := range agents.specs {
+			sp := &agents.specs[i]
+			image, ok := sp.imageRaw.StringValue()
+			if !ok || image == "" || strings.HasPrefix(image, "-") {
+				add("%s must name the project image, for example \"acpcode-bob:2.0.9\"", agents.imageLabel(sp.ID))
+			}
+			sp.Image = image
 		}
 		podman, cli := "podman", "container"
 		if kind == "apple" {
@@ -328,7 +297,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			}
 			podman = s
 		}
-		runner = Runner{Kind: kind, Image: image, Podman: podman, Container: cli}
+		runner = Runner{Kind: kind, Podman: podman, Container: cli}
 		if kind == "apple" {
 			runner.Podman = ""
 			if d := rv.Get("dns"); !d.IsNull() {
@@ -417,8 +386,8 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		ListenPort:     int(port),
 		TrustProxy:     trustProxy,
 		Tokens:         tokens,
-		AgentCommand:   command,
-		EnvPassthrough: envPassthrough,
+		Runners:        agents.runners(),
+		DefaultRunner:  agents.defaultRunner,
 		SecretsFile:    secretsFile,
 		SecretNames:    secretNames,
 		SecretsIgnored: secretsIgnored,

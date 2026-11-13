@@ -58,6 +58,9 @@ func TestSchemaV8AddsSessionMCPToAVersion7Database(t *testing.T) {
 	if _, err := s.db.Exec(`DROP TABLE session_mcp`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`ALTER TABLE projects DROP COLUMN runner`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`PRAGMA user_version = 7`); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +76,7 @@ func TestSchemaV8AddsSessionMCPToAVersion7Database(t *testing.T) {
 		t.Fatalf("the table is missing after the migration: %v", err)
 	}
 	var version int
-	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 8 {
+	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 9 {
 		t.Fatalf("version = %d, %v", version, err)
 	}
 }

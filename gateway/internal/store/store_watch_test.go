@@ -22,7 +22,7 @@ func TestProjectWatchSkipRoundTripAndSchema4Migration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Rebuild the schema 4 shape: no watch_skip column.
-	for _, q := range []string{`DROP TABLE session_mcp`, `DROP TABLE git_credentials`, `DROP TABLE session_usage`, `ALTER TABLE projects DROP COLUMN watch_skip`, `PRAGMA user_version = 4`} {
+	for _, q := range []string{`DROP TABLE session_mcp`, `DROP TABLE git_credentials`, `DROP TABLE session_usage`, `ALTER TABLE projects DROP COLUMN watch_skip`, `ALTER TABLE projects DROP COLUMN runner`, `PRAGMA user_version = 4`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

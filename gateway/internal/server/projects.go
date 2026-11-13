@@ -54,10 +54,12 @@ type projectJSON struct {
 	// WatchSkip are the folders the git watcher leaves out, added to the built-in list (D-065);
 	// left out when none.
 	WatchSkip []string `json:"watchSkip,omitempty"`
+	// Runner is the id of the agent this project runs (multi-runner). Fixed at creation.
+	Runner string `json:"runner"`
 }
 
 func toProjectJSON(p store.Project) projectJSON {
-	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip}
+	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip, Runner: p.Runner}
 	if p.DefaultMode != "" {
 		mode := p.DefaultMode
 		out.DefaultMode = &mode
@@ -189,6 +191,10 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 	if rerr != nil {
 		return nil, false, nil, rerr
 	}
+	runner, rerr := s.parseRunner(params)
+	if rerr != nil {
+		return nil, false, nil, rerr
+	}
 	gitOpts, rerr := parseGitOptions(params)
 	if rerr != nil {
 		return nil, false, nil, rerr
@@ -197,7 +203,7 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 		return nil, false, nil, rerr
 	}
 	if createFolder {
-		p, gitRes, rerr := s.createFolderProject(ctx, params, name, mode, deny, skip, gitOpts)
+		p, gitRes, rerr := s.createFolderProject(ctx, params, name, mode, deny, skip, gitOpts, runner)
 		return p, true, gitRes, rerr
 	}
 	rawPath, ok := params.Get("path").StringValue()
@@ -222,7 +228,7 @@ func (s *Server) createProject(ctx context.Context, params *jsonv.Value) (*store
 	} else if existing != nil {
 		return nil, false, nil, &rpcError{Code: rpcInvalidParams, Message: store.ErrDuplicatePath.Error(), Data: map[string]string{"projectId": existing.ID}}
 	}
-	p, rerr := s.registerProject(ctx, name, real, mode, deny, skip)
+	p, rerr := s.registerProject(ctx, name, real, mode, deny, skip, runner)
 	return p, false, nil, rerr
 }
 
@@ -275,23 +281,23 @@ func parseProjectOptions(params *jsonv.Value) (string, []string, []string, *rpcE
 
 // registerProject stores a checked project folder under a new id (FR-17, D-024). It creates the
 // project's HOME and trusts the folder for Bob (D-013). It is the one path both create modes use.
-func (s *Server) registerProject(ctx context.Context, name, real, mode string, deny, skip []string) (*store.Project, *rpcError) {
+func (s *Server) registerProject(ctx context.Context, name, real, mode string, deny, skip []string, runner string) (*store.Project, *rpcError) {
 	id, err := newProjectID()
 	if err != nil {
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create a project id"}
 	}
-	return s.registerProjectID(ctx, id, name, real, mode, deny, skip)
+	return s.registerProjectID(ctx, id, name, real, mode, deny, skip, runner)
 }
 
 // registerProjectID is registerProject with the id chosen by the caller (D-105: a git step runs
 // in the project's container before it is registered).
-func (s *Server) registerProjectID(ctx context.Context, id, name, real, mode string, deny, skip []string) (*store.Project, *rpcError) {
+func (s *Server) registerProjectID(ctx context.Context, id, name, real, mode string, deny, skip []string, runner string) (*store.Project, *rpcError) {
 	home := s.projectHome(id)
 	if err := prepareHome(home, real); err != nil {
 		_ = os.RemoveAll(home)
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot create the project home"}
 	}
-	p := store.Project{ID: id, Name: name, Path: real, DefaultMode: mode, DenyPaths: deny, WatchSkip: skip, Created: time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
+	p := store.Project{ID: id, Name: name, Path: real, DefaultMode: mode, DenyPaths: deny, WatchSkip: skip, Runner: runner, Created: time.Now().UTC().Format("2006-01-02T15:04:05.000Z")}
 	if err := s.store.CreateProject(ctx, p); err != nil {
 		_ = os.RemoveAll(home)
 		if errors.Is(err, store.ErrDuplicatePath) {
@@ -511,4 +517,21 @@ func rpcErrorResponse(id *jsonv.Value, e *rpcError) []byte {
 	buf = append(buf, `,"error":`...)
 	buf = append(buf, body...)
 	return append(buf, '}')
+}
+
+// parseRunner reads the optional runner of a create request. Absent means the config's default.
+// The id must be a runner the config lists: an unknown one is refused, never replaced by another.
+func (s *Server) parseRunner(params *jsonv.Value) (string, *rpcError) {
+	v := params.Get("runner")
+	if v.IsNull() {
+		return s.cfg.DefaultRunner, nil
+	}
+	id, ok := v.StringValue()
+	if !ok {
+		return "", invalidParams("runner must be the id of one of the gateway's runners")
+	}
+	if _, found := s.cfg.Agent(id); !found {
+		return "", invalidParams("runner must be the id of one of the gateway's runners")
+	}
+	return id, nil
 }

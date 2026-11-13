@@ -64,7 +64,7 @@ type Server struct {
 	elics   map[string]*elicitation // elicitations relayed to phones (FR-44), by gateway id; guarded by permMu
 
 	capsMu sync.Mutex
-	caps   []byte // the agent's last initialize result
+	caps   map[string][]byte // the agent's last initialize result, by runner id (guarded by capsMu)
 
 	evMu sync.Mutex                           // held while an event is logged and delivered (subscribe.go)
 	subs map[string]map[*client]*subscription // session id -> socket -> subscription
@@ -98,7 +98,7 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 		closing:     map[string]string{},
 		elics:       map[string]*elicitation{},
 		subs:        map[string]map[*client]*subscription{},
-		caps:        defaultInitialize,
+		caps:        map[string][]byte{},
 	}
 	s.initApprovals()
 	s.connector = connector.New(connector.Options{
@@ -115,9 +115,11 @@ func New(cfg *config.Config, logger *audit.Logger, db *store.Store) *Server {
 		Gateway:        &connectorBridge{s: s}, // the connector tools' reads and prompts (D-096)
 	})
 	s.pushCtx, s.pushCancel = context.WithCancel(context.Background())
-	if data, err := os.ReadFile(s.capsPath()); err == nil {
-		if v, err := jsonv.Parse(data); err == nil && v.Kind == jsonv.Object {
-			s.caps = data
+	for _, a := range cfg.Runners {
+		if data, err := os.ReadFile(s.capsPath(a.ID)); err == nil {
+			if v, err := jsonv.Parse(data); err == nil && v.Kind == jsonv.Object {
+				s.caps[a.ID] = data
+			}
 		}
 	}
 	s.http = &http.Server{
@@ -217,17 +219,26 @@ func (s *Server) releaseAgentSlot() {
 	s.mu.Unlock()
 }
 
-func (s *Server) capsPath() string { return filepath.Join(s.cfg.StateDir, "agent-initialize.json") }
+// capsPath is where a runner's initialize result is kept. The default runner keeps the name it
+// had before multi-runner, so an existing cache still loads.
+func (s *Server) capsPath(runnerID string) string {
+	if runnerID == s.cfg.DefaultRunner {
+		return filepath.Join(s.cfg.StateDir, "agent-initialize.json")
+	}
+	return filepath.Join(s.cfg.StateDir, "agent-initialize-"+runnerID+".json")
+}
 
-// captureCapabilities keeps the agent's initialize result for the next phone initialize.
-func (s *Server) captureCapabilities(result *jsonv.Value) {
+// captureCapabilities keeps a runner's agent initialize result. The phone's initialize gets the
+// default runner's result (initializeResult).
+func (s *Server) captureCapabilities(runnerID string, result *jsonv.Value) {
 	data := result.Marshal()
 	s.capsMu.Lock()
-	s.caps = data
+	s.caps[runnerID] = data
 	s.capsMu.Unlock()
-	tmp := s.capsPath() + ".tmp"
+	path := s.capsPath(runnerID)
+	tmp := path + ".tmp"
 	if os.WriteFile(tmp, data, 0o600) == nil {
-		_ = os.Rename(tmp, s.capsPath())
+		_ = os.Rename(tmp, path)
 	}
 }
 
@@ -235,7 +246,7 @@ func (s *Server) captureCapabilities(result *jsonv.Value) {
 // _meta["acpcode/gateway"] (D-026). The phone's initialize never reaches an agent.
 func (s *Server) initializeResult() *jsonv.Value {
 	s.capsMu.Lock()
-	data := s.caps
+	data := s.caps[s.cfg.DefaultRunner]
 	s.capsMu.Unlock()
 	v, err := jsonv.Parse(data)
 	if err != nil || v.Kind != jsonv.Object {
@@ -248,6 +259,16 @@ func (s *Server) initializeResult() *jsonv.Value {
 	gw := jsonv.Obj()
 	gw.Set("version", jsonv.Str(Version))
 	gw.Set("extensions", exts)
+	// Multi-runner (D-n): the agents this gateway can run, and the one a project gets by default.
+	runners := &jsonv.Value{Kind: jsonv.Array}
+	for _, a := range s.cfg.Runners {
+		r := jsonv.Obj()
+		r.Set("id", jsonv.Str(a.ID))
+		r.Set("name", jsonv.Str(a.Name))
+		runners.Arr = append(runners.Arr, r)
+	}
+	gw.Set("runners", runners)
+	gw.Set("defaultRunner", jsonv.Str(s.cfg.DefaultRunner))
 	meta := v.Get("_meta")
 	if meta == nil || meta.Kind != jsonv.Object {
 		meta = jsonv.Obj()
