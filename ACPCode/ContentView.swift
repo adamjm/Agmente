@@ -350,6 +350,17 @@ private extension ContentView {
                 }
             }
             .navigationTitle(title)
+            // D-113: the top element names the session and the colour of the connection it runs on.
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    SessionTopTitle(
+                        title: title,
+                        serverName: model.currentServerName,
+                        colour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
+                        isConnected: model.connectionState == .connected
+                    )
+                }
+            }
             // Force view re-evaluation when session state changes
             .id(model.serverSessionId)
             .task(id: sessionId) {
@@ -440,66 +451,13 @@ private extension ContentView {
     @ToolbarContentBuilder
     var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            Menu {
-                ForEach(model.servers) { server in
-                    Button {
-                        model.selectServer(server.id)
-                    } label: {
-                        HStack {
-                            Text(server.name)
-                            Spacer()
-                            if server.id == model.selectedServerId {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-                Divider()
-                Button {
-                    addServerSheet = .acp
-                } label: {
-                    Label("Add ACP Server", systemImage: "plus")
-                }
-                .accessibilityIdentifier("addACPServerMenuAction")
-
-                Button {
-                    addServerSheet = .codexAppServer
-                } label: {
-                    Label("Add Codex App Server", systemImage: "plus")
-                }
-                .accessibilityIdentifier("addCodexServerMenuAction")
-            } label: {
-                if #available(iOS 26.0, macOS 26.0, *) {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(model.connectionState == .connected ? Color.green : Color.orange)
-                            .frame(width: 9, height: 9)
-                        Text(model.currentServerName)
-                            .font(.headline.weight(.semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .glassEffect()
-                } else {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(model.connectionState == .connected ? Color.green : Color.orange)
-                            .frame(width: 9, height: 9)
-                        Text(model.currentServerName)
-                            .font(.headline.weight(.semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
-                    .buttonStyle(.plain)
-                }
-            }
+            // The connection the open session runs on. Switching and adding connections is in Settings (D-113).
+            ServerTopChip(
+                name: model.currentServerName,
+                colour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
+                isConnected: model.connectionState == .connected,
+                isConnecting: model.isConnecting
+            )
         }
         
         let trailingPlacement: ToolbarItemPlacement = {
@@ -909,7 +867,14 @@ private struct SessionListPage: View {
                             if !gatewayHome.projects.isEmpty {
                                 SidebarSectionHeader(title: "Recents")
                             }
-                            SidebarGatewaySections(home: gatewayHome, search: sessionSearchText, git: model.gitStore, actions: model.gatewaySessionActions) { sessionId in
+                            SidebarGatewaySections(
+                                home: gatewayHome,
+                                search: sessionSearchText,
+                                git: model.gitStore,
+                                actions: model.gatewaySessionActions,
+                                serverColour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
+                                isConnected: model.connectionState == .connected
+                            ) { sessionId in
                                 navigate(to: .session(sessionId))
                             }
                             .gitHomeTabSheet(store: model.gitStore)

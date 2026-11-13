@@ -10,6 +10,10 @@ struct SidebarSessionRow: View {
     var isHighlighted: Bool = false
     /// Extra text for VoiceOver only (a last message, a folder). It is not drawn.
     var accessibilityExtras: [String] = []
+    /// The session's connection colour (D-113). Nil draws the plain icon.
+    var serverColour: Color?
+    /// Whether the session's connection is open. Nil draws no connection dot.
+    var isConnected: Bool?
 
     private var indicator: SidebarRowIndicator {
         SidebarPresentation.indicator(status: status, unread: unread)
@@ -19,7 +23,7 @@ struct SidebarSessionRow: View {
         HStack(spacing: 12) {
             Image(systemName: "bubble.left")
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(serverColour ?? .secondary)
                 .frame(width: SidebarStyle.rowIconWidth)
                 .accessibilityHidden(true)
 
@@ -32,6 +36,13 @@ struct SidebarSessionRow: View {
             Spacer(minLength: 8)
 
             indicatorView
+
+            if let isConnected {
+                Circle()
+                    .fill(isConnected ? ServerColour.connectedDot : ServerColour.offlineDot)
+                    .frame(width: 9, height: 9)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, SidebarStyle.rowHorizontalPadding)
         .padding(.vertical, SidebarStyle.rowVerticalPadding)

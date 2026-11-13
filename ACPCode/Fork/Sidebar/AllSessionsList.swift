@@ -13,6 +13,10 @@ struct AllSessionsServerInput: Equatable {
     let isCodex: Bool
     let isSelected: Bool
     let sessions: [SessionSummary]
+    /// True while the connection is open. Its sessions then show a green dot.
+    var isConnected: Bool = false
+    /// The connection's place in the list, for `ServerColour`.
+    var colourPosition: Int = 0
 }
 
 struct AllSessionRow: Equatable, Identifiable {
@@ -25,6 +29,10 @@ struct AllSessionRow: Equatable, Identifiable {
     let agentName: String?
     let builder: AgentBuilder
     let isSelectedServer: Bool
+    /// True while the connection is open.
+    var isConnected: Bool = false
+    /// The connection's colour index (`ServerColour.color(index:)`).
+    var colourIndex: Int = 0
 
     /// `serverId/sessionId`. The same session id on two connections gives two rows with two ids.
     var id: String { AllSessionRow.key(serverId: serverId, sessionId: sessionId) }
@@ -63,7 +71,9 @@ enum AllSessionsList {
                     connectionName: connectionName,
                     agentName: server.agentName,
                     builder: builder,
-                    isSelectedServer: server.isSelected
+                    isSelectedServer: server.isSelected,
+                    isConnected: server.isConnected,
+                    colourIndex: ServerColour.paletteIndex(position: server.colourPosition)
                 )
                 numbered.append((numbered.count, row))
             }

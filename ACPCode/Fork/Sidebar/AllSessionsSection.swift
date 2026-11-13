@@ -54,21 +54,27 @@ private struct AllSessionRowLabel: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(row.connectionName)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: 6) {
+                    // The connection's colour, so the session can be matched to its connection (D-113).
+                    Circle()
+                        .fill(ServerColour.color(index: row.colourIndex))
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(row.connectionName)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
 
             Spacer(minLength: 8)
 
-            if isActive {
-                Circle()
-                    .fill(SidebarStyle.activeDot)
-                    .frame(width: 9, height: 9)
-                    .accessibilityHidden(true)
-            }
+            // Green while the session's connection is open, grey when it is not.
+            Circle()
+                .fill(row.isConnected ? ServerColour.connectedDot : ServerColour.offlineDot)
+                .frame(width: 9, height: 9)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, SidebarStyle.rowHorizontalPadding)
         .padding(.vertical, SidebarStyle.rowVerticalPadding)
@@ -85,7 +91,7 @@ private struct AllSessionRowLabel: View {
             title: row.title,
             status: isActive ? .running : .idle,
             unread: 0,
-            extras: [row.connectionName, row.builder.displayName]
+            extras: [row.connectionName, row.builder.displayName, row.isConnected ? "Connected" : "Not connected"]
         ))
     }
 }
