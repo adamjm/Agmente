@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ACPClient
 
-/// Upload File for a gateway project (D-109): one file, saved in the project's folder on the Mac. The file
+/// Upload File for a gateway project (D-115): one file, saved in the project's folder on the Mac. The file
 /// is checked here with the gateway's rules before anything is sent. The gateway's own text is shown when it
 /// still refuses. Nothing is retried on its own.
 struct GatewayFileUploadSheet: View {

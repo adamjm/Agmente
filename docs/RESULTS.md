@@ -1798,7 +1798,7 @@ Not verified: the full wire suite (`scripts/check.sh`), and strict ordering afte
 - **Note:** a binary copied with `cp` was killed at start (exit 137) until re-signed with `codesign --force --sign -`. The restart script does not copy; re-sign after any copy into `~/acpcode/bin`.
 - **Not verified:** a container start from the iPhone (device test pending), and the connector (not set up).
 
-## 2026-11-13 Phone file upload into a project folder (D-109)
+## 2026-11-13 Phone file upload into a project folder (D-115)
 
 Branch `feat/project-upload` from `main`, not committed. Two research agents compared approaches; a critic agent checked them and set the decisions. Owner direction: option 1 (write into the project folder).
 

@@ -1,6 +1,6 @@
 package server
 
-// Phone file upload into a project folder (D-109). The owner's phone sends one file in one JSON-RPC
+// Phone file upload into a project folder (D-115). The owner's phone sends one file in one JSON-RPC
 // message; the gateway writes it into the project root, never into a subfolder, and never over an
 // existing name. The agent (Bob or oh-my-pi) reads it through the project's bind mount (D-085).
 //
@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// maxUploadBytes is the decoded size cap of one upload (the critic's verdict, D-109). It is a
+	// maxUploadBytes is the decoded size cap of one upload (the critic's verdict, D-115). It is a
 	// constant, not config: the phone checks the same number before it sends.
 	maxUploadBytes = 8 << 20
 	// maxUploadEncoded is the base64 length of maxUploadBytes: 4 * ceil(n / 3). A longer string is
@@ -72,7 +72,7 @@ func (u *uploadLocks) release(projectID string) {
 	delete(u.busy, projectID)
 }
 
-// Refusal reasons for the audit line (fixed set, D-109). The text sent to the phone is fixed too.
+// Refusal reasons for the audit line (fixed set, D-115). The text sent to the phone is fixed too.
 const (
 	uploadRefusedName     = "name"
 	uploadRefusedType     = "type"
@@ -115,7 +115,7 @@ func uploadNameReason(name string, denyExtra []string) string {
 
 // uploadSyntaxReason is the part of the name rule that stat needs: one component, the folder-name
 // bytes. Stat reports whether a name exists for any name of this shape; it hashes only names that
-// pass uploadNameReason (D-109, the read-oracle rule).
+// pass uploadNameReason (D-115, the read-oracle rule).
 func uploadSyntaxReason(name string) string {
 	if name == "" || len(name) > maxUploadName || name[0] == '.' {
 		return uploadRefusedName
@@ -233,7 +233,7 @@ func (s *Server) uploadFile(ctx context.Context, who audit.Who, params *jsonv.Va
 	if len(data) > maxUploadBytes {
 		return refuse(uploadRefusedSize, true)
 	}
-	// One upload per project at a time bounds the memory held at once (D-109).
+	// One upload per project at a time bounds the memory held at once (D-115).
 	if !s.uploads.take(p.ID) {
 		return refuse(uploadRefusedBusy, true)
 	}

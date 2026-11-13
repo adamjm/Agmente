@@ -1,7 +1,7 @@
 import Foundation
 import ACP
 
-// Phone file upload into a project folder (D-109). The gateway writes one file into the project root. These
+// Phone file upload into a project folder (D-115). The gateway writes one file into the project root. These
 // rules mirror the gateway's (gateway/internal/server/upload.go) so the phone refuses early; the gateway
 // still decides, and its text is what the person sees when it refuses.
 
@@ -58,7 +58,7 @@ public struct GatewayUploadResult: Equatable, Sendable {
 }
 
 /// The result of `_acpcode/files/stat`. `size` and `sha256` come only for a regular file the upload would
-/// accept, and only up to the upload cap (D-109).
+/// accept, and only up to the upload cap (D-115).
 public struct GatewayFileStat: Equatable, Sendable {
     public let exists: Bool
     public let size: Int?

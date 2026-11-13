@@ -951,7 +951,7 @@ Date: 2026-11-08. Branch `feat/g2-state-snapshot` (from `31cf6de`). Extends D-09
   5. The approval-matrix probe (plan Phase 0, P0.3) has not run yet. It needs a model key and must be recorded in RESULTS before `omp` runs on a real folder.
 - **Source:** the owner's answer to the plan's blocking question B1, given in chat on 2026-11-10 (plan-final.md section 8).
 
-## D-109 Phone file upload into a project folder: one message, project root, no overwrite
+## D-115 Phone file upload into a project folder: one message, project root, no overwrite
 - **Date:** 2026-11-13
 - **Decision:** The phone uploads one file into a registered project's root folder, so the agent can read it through the project's bind mount (D-085). Two methods, both answered by the gateway (D-024) and neither starting an agent:
   - `_acpcode/files/upload {projectId, path, contentBase64}` returns `{path, bytes}`. `path` is one file name, not a path.

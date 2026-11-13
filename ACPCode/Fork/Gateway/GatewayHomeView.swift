@@ -93,7 +93,7 @@ struct GatewayHomeSections: View {
     let search: String
     var git: GitStore?
     let open: (String) -> Void
-    /// The project whose Upload File sheet is open (D-109).
+    /// The project whose Upload File sheet is open (D-115).
     @State private var uploadProject: GatewayProject?
 
     var body: some View {

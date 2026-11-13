@@ -3,7 +3,7 @@ import Combine
 import CryptoKit
 import ACPClient
 
-/// The state of the Upload File sheet for one project (D-109). The person picks one file. The file is read and
+/// The state of the Upload File sheet for one project (D-115). The person picks one file. The file is read and
 /// copied into a private folder, checked with the gateway's rules, and sent only when Upload is tapped. There
 /// is no automatic retry: a refusal keeps the file selected, and an outcome the phone cannot confirm is checked
 /// with `_acpcode/files/stat` before the person decides to upload again.

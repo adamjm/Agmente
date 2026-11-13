@@ -21,7 +21,7 @@ type Fields struct {
 	Reason, Method, Dir      string
 	Code                     int
 	Pid                      int
-	HasBytes                 bool // file_uploaded: Bytes holds the decoded size (D-109)
+	HasBytes                 bool // file_uploaded: Bytes holds the decoded size (D-115)
 	Bytes                    int64
 	HasExit                  bool // write exitCode and signal (each may be null)
 	ExitCode                 *int

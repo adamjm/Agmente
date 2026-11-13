@@ -1,6 +1,6 @@
 import Foundation
 
-/// The private copy a picked file lives in until it is sent or dropped (D-109). The picker's file is
+/// The private copy a picked file lives in until it is sent or dropped (D-115). The picker's file is
 /// read through its security scope, copied into a folder the app owns, and the copy is what is read and
 /// sent. Every folder is removed when its upload ends, when the sheet closes, and at the next launch.
 enum GatewayUploadStaging {

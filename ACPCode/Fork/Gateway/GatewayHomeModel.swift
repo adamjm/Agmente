@@ -30,7 +30,7 @@ final class GatewayHomeModel: ObservableObject {
     private var pendingStates: [String: GatewayAgentState] = [:]
 
     /// Points the model at a server's gateway, or at none. Anything shown from another server is dropped.
-    /// The gateway client of the connection, for an action that the home screen starts (file upload, D-109).
+    /// The gateway client of the connection, for an action that the home screen starts (file upload, D-115).
     func uploadClient() -> GatewayClient? { clientProvider?() }
 
     /// `serverId` is the server the gateway belongs to. When it differs from the server of the states held,

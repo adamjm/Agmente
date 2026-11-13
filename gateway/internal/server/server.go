@@ -39,7 +39,7 @@ var defaultInitialize []byte // Bob 2.0.9's initialize result (F-11), until an a
 
 // Server is one gateway.
 type Server struct {
-	uploads uploadLocks // one upload in flight per project (D-109)
+	uploads uploadLocks // one upload in flight per project (D-115)
 	cfg     *config.Config
 	audit   *audit.Logger
 	store   *store.Store
