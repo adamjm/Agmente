@@ -15,6 +15,8 @@ struct ProjectDetailView: View {
     let onCreateSession: (GatewayProject, [String]?) -> Void
 
     @State private var showingNewSession = false
+    /// The Upload File sheet for this project (D-115).
+    @State private var showingUpload = false
 
     private var project: GatewayProject? {
         home.projects.first { $0.id == projectId }
@@ -49,6 +51,14 @@ struct ProjectDetailView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingUpload) {
+            GatewayFileUploadSheet(
+                projectId: projectId,
+                projectName: project?.name ?? "project",
+                clientProvider: { home.uploadClient() },
+                onClose: { showingUpload = false }
+            )
+        }
     }
 
     private func details(for project: GatewayProject) -> some View {
@@ -76,6 +86,15 @@ struct ProjectDetailView: View {
                 }
                 .disabled(!isConnected)
                 .accessibilityIdentifier("projectNewSessionButton")
+                Button {
+                    showingUpload = true
+                } label: {
+                    Label("Upload File", systemImage: "square.and.arrow.up")
+                        .font(.body.weight(.semibold))
+                        .forkHitTarget()
+                }
+                .disabled(!isConnected)
+                .accessibilityIdentifier("projectUploadButton")
             }
 
             Section {
