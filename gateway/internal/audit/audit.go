@@ -21,6 +21,8 @@ type Fields struct {
 	Reason, Method, Dir      string
 	Code                     int
 	Pid                      int
+	HasBytes                 bool // file_uploaded: Bytes holds the decoded size (D-109)
+	Bytes                    int64
 	HasExit                  bool // write exitCode and signal (each may be null)
 	ExitCode                 *int
 	Signal                   string
@@ -97,6 +99,10 @@ func (l *Logger) Log(event string, f Fields) {
 	}
 	num("code", f.Code, f.Code != 0)
 	num("pid", f.Pid, f.Pid != 0)
+	if f.HasBytes {
+		buf = append(buf, `,"bytes":`...)
+		buf = strconv.AppendInt(buf, f.Bytes, 10)
+	}
 	if f.HasExit {
 		if f.ExitCode != nil {
 			num("exitCode", *f.ExitCode, true)

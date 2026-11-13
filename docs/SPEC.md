@@ -110,6 +110,7 @@ All findings come from the review doc and from code at the versions below. Sourc
 | FR-43 | The gateway exposes skills: list, put and delete, with name validation, a size cap and atomic writes. The app requires Face ID to save a skill. | Should | 6 |
 | FR-44 | The app supports ACP elicitation forms. | Should | 6 |
 | FR-45 | The gateway starts a project's container and Bob on the first request for that project (session, prompt or git call), not at registration. It stops Bob and the container when every session in the project has been idle for the idle time (no running turn, no pending approval, no subscriber). It starts a new container only after the old one has exited, and never runs two for one project (D-015, D-016). Project files and `HOME` persist across stops. | Must | 3 |
+| FR-46 | The phone uploads one file of at most 8 MiB into a registered project folder, never over an existing name, and the gateway writes it so no other file is replaced (D-109). | Should | 6 |
 
 ### 4.2 Non-functional
 
@@ -174,6 +175,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md). Key rules:
 | `_acpcode/git/changed` (notification) | `{ projectId, hash }` | — (sent to sockets that called `git/status` for the project, D-037) |
 | `_acpcode/push/register`, `_acpcode/push/unregister` | `{ deviceToken, environment }` (`sandbox` or `production`), none | `{}` (D-052; the token is kept per identity and device) |
 | `_acpcode/files/url` | `{ projectId, path }` | `{ url, expiresAt }`: `url` is `https://<files.host>/f/<token>`; `path` is relative to the project and must pass D-063; refusals are `-32602`, a disabled feature `-32000` (D-061, D-062) |
+| `_acpcode/files/upload` | `{ projectId, path, contentBase64 }`: `path` is one file name; the decoded file is at most 8 MiB (D-109) | `{ path, bytes }`; refusals are `-32602` with fixed text, and nothing is written; `-32000` while another upload to the project is in flight |
+| `_acpcode/files/stat` | `{ projectId, path }` | `{ exists }`, plus `size` and `sha256` for a regular file the upload would accept (D-109) |
 | `_acpcode/mcp/list` | `{ projectId }` | `{ servers }` (D-084, D-085) |
 | `_acpcode/mcp/set` | `{ projectId, name, disabled, alwaysAllow?, source? }`: `alwaysAllow` allowed per D-089; `source` is `project` or `home`, and when left out the project's file is tried first | `{ servers }`: changes `disabled` and `alwaysAllow` of a server already in the file only (D-084, D-085, D-086) |
 | `_acpcode/mcp/servers/list` | — | `{ servers: [{ id, name, transport, url?, defaultEnabled }] }`: the gateway's own list (D-107); no secret, command, argument or header name; a URL with a query or credentials is shown as scheme and host |

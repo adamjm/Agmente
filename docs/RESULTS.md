@@ -1797,3 +1797,25 @@ Not verified: the full wire suite (`scripts/check.sh`), and strict ordering afte
 - **Production start:** config `~/acpcode/config.json` (Apple runner, `runner.image` `localhost/acpcode-bob:2.0.9`, image tagged from `localhost/agmente-bob:2.0.9`, same digest). Gateway and Caddy run under launchd (`dev.acpcode.gateway`, `dev.acpcode.caddy`). Mutual TLS checked through Caddy at `adams-mac-studio.local:8443`: no client certificate gives `000`; with the client certificate and bearer token, `initialize` returns the gateway's extensions.
 - **Note:** a binary copied with `cp` was killed at start (exit 137) until re-signed with `codesign --force --sign -`. The restart script does not copy; re-sign after any copy into `~/acpcode/bin`.
 - **Not verified:** a container start from the iPhone (device test pending), and the connector (not set up).
+
+## 2026-11-13 Phone file upload into a project folder (D-109)
+
+Branch `feat/project-upload` from `main`, not committed. Two research agents compared approaches; a critic agent checked them and set the decisions. Owner direction: option 1 (write into the project folder).
+
+Gateway (`gateway/internal/server/upload.go`, `audit.go`):
+- `go test ./...` (all packages): ok.
+- Go unit tests (`upload_test.go`): name and type rules, syntax for stat, the 8 MiB encoded cap, no-clobber write (existing file and dangling symlink), mode 0644, one upload per project: 6 of 6 pass.
+- Mutation: `root.Link` replaced by `root.Rename`. `TestWriteUploadNoClobberNeverReplacesAName` fails. Restored; passes.
+- Wire `gateway/test/files-upload.test.mjs`: 8 of 8 pass (happy path with mode and audit with no content or hash; each refusal with its fixed text; an existing name; a symlink at the name; bad base64 and an oversize decode; a missing folder; stat for absent, present, secret; stat hash matches the upload). No agent starts for upload or stat.
+- Related wire files `files`, `files-upload`, `skills`, `denypaths`, `connector-tools`: 46 of 46 pass.
+
+App:
+- ACPClient `swift test --filter GatewayFilesTests`: 7 of 7 pass (name rules, cap, no send over the cap, request payload, result decoding, gateway text passes through, stat decoding).
+- `xcodebuild ... -only-testing:ACPCodeTests/GatewayFileUploadModelTests test` on iPhone 17 simulator: 13 of 13 pass (folder refused, bad type refused, oversize refused before copy, staging, send saves and drops the copy, gateway refusal keeps the file with no retry, lost answer is unknown, check finds the same file, check finds nothing, check finds a different file, cancel while sending, no connection sends nothing, discard, the SHA-256 vector). `** TEST SUCCEEDED **`.
+
+Not run or not built:
+- The full gateway wire suite and full `ACPCodeTests`. Only the files above were run.
+- A UI test of the sheet and its menu entry. No device or Apple picker check.
+- The dedicated upload WebSocket (the critic's head-of-line recommendation). Upload uses the main socket with the 8 MiB cap. Known gap.
+- The Upload entry in the sidebar project header (`SidebarProjectHeader`). Only the home project header has it.
+- Production deploy (`~/acpcode`). Not done.
