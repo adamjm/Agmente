@@ -23,10 +23,16 @@ public struct ACPAuthMethod: Equatable, Sendable {
 public struct GatewayInfo: Equatable, Sendable {
     public let version: String
     public let extensions: [String]
+    /// The agents the gateway can run. Empty when the gateway does not list any (an older gateway).
+    public let runners: [GatewayRunner]
+    /// The runner a new project gets when none is chosen. Nil when the gateway does not say.
+    public let defaultRunner: String?
 
-    public init(version: String, extensions: [String]) {
+    public init(version: String, extensions: [String], runners: [GatewayRunner] = [], defaultRunner: String? = nil) {
         self.version = version
         self.extensions = extensions
+        self.runners = runners
+        self.defaultRunner = defaultRunner
     }
 
     public func supports(_ name: String) -> Bool { extensions.contains(name) }
@@ -96,7 +102,13 @@ public enum ACPInitializeParser {
         if let meta = result["_meta"]?.objectValue?["acpcode/gateway"]?.objectValue,
            let version = meta["version"]?.stringValue {
             let names = meta["extensions"]?.arrayValue?.compactMap { $0.stringValue } ?? []
-            gateway = GatewayInfo(version: version, extensions: names)
+            // An item without an id or a name is skipped, as the auth methods are.
+            let runners: [GatewayRunner] = meta["runners"]?.arrayValue?.compactMap { item in
+                guard let runner = try? item.decoded(as: GatewayRunner.self), !runner.id.isEmpty else { return nil }
+                return runner
+            } ?? []
+            let defaultRunner = meta["defaultRunner"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+            gateway = GatewayInfo(version: version, extensions: names, runners: runners, defaultRunner: defaultRunner)
         }
 
         return ACPInitializeResult(

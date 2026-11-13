@@ -13,6 +13,8 @@ struct ProjectDetailView: View {
     let onOpenSession: (String) -> Void
     /// Starts a session in the chosen project. The caller sends it, as the gateway's new-session flow does.
     let onCreateSession: (GatewayProject, [String]?) -> Void
+    /// The runners the gateway lists (multi-runner). Empty when there is no choice to show.
+    var runners: [GatewayRunner] = []
 
     @State private var showingNewSession = false
     /// The Upload File sheet for this project (D-115).
@@ -71,6 +73,12 @@ struct ProjectDetailView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
+                    if let runnerName = GatewayRunnerRules.projectRunnerName(project, runners: runners) {
+                        Text(runnerName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("projectDetailRunner")
+                    }
                     if let agent = home.agentState(for: project.id), let text = GatewayAgentStatePresentation.label(agent) {
                         Text(text)
                             .font(.caption.weight(.semibold))

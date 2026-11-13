@@ -8,8 +8,8 @@ struct GatewayNewProjectSheet: View {
     @StateObject private var model: GatewayNewProjectModel
     let onClose: () -> Void
 
-    init(clientProvider: @escaping () -> GatewayClient?, connectionScheme: String = "wss", onCreated: @escaping (GatewayProject) async -> Void, onClose: @escaping () -> Void) {
-        _model = StateObject(wrappedValue: GatewayNewProjectModel(clientProvider: clientProvider, connectionScheme: connectionScheme, onCreated: onCreated))
+    init(clientProvider: @escaping () -> GatewayClient?, connectionScheme: String = "wss", runners: [GatewayRunner] = [], defaultRunner: String? = nil, onCreated: @escaping (GatewayProject) async -> Void, onClose: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: GatewayNewProjectModel(clientProvider: clientProvider, connectionScheme: connectionScheme, runners: runners, defaultRunner: defaultRunner, onCreated: onCreated))
         self.onClose = onClose
     }
 
@@ -33,6 +33,19 @@ struct GatewayNewProjectSheet: View {
                     Text("Name")
                 } footer: {
                     Text("Letters, digits, spaces, dots, hyphens and underscores. Up to 64 characters. The project takes the same name.")
+                }
+
+                if !model.runnerChoices.isEmpty {
+                    Section {
+                        Picker("Runner", selection: $model.selectedRunner) {
+                            ForEach(model.runnerChoices, id: \.id) { runner in
+                                Text(runner.name).tag(Optional(runner.id))
+                            }
+                        }
+                        .accessibilityIdentifier("newProjectRunner")
+                    } footer: {
+                        Text("The agent this project runs. It is fixed once the project is made.")
+                    }
                 }
 
                 Section {

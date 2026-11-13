@@ -275,6 +275,8 @@ private extension ContentView {
                 isConnected: model.connectionState == .connected,
                 clientProvider: { [weak model] in model?.selectedGatewayClient() },
                 connectionScheme: model.servers.first(where: { $0.id == model.selectedServerId })?.scheme ?? "wss",
+                runners: model.selectedGatewayInfo?.runners ?? [],
+                defaultRunner: model.selectedGatewayInfo?.defaultRunner,
                 onOpenProject: { projectId in navigationPath.append(.projectDetail(projectId)) }
             )
         } else {
@@ -384,7 +386,8 @@ private extension ContentView {
                 isConnected: model.connectionState == .connected,
                 mcpClient: { [weak model] in model?.selectedGatewayClient() },
                 onOpenSession: { sessionId in navigationPath.append(.session(sessionId)) },
-                onCreateSession: { project, mcpIDs in startSession(in: project, mcpIDs: mcpIDs) }
+                onCreateSession: { project, mcpIDs in startSession(in: project, mcpIDs: mcpIDs) },
+                runners: model.selectedGatewayInfo?.runners ?? []
             )
         case .folderSessions(let path, let displayName):
             FolderSessionsView(
@@ -980,6 +983,8 @@ private struct SessionListPage: View {
             GatewayNewProjectSheet(
                 clientProvider: { [weak model] in model?.selectedGatewayClient() },
                 connectionScheme: selectedServerScheme,
+                runners: model.selectedGatewayInfo?.runners ?? [],
+                defaultRunner: model.selectedGatewayInfo?.defaultRunner,
                 onCreated: { project in
                     await gatewayHome.refresh()
                     gatewayHome.select(projectId: project.id)

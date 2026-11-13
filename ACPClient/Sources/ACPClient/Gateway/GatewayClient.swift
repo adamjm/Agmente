@@ -56,10 +56,12 @@ public struct GatewayClient: Sendable {
     /// `_acpcode/projects/create` (D-091). With `createFolder`, the gateway makes `<path>/<name>`:
     /// `path` is the parent folder, a configured root (see `projectRoots()`), and `name` is both the new
     /// folder's name and the project's name. Without it, `path` is an existing folder the project uses.
-    /// Gateway refusals come back as `GatewayError.rpc` with the gateway's own text.
-    public func createProject(name: String, path: String, createFolder: Bool = false) async throws -> GatewayProject {
+    /// Gateway refusals come back as `GatewayError.rpc` with the gateway's own text. `runner` is a runner id
+    /// from `GatewayInfo.runners`; it is sent only when non-nil and non-empty, else the gateway's default is used.
+    public func createProject(name: String, path: String, createFolder: Bool = false, runner: String? = nil) async throws -> GatewayProject {
         var params: [String: ACP.Value] = ["name": .string(name), "path": .string(path)]
         if createFolder { params["createFolder"] = .bool(true) }
+        if let runner, !runner.isEmpty { params["runner"] = .string(runner) }
         let result = try await call("_acpcode/projects/create", .object(params))
         return try decode(GatewayProject.self, from: result["project"], what: "project")
     }

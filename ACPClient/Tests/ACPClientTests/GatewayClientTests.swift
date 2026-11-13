@@ -30,6 +30,49 @@ final class GatewayClientTests: XCTestCase {
         XCTAssertEqual(gateway?.supports("approvals"), false)
     }
 
+    func testInitializeListsTheRunnersAndTheDefaultAndSkipsAnItemWithNoId() {
+        let result: ACP.Value = .object([
+            "protocolVersion": .number(1),
+            "_meta": .object(["acpcode/gateway": .object([
+                "version": .string("0.3.0-dev"),
+                "extensions": .array([.string("projects")]),
+                "runners": .array([
+                    .object(["id": .string("bob"), "name": .string("Bob")]),
+                    .object(["id": .string("codex"), "name": .string("Codex")]),
+                    .object(["name": .string("no id")]),
+                ]),
+                "defaultRunner": .string("codex"),
+            ])]),
+        ])
+        let gateway = ACPInitializeParser.parse(result: result)?.gateway
+        XCTAssertEqual(gateway?.runners, [GatewayRunner(id: "bob", name: "Bob"), GatewayRunner(id: "codex", name: "Codex")])
+        XCTAssertEqual(gateway?.defaultRunner, "codex")
+        XCTAssertEqual(gateway?.extensions, ["projects"], "the extensions are read as before")
+    }
+
+    func testInitializeWithoutRunnersKeyHasNoRunnerChoice() {
+        let result: ACP.Value = .object(["_meta": .object(["acpcode/gateway": .object([
+            "version": .string("0.2.0"),
+            "extensions": .array([.string("projects")]),
+        ])])])
+        let gateway = ACPInitializeParser.parse(result: result)?.gateway
+        XCTAssertEqual(gateway, GatewayInfo(version: "0.2.0", extensions: ["projects"]))
+        XCTAssertEqual(gateway?.runners, [])
+        XCTAssertNil(gateway?.defaultRunner)
+    }
+
+    func testInitializeWithOneRunnerAndAnEmptyDefaultKeepsBothAsSent() {
+        let result: ACP.Value = .object(["_meta": .object(["acpcode/gateway": .object([
+            "version": .string("0.3.0-dev"),
+            "extensions": .array([]),
+            "runners": .array([.object(["id": .string("bob"), "name": .string("Bob")])]),
+            "defaultRunner": .string(""),
+        ])])])
+        let gateway = ACPInitializeParser.parse(result: result)?.gateway
+        XCTAssertEqual(gateway?.runners, [GatewayRunner(id: "bob", name: "Bob")])
+        XCTAssertNil(gateway?.defaultRunner, "an empty default is no default")
+    }
+
     func testAServerWithoutTheGatewayKeyHasNoGatewayInfo() {
         for meta: ACP.Value? in [nil, .object([:]), .object(["acpcode/gateway": .null]), .object(["acpcode/gateway": .object(["extensions": .array([])])]), .object(["bob/extensions": .object(["version": .number(1)])])] {
             var object: [String: ACP.Value] = ["protocolVersion": .number(1), "agentInfo": .object(["name": .string("x")])]

@@ -8,12 +8,40 @@ public struct GatewayProject: Codable, Equatable, Hashable, Sendable, Identifiab
     public let name: String
     public let path: String
     public let defaultMode: String?
+    /// The id of the runner (agent) the project was made with (multi-runner). Nil when the gateway sends
+    /// none or an empty string, as it does for very old projects.
+    public let runner: String?
 
-    public init(id: String, name: String, path: String, defaultMode: String? = nil) {
+    public init(id: String, name: String, path: String, defaultMode: String? = nil, runner: String? = nil) {
         self.id = id
         self.name = name
         self.path = path
         self.defaultMode = defaultMode
+        self.runner = runner
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, path, defaultMode, runner
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        path = try container.decode(String.self, forKey: .path)
+        defaultMode = try container.decodeIfPresent(String.self, forKey: .defaultMode)
+        runner = try container.decodeIfPresent(String.self, forKey: .runner).flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
+/// One agent the gateway can run (multi-runner), as `initialize` lists it in `_meta["acpcode/gateway"]`.
+public struct GatewayRunner: Decodable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
     }
 }
 

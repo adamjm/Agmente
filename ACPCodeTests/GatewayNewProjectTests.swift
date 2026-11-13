@@ -272,3 +272,103 @@ final class GatewayNewProjectSelectionTests: XCTestCase {
         XCTAssertEqual(gatewayNewSessionChosenProject(projects, selection: "gone")?.id, "p1", "a project no longer listed falls back to the first")
     }
 }
+
+@MainActor
+final class GatewayNewProjectRunnerTests: XCTestCase {
+    private let bob = GatewayRunner(id: "bob", name: "Bob")
+    private let codex = GatewayRunner(id: "codex", name: "Codex")
+
+    private func gatewayWithRoot() -> NewProjectFakeGateway {
+        let gateway = NewProjectFakeGateway()
+        gateway.results["_acpcode/projects/roots"] = rootsValue(["/srv/root"])
+        gateway.results["_acpcode/projects/create"] = .object(["project": projectValue("9f2c1a7b3e10", "site", "/srv/root/site")])
+        return gateway
+    }
+
+    private func makeModel(_ gateway: NewProjectFakeGateway, runners: [GatewayRunner], defaultRunner: String?) -> GatewayNewProjectModel {
+        GatewayNewProjectModel(clientProvider: { GatewayClient(gateway) }, runners: runners, defaultRunner: defaultRunner, onCreated: { _ in })
+    }
+
+    private var noRunnerParams: ACP.Value {
+        .object(["name": .string("site"), "path": .string("/srv/root"), "createFolder": .bool(true)])
+    }
+
+    func testThePickerIsOfferedOnlyWithTwoOrMoreRunners() {
+        let gateway = NewProjectFakeGateway()
+        XCTAssertTrue(makeModel(gateway, runners: [], defaultRunner: nil).runnerChoices.isEmpty, "an old gateway")
+        XCTAssertTrue(makeModel(gateway, runners: [bob], defaultRunner: "bob").runnerChoices.isEmpty, "a single runner")
+        XCTAssertEqual(makeModel(gateway, runners: [bob, codex], defaultRunner: "bob").runnerChoices, [bob, codex])
+    }
+
+    func testTheDefaultRunnerIsPreselectedAndAFallbackIsTheFirstWhenItIsUnknown() {
+        let gateway = NewProjectFakeGateway()
+        XCTAssertEqual(makeModel(gateway, runners: [bob, codex], defaultRunner: "codex").selectedRunner, "codex")
+        XCTAssertEqual(makeModel(gateway, runners: [bob, codex], defaultRunner: nil).selectedRunner, "bob")
+        XCTAssertEqual(makeModel(gateway, runners: [bob, codex], defaultRunner: "gone").selectedRunner, "bob")
+        XCTAssertNil(makeModel(gateway, runners: [bob], defaultRunner: "bob").selectedRunner, "no choice, so no selection")
+        XCTAssertNil(makeModel(gateway, runners: [], defaultRunner: nil).selectedRunner)
+    }
+
+    func testChoosingARunnerSendsItInCreateProject() async {
+        let gateway = gatewayWithRoot()
+        let model = makeModel(gateway, runners: [bob, codex], defaultRunner: "bob")
+        await model.loadRoots()
+        model.name = "site"
+        model.selectedRunner = "codex"
+        let accepted = await model.create()
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(gateway.calls.last?.params, .object([
+            "name": .string("site"), "path": .string("/srv/root"), "createFolder": .bool(true), "runner": .string("codex"),
+        ]))
+    }
+
+    func testTheDefaultRunnerIsSentWhenNothingElseIsChosen() async {
+        let gateway = gatewayWithRoot()
+        let model = makeModel(gateway, runners: [bob, codex], defaultRunner: "codex")
+        await model.loadRoots()
+        model.name = "site"
+        _ = await model.create()
+        XCTAssertEqual(gateway.calls.last?.params, .object([
+            "name": .string("site"), "path": .string("/srv/root"), "createFolder": .bool(true), "runner": .string("codex"),
+        ]))
+    }
+
+    func testWithOneRunnerNothingIsSent() async {
+        let gateway = gatewayWithRoot()
+        let model = makeModel(gateway, runners: [bob], defaultRunner: "bob")
+        await model.loadRoots()
+        model.name = "site"
+        _ = await model.create()
+        XCTAssertEqual(gateway.calls.last?.params, noRunnerParams)
+    }
+
+    func testWithNoRunnerListNothingIsSent() async {
+        let gateway = gatewayWithRoot()
+        let model = makeModel(gateway, runners: [], defaultRunner: nil)
+        await model.loadRoots()
+        model.name = "site"
+        _ = await model.create()
+        XCTAssertEqual(gateway.calls.last?.params, noRunnerParams)
+    }
+
+    func testChangingTheRunnerClearsAGatewayRefusal() async {
+        let gateway = gatewayWithRoot()
+        let model = makeModel(gateway, runners: [bob, codex], defaultRunner: "bob")
+        await model.loadRoots()
+        model.name = "site"
+        gateway.error = ACPServiceError.rpc(id: .number(2), error: .invalidParams("runner must be the id of one of the gateway's runners"))
+        _ = await model.create()
+        XCTAssertNotNil(model.createMessage)
+        model.selectedRunner = "codex"
+        XCTAssertNil(model.createMessage, "the refusal was about the runner that was sent")
+    }
+
+    func testTheProjectRunnerNameShowsOnlyWithTwoOrMoreRunnersAndAKnownId() {
+        let withCodex = GatewayProject(id: "p1", name: "Site", path: "/srv/site", runner: "codex")
+        XCTAssertEqual(GatewayRunnerRules.projectRunnerName(withCodex, runners: [bob, codex]), "Codex")
+        XCTAssertNil(GatewayRunnerRules.projectRunnerName(withCodex, runners: [codex]), "a single runner is no choice")
+        XCTAssertNil(GatewayRunnerRules.projectRunnerName(withCodex, runners: []), "an old gateway")
+        XCTAssertNil(GatewayRunnerRules.projectRunnerName(GatewayProject(id: "p2", name: "Old", path: "/srv/old"), runners: [bob, codex]), "no runner set")
+        XCTAssertNil(GatewayRunnerRules.projectRunnerName(GatewayProject(id: "p3", name: "Gone", path: "/srv/g", runner: "gone"), runners: [bob, codex]), "an id the gateway does not list")
+    }
+}

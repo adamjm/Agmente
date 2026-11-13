@@ -39,6 +39,56 @@ final class GatewayProjectCreationClientTests: XCTestCase {
                        "the path-based call sends the same params it always did")
     }
 
+    func testTheRunnerIsSentOnlyWhenGiven() async throws {
+        let fake = CreationFakeGateway()
+        fake.results["_acpcode/projects/create"] = .object(["project": .object([
+            "id": .string("a1"), "name": .string("Fresh"), "path": .string("/srv/root/Fresh"),
+        ])])
+        _ = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", createFolder: true, runner: "codex")
+        XCTAssertEqual(fake.calls.last?.params, .object([
+            "name": .string("Fresh"), "path": .string("/srv/root"), "createFolder": .bool(true), "runner": .string("codex"),
+        ]))
+    }
+
+    func testANilOrEmptyRunnerLeavesTheParamsUnchanged() async throws {
+        let fake = CreationFakeGateway()
+        fake.results["_acpcode/projects/create"] = .object(["project": .object([
+            "id": .string("a1"), "name": .string("Fresh"), "path": .string("/srv/root/Fresh"),
+        ])])
+        let expected: ACP.Value = .object(["name": .string("Fresh"), "path": .string("/srv/root"), "createFolder": .bool(true)])
+        _ = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", createFolder: true, runner: nil)
+        _ = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", createFolder: true, runner: "")
+        _ = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", createFolder: true)
+        XCTAssertEqual(fake.calls.map(\.params), [expected, expected, expected])
+    }
+
+    func testTheGitCreateSendsTheRunnerToo() async throws {
+        let fake = CreationFakeGateway()
+        fake.results["_acpcode/projects/create"] = .object(["project": .object([
+            "id": .string("a1"), "name": .string("Fresh"), "path": .string("/srv/root/Fresh"),
+        ])])
+        _ = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", git: nil, runner: "bob")
+        XCTAssertEqual(fake.calls.last?.params, .object([
+            "name": .string("Fresh"), "path": .string("/srv/root"), "createFolder": .bool(true), "runner": .string("bob"),
+        ]))
+        _ = try await GatewayClient(fake).createProject(name: "Fresh", path: "/srv/root", git: nil)
+        XCTAssertEqual(fake.calls.last?.params, .object([
+            "name": .string("Fresh"), "path": .string("/srv/root"), "createFolder": .bool(true),
+        ]), "without a runner the git create is unchanged")
+    }
+
+    func testGatewayProjectDecodesTheRunnerAndTreatsEmptyAsNone() async throws {
+        let fake = CreationFakeGateway()
+        fake.results["_acpcode/projects/list"] = .object(["projects": .array([
+            .object(["id": .string("a1"), "name": .string("Old"), "path": .string("/srv/old"), "defaultMode": .null]),
+            .object(["id": .string("b2"), "name": .string("Empty"), "path": .string("/srv/empty"), "defaultMode": .null, "runner": .string("")]),
+            .object(["id": .string("c3"), "name": .string("Bob"), "path": .string("/srv/bob"), "defaultMode": .null, "runner": .string("bob")]),
+        ])])
+        let projects = try await GatewayClient(fake).projects()
+        XCTAssertEqual(projects.map(\.runner), [nil, nil, "bob"])
+        XCTAssertEqual(projects[2], GatewayProject(id: "c3", name: "Bob", path: "/srv/bob", defaultMode: nil, runner: "bob"))
+    }
+
     func testAGatewayRefusalKeepsItsCodeAndText() async {
         let fake = CreationFakeGateway()
         fake.error = ACPServiceError.rpc(id: .number(3), error: .invalidParams("a folder with that name already exists"))

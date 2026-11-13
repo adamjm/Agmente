@@ -2,6 +2,33 @@ import Foundation
 import Combine
 import ACPClient
 
+/// The runner choice for a new project (multi-runner). A gateway that lists one runner, or none, offers no choice,
+/// and no runner is sent, so the gateway uses its default.
+enum GatewayRunnerRules {
+    /// The runners the person may choose from: all of them when there are two or more, else none.
+    static func choices(_ runners: [GatewayRunner]) -> [GatewayRunner] {
+        runners.count >= 2 ? runners : []
+    }
+
+    /// The runner a new project starts with: the gateway's default when it is listed, else the first one.
+    /// Nil when there is no choice to make.
+    static func defaultSelection(_ runners: [GatewayRunner], defaultRunner: String?) -> String? {
+        let offered = choices(runners)
+        guard !offered.isEmpty else { return nil }
+        if let defaultRunner, offered.contains(where: { $0.id == defaultRunner }) {
+            return defaultRunner
+        }
+        return offered.first?.id
+    }
+
+    /// The name to show for a project's runner: nil unless the project has a runner, the gateway lists two or
+    /// more, and the runner is one of them.
+    static func projectRunnerName(_ project: GatewayProject, runners: [GatewayRunner]) -> String? {
+        guard !choices(runners).isEmpty, let id = project.runner else { return nil }
+        return runners.first(where: { $0.id == id })?.name
+    }
+}
+
 /// The state of the New Project sheet (D-091, D-105). It loads the gateway's roots, checks the name as the
 /// person types, and sends `_acpcode/projects/create` only when Create is tapped. With "Create Git
 /// repository" on, the git fields go too; with it off, the request is the same as before.
@@ -18,6 +45,14 @@ final class GatewayNewProjectModel: ObservableObject {
             if selectedRoot != oldValue { createMessage = nil }
         }
     }
+    /// The runner the project will use. Nil when the gateway offers no choice, and then none is sent.
+    @Published var selectedRunner: String? {
+        didSet {
+            if selectedRunner != oldValue { createMessage = nil }
+        }
+    }
+    /// The runners the gateway lists, as it sent them. The picker shows them only when there are two or more.
+    let runners: [GatewayRunner]
     /// "Create Git repository". Off by default, so today's request is unchanged.
     @Published var gitEnabled: Bool = false {
         didSet {
@@ -52,12 +87,17 @@ final class GatewayNewProjectModel: ObservableObject {
     /// `onCreated` runs once the gateway has made and registered the project. The caller refreshes its
     /// project list and selects the new project there. `connectionScheme` is the scheme of the server's
     /// connection, which decides whether a credential may be entered.
-    init(clientProvider: @escaping () -> GatewayClient?, connectionScheme: String = "wss", onCreated: @escaping (GatewayProject) async -> Void) {
+    init(clientProvider: @escaping () -> GatewayClient?, connectionScheme: String = "wss", runners: [GatewayRunner] = [], defaultRunner: String? = nil, onCreated: @escaping (GatewayProject) async -> Void) {
         self.clientProvider = clientProvider
         self.onCreated = onCreated
+        self.runners = runners
+        self.selectedRunner = GatewayRunnerRules.defaultSelection(runners, defaultRunner: defaultRunner)
         self.credentials = GatewayGitCredentialsModel(clientProvider: clientProvider, connectionScheme: connectionScheme)
         credentialChanges = credentials.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
+
+    /// The runners the picker offers: none unless the gateway lists two or more.
+    var runnerChoices: [GatewayRunner] { GatewayRunnerRules.choices(runners) }
 
     /// The text under the name field, or nil while the name is empty or valid. Empty shows nothing,
     /// so the field does not complain before anything is typed.
@@ -149,10 +189,12 @@ final class GatewayNewProjectModel: ObservableObject {
         }
         let sentName = name
         let git = gitSetup
+        // Sent only when the gateway offers a choice; otherwise the gateway's default applies.
+        let runner = runnerChoices.isEmpty ? nil : selectedRunner
         isCreating = true
         defer { isCreating = false }
         do {
-            let created = try await client.createProject(name: sentName, path: root, git: git)
+            let created = try await client.createProject(name: sentName, path: root, git: git, runner: runner)
             createMessage = nil
             await onCreated(created.project)
             return true

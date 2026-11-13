@@ -41,6 +41,9 @@ struct ProjectsView: View {
     let isConnected: Bool
     let clientProvider: () -> GatewayClient?
     let connectionScheme: String
+    /// The runners the gateway lists, and its default one (multi-runner). Empty when there is no choice.
+    var runners: [GatewayRunner] = []
+    var defaultRunner: String? = nil
     let onOpenProject: (String) -> Void
 
     @State private var showingNewProject = false
@@ -59,6 +62,8 @@ struct ProjectsView: View {
             GatewayNewProjectSheet(
                 clientProvider: clientProvider,
                 connectionScheme: connectionScheme,
+                runners: runners,
+                defaultRunner: defaultRunner,
                 onCreated: { project in
                     await home.refresh()
                     home.select(projectId: project.id)
@@ -97,7 +102,8 @@ struct ProjectsView: View {
                     ProjectRowLabel(
                         project: project,
                         sessionCount: ProjectsLogic.sessionCount(projectId: project.id, sessions: home.sessions),
-                        agent: home.agentState(for: project.id)
+                        agent: home.agentState(for: project.id),
+                        runnerName: GatewayRunnerRules.projectRunnerName(project, runners: runners)
                     )
                 }
                 .buttonStyle(.plain)
@@ -158,6 +164,8 @@ struct ProjectRowLabel: View {
     let project: GatewayProject
     let sessionCount: Int
     let agent: GatewayAgentState?
+    /// The runner's name, shown only when the gateway lists two or more runners and the project has one.
+    var runnerName: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -184,6 +192,12 @@ struct ProjectRowLabel: View {
                         Text(text)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(agent == .running ? Color.blue : Color.secondary)
+                    }
+                    if let runnerName {
+                        Text(runnerName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("projectRunnerLabel")
                     }
                 }
             }

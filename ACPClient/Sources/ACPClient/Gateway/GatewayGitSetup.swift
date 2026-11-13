@@ -61,12 +61,13 @@ public enum GatewayProjectCreateRequest {
     /// `createFolder` is always true here, because the sheet only makes folders. The git fields are added
     /// only when `git` is non-nil: `gitInit` true, `gitRemote` when there is a remote, and `credentialId`
     /// only together with a remote, since the gateway refuses it without one.
-    public static func params(name: String, path: String, git: GatewayGitSetup?) -> ACP.Value {
+    public static func params(name: String, path: String, git: GatewayGitSetup?, runner: String? = nil) -> ACP.Value {
         var params: [String: ACP.Value] = [
             "name": .string(name),
             "path": .string(path),
             "createFolder": .bool(true),
         ]
+        if let runner, !runner.isEmpty { params["runner"] = .string(runner) }
         if let git {
             params["gitInit"] = .bool(true)
             if let remote = git.remote, !remote.isEmpty {
@@ -92,8 +93,8 @@ public extension GatewayError {
 public extension GatewayClient {
     /// `_acpcode/projects/create` with a git setup (D-105). The folder, the `git init`, and the remote are
     /// all made by the gateway, and a failure leaves nothing behind. Refusals come back as `GatewayError.rpc`.
-    func createProject(name: String, path: String, git: GatewayGitSetup?) async throws -> GatewayProjectCreated {
-        let result = try await call("_acpcode/projects/create", GatewayProjectCreateRequest.params(name: name, path: path, git: git))
+    func createProject(name: String, path: String, git: GatewayGitSetup?, runner: String? = nil) async throws -> GatewayProjectCreated {
+        let result = try await call("_acpcode/projects/create", GatewayProjectCreateRequest.params(name: name, path: path, git: git, runner: runner))
         let project = try decode(GatewayProject.self, from: result["project"], what: "project")
         var gitResult: GatewayGitInit?
         if let value = result["git"], !Self.isNull(value) {
