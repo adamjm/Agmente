@@ -1002,3 +1002,15 @@ Date: 2026-11-08. Branch `feat/g2-state-snapshot` (from `31cf6de`). Extends D-09
 - **Why:** The owner asked for one panel where ACP connections and MCP servers are configured.
 - **Known limits:** for a plain ACP server the MCP screen says its servers are sent when a session starts, but the app sends them only for a gateway. Skills and Usage are not linked because Settings cannot open them.
 - **Status:** unit tests pass. Verify: the panel on screen, on iPad, and the macOS build.
+
+## D-116 Several agents on one gateway, chosen per project
+- **Date:** 2026-11-13
+- **Decision:** The gateway config takes a `runners` map instead of one `agent` and one `runner.image`. Each runner has its own `command`, `envPassthrough`, optional `name` (default: its id) and `image`. `defaultRunner` names the runner a project gets when it names none; with one runner it may be left out. Ids match `^[a-z][a-z0-9-]{0,31}$`. A config with `agent` (and `runner.image`) still loads: it becomes one runner with id `default`. The `runners` form and `agent` cannot be mixed, and `runner.image` cannot be set beside `runners` (each runner has its own image). The runner `secretsFile` is only read in the single-agent form. The shared `runner` block keeps `kind`, `container`, `dns` and the container user.
+  - **Projects.** A project records its runner in `projects.runner` (schema version 9). `_acpcode/projects/create` takes an optional `runner`: absent or null means the default; an unknown id or a non-string is `-32602`. `_acpcode/projects/list` returns `runner` on each project. The runner is fixed at creation.
+  - **Start.** Each project's agent, its git commands and its one-off commands use that project's runner command and image. The container name is still `acpcode-<projectId>`, so a project keeps one agent at a time (D-025).
+  - **Existing data.** A project with no runner (made before this change) is given the configured default once, at start, and keeps it (`AssignUnsetRunners`). At start the gateway refuses if any project names a runner the config does not list, and the error names the project. It never moves a project to another agent.
+  - **Initialize.** The gateway's `_meta["acpcode/gateway"]` lists `runners` (id and name) and `defaultRunner`, even with one runner.
+  - **Caches.** The initialize result from the agent is kept per runner. The default runner keeps the file name `agent-initialize.json`; other runners use `agent-initialize-<id>.json`. The phone's initialize gets the default runner's result.
+  - **App.** The New Project sheet shows a Runner picker only when the gateway lists two or more runners, with the default selected. A project shows its runner name only in that case. A single-runner gateway looks the same as before.
+  - **Not done.** A project cannot change runner later. Initialize shows one agent's capabilities (the default runner's), so an agent with different capabilities is not reflected per project.
+- **Reason:** The owner wants one gateway to offer Bob and oh-my-pi, with each project using the agent it was made with. Fixing the runner at creation keeps a project's sessions with the agent that made them.
