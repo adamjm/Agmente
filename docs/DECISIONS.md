@@ -1014,3 +1014,36 @@ Date: 2026-11-08. Branch `feat/g2-state-snapshot` (from `31cf6de`). Extends D-09
   - **App.** The New Project sheet shows a Runner picker only when the gateway lists two or more runners, with the default selected. A project shows its runner name only in that case. A single-runner gateway looks the same as before.
   - **Not done.** A project cannot change runner later. Initialize shows one agent's capabilities (the default runner's), so an agent with different capabilities is not reflected per project.
 - **Reason:** The owner wants one gateway to offer Bob and oh-my-pi, with each project using the agent it was made with. Fixing the runner at creation keeps a project's sessions with the agent that made them.
+
+## D-117 Uploads: several files per send, 10 MiB per file, text, data, archive and non-macro Office types
+- **Date:** 2026-11-15
+- **Decision:** Supersedes the single-file part of FR-46 and the 8 MiB cap of D-115. Owner answers, 2026-11-15: accept the change to several files, raise the cap, and trust the uploaders (archives and Office files are allowed).
+  - **Files per send.** The phone queues up to 20 files and sends them one after another, with no batch method and no gateway change to the sending rules. The gateway still allows one upload per project at a time. Up to 100 MB of private copies are held at once.
+  - **Busy, refused, unknown.** A busy project (`-32000`) is retried up to 5 times, with a 2 s wait, and then the file is marked refused. Any other refusal marks that file and the queue goes on. An outcome the phone cannot confirm stops the queue, so a later file is never sent past a save the phone has not seen. The person checks it with `_acpcode/files/stat` first.
+  - **Cap.** `maxUploadBytes` is 10 MiB decoded (13,981,016 base64 characters), inside the 16 MiB message cap (NFR-3). The same number is in `GatewayUploadRules.maxBytes` on the phone.
+  - **Types.** Added to the allow-list: `yaml`, `yml`, `toml`, `xml`, `tsv`, `rtf`, `log`, `zip`, `docx`, `xlsx`, `pptx`. Still refused: scripts, HTML, SVG, macro-enabled Office files (`docm`, `xlsm`, `pptm`), binaries. The gateway does not extract an archive; the agent can. The owner accepted that risk.
+  - **Recorded risk.** An archive can hold a `.bob/mcp.json` with `alwaysAllow` or a `.bob/skills/` file once the agent extracts it. D-089 already makes `alwaysAllow` a standing approval, so an upload is a new way to reach that. Revisit D-089 and D-115 before the upload path is used with a device other than the owner's.
+- **Reason:** The owner asked for several files and archive types. Sending one file at a time keeps the gateway's single-upload lock and its no-overwrite rule unchanged.
+
+## D-118 Session controls kept on the device
+- **Date:** 2026-11-15
+- **Decision:** Fix 1 of the 2026-11-15 plan. The phone keeps, per server and session, the `models`, `modes` and `configOptions` the agent returned at `session/new`. The record is the raw answer, changed in place when the person picks a model, mode or config value and the agent accepts it. It is parsed by the same parser as a live answer. The config options are now applied when a session is created in the app (they were not before). The store is `SessionControlStore` in UserDefaults, at most 100 sessions per server, the oldest dropped first. It never reaches the gateway.
+- **Limit.** A session created on another device, or in Bob's CLI, has no record here, so its controls still do not appear. The owner chose to keep the state in the app and not to change the gateway's subscribe response (D-028 stays).
+- **Reason:** A gateway session opened after a relaunch gets only `headSeq` from subscribe, so its controls were lost. Keeping the raw answer on the device restores them without waking the agent.
+
+## D-119 Copy from a chat row: rendered text, shareable, one row at a time
+- **Date:** 2026-11-15
+- **Decision:** Fix 4 of the 2026-11-15 plan. A long-press Copy on a user prompt row and on an assistant text row copies that row's rendered text, the words shown without markdown syntax. Copy is per row, not per turn. The clipboard is set with no `localOnly` option and no expiration, so Universal Clipboard may share it. Empty text is not copied. Copy gives a success haptic, and each row has a VoiceOver "Copy message" action. Row heights and content hashes are unchanged.
+- **Reason:** The owner asked for rendered text, one row per copy, and sharing between the person's devices. The earlier local-only setting was the default I chose; the owner changed it.
+
+## D-120 Return sends the prompt, Shift+Return makes a new line, on iPad and macOS
+- **Date:** 2026-11-15
+- **Decision:** Fix 3 of the 2026-11-15 plan. In the prompt composer, a hardware-keyboard Return sends when the send action is enabled. Shift+Return inserts a newline. Return with the send action disabled inserts a newline, so a prompt can be drafted during a turn. Return during IME composition is left to the input method. Cmd+Return keeps its macOS menu shortcut. The composer on iOS is a `UITextView` wrapper, and on macOS an `NSTextView` subclass. Both use `PromptReturnKeyPolicy`, which is pure and unit tested. The on-screen keyboard is unchanged.
+- **Not verified.** A hardware keyboard press has not been run in the simulator. The macOS build of the scheme stops in the ACPCodeLiveApproval target (macOS 13 availability errors in ApprovalIntents.swift), before the ACPCode target compiles. The two macOS composer files were type-checked on their own for macOS 14 and pass.
+- **Reason:** SwiftUI's `TextEditor` inserts the newline before any key handler runs, so it cannot tell Return from Shift+Return.
+
+## D-121 Markdown cache keyed by the entry's content hash and a theme version
+- **Date:** 2026-11-15
+- **Decision:** Fix 2 of the 2026-11-15 plan, the change the expected cause of the scroll cost. The markdown package cache keyed each lookup by hashing the whole message text and describing the whole theme, on every row configure. It now uses `ChatEntry.contentHash` and a theme version that the list increments whenever its theme changes. The thought theme is made once per theme version, not once per row. A signpost times the parse.
+- **Not done.** The parse still runs on the main thread on a first configure. Moving it off the main thread waits for a trace that shows the parse dominates.
+- **Reason:** The lead hypothesis from review (per-configure hashing and theme description on the scroll path). The change removes that work. Its gain is unmeasured until a trace on an iPad is recorded.

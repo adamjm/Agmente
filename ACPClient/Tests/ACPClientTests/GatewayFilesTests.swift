@@ -32,9 +32,10 @@ final class GatewayFilesTests: XCTestCase {
         XCTAssertNotNil(GatewayUploadRules.nameProblem("trailing. "))
     }
 
-    // 8 MiB is the cap: the encoded length of exactly that many bytes is the cap, so a larger file is refused.
+    // 10 MiB is the cap (D-117): the encoded length of exactly that many bytes is the cap, so a larger file is refused.
     func testTheEncodedCapIsTheEncodingOfTheRawCap() {
-        XCTAssertEqual(GatewayUploadRules.maxEncodedLength, 11_184_812)
+        XCTAssertEqual(GatewayUploadRules.maxBytes, 10 * 1024 * 1024)
+        XCTAssertEqual(GatewayUploadRules.maxEncodedLength, 13_981_016)
         XCTAssertEqual(Data(count: GatewayUploadRules.maxBytes).base64EncodedString().utf8.count, GatewayUploadRules.maxEncodedLength)
     }
 
@@ -47,7 +48,7 @@ final class GatewayFilesTests: XCTestCase {
             XCTFail("an oversize file was sent")
         } catch GatewayError.rpc(let code, let message) {
             XCTAssertEqual(code, -32602)
-            XCTAssertEqual(message, "The file is larger than 8 MB.")
+            XCTAssertEqual(message, "The file is larger than 10 MB.")
         } catch {
             XCTFail("unexpected error \(error)")
         }

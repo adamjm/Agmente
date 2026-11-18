@@ -491,9 +491,6 @@ struct PixelBot: View {
             Text("ACP Code")
                 .font(.system(size: 32, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
-            Text("/aɡˈmen.te/")
-                .font(.system(size: 14, weight: .regular, design: .monospaced))
-                .foregroundStyle(.secondary)
         }
     }
 }

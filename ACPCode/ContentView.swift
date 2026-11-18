@@ -1109,7 +1109,6 @@ private struct SessionListPage: View {
         let idle = model.selectedServerIsGatewayHome ? gatewayHome.idleCount : idleSessions.count
         // Use serverAgentInfo (reads from @Published ServerViewModel.agentInfo) instead of
         // currentAgentInfo (reads from non-@Published agentInfoCache) to ensure view updates
-        let agentDisplayName = model.serverAgentInfo?.displayNameWithVersion
         let agentCapabilities = model.serverAgentInfo?.capabilities
         let capabilityVerifications = model.serverAgentInfo?.verifications ?? []
         let lastConnectedLabel = model.lastConnectedAt.map { Self.lastConnectedFormatter.string(from: $0) } ?? "—"
@@ -1125,15 +1124,7 @@ private struct SessionListPage: View {
         return VStack(alignment: .leading, spacing: 12) {
                 // Header row with agent name and collapse toggle
                 HStack(alignment: .top) {
-                    // Agent name (or server name fallback for Codex)
-                    if let agentName = agentDisplayName, !agentName.isEmpty {
-                        Text(agentName)
-                            .font(.headline)
-                    } else if let serverName = model.selectedServer?.name {
-                        Text(serverName)
-                            .font(.headline)
-                    }
-                    
+                    // No agent name label: the name and version of the agent are not shown here.
                     Spacer()
                     
                     // Collapse/expand toggle - only show if there's expandable content (ACP servers only)

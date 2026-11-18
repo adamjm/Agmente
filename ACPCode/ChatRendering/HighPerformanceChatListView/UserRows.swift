@@ -5,12 +5,15 @@ final class UserTextRowView: BaseRowView {
     var text: String = "" {
         didSet {
             label.text = text
+            copyController.setText(text)
             setNeedsLayout()
         }
     }
 
     private let bubble = UIView()
     private let label = UILabel()
+    /// Long-press Copy on the bubble and the VoiceOver "Copy message" action copy the prompt text.
+    let copyController = MessageCopyController()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -23,6 +26,14 @@ final class UserTextRowView: BaseRowView {
         label.font = .preferredFont(forTextStyle: .callout)
         label.textColor = .label
         bubble.addSubview(label)
+
+        copyController.attachContextMenu(to: bubble)
+        copyController.attachAccessibility(to: label)
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        copyController.setText(nil)
     }
 
     override func layoutSubviews() {

@@ -631,6 +631,10 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
             result: response.resultValue,
             fallbackCwd: pendingNewSessionCwd ?? fallbackCwd
         )
+        // The controls of this answer are kept on the device, so a relaunch can show them (fix 1).
+        if let parsed, !parsed.sessionId.isEmpty {
+            SessionControlStore.save(response.resultValue, serverId: id, sessionId: parsed.sessionId)
+        }
 
         // Extract session ID from response
         let resolvedId: String
@@ -676,6 +680,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         lastLoadedSession = resolvedId
         setActiveSession(resolvedId, cwd: resolvedCwd, modes: modesInfo)
         currentSessionViewModel?.applySessionModels(parsed?.models, serverId: id, sessionId: resolvedId)
+        // Config options were never applied for a session created in the app (fix 1, cause i).
+        currentSessionViewModel?.applySessionConfigOptions(parsed?.configOptions ?? [], serverId: id, sessionId: resolvedId)
         currentSessionViewModel?.saveChatState()
 
         if resolvedId != placeholderId {
@@ -809,6 +815,7 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         // Note: defaultModeId is set from initialize response and applied to new sessions
 
         currentSessionViewModel?.restoreSessionModels(serverId: self.id, sessionId: id)
+        currentSessionViewModel?.restoreStoredControls(serverId: self.id, sessionId: id)
         currentSessionViewModel?.restoreAvailableCommands(for: self.id, sessionId: id, isNew: isNew)
 
         if pendingLocalSessions.contains(id) {

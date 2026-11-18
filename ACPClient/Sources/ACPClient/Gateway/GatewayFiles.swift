@@ -7,14 +7,20 @@ import ACP
 
 /// The upload rules the phone checks before it sends anything.
 public enum GatewayUploadRules {
-    /// The decoded size cap: 8 MiB. Larger files are refused before they are read into memory.
-    public static let maxBytes = 8 * 1024 * 1024
+    /// The decoded size cap: 10 MiB (D-117; was 8 MiB under D-115). Larger files are refused before they are read into memory.
+    public static let maxBytes = 10 * 1024 * 1024
     /// The base64 length of `maxBytes`: 4 * ceil(n / 3). A longer encoding is refused before it is sent.
     public static let maxEncodedLength = 4 * ((maxBytes + 2) / 3)
     /// The longest name, in bytes (the folder-name rule, D-091).
     public static let maxNameBytes = 64
     /// The file types the gateway accepts (lowercase, without the dot).
-    public static let allowedExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "pdf", "txt", "md", "csv", "json"]
+    /// Kept equal to the gateway's list (`gateway/internal/server/upload.go`, D-117).
+    public static let allowedExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "heic", "pdf", "txt", "md", "csv", "json",
+        "yaml", "yml", "toml", "xml", "tsv", "rtf", "log", "zip", "docx", "xlsx", "pptx",
+    ]
+    /// The same list as the refusal text names it, in the gateway's order.
+    public static let allowedTypesText = "png, jpg, jpeg, gif, webp, heic, pdf, txt, md, csv, json, yaml, yml, toml, xml, tsv, rtf, log, zip, docx, xlsx, pptx"
     /// Names the agent reads as instructions or configuration. The gateway refuses them in any case.
     public static let reservedNames: Set<String> = ["agents.md", "claude.md", "opencode.json"]
 
@@ -31,7 +37,7 @@ public enum GatewayUploadRules {
         }
         guard let dot = bytes.lastIndex(of: UInt8(ascii: ".")), dot > 0,
               allowedExtensions.contains(String(decoding: bytes[(dot + 1)...], as: UTF8.self).lowercased()) else {
-            return "This file type is not allowed. Allowed: png, jpg, jpeg, gif, webp, heic, pdf, txt, md, csv, json."
+            return "This file type is not allowed. Allowed: \(allowedTypesText)."
         }
         if reservedNames.contains(name.lowercased()) {
             return "This name is reserved: agent instruction files cannot be uploaded."
@@ -76,11 +82,11 @@ extension GatewayClient {
     /// that exists and never replaces one. A file over the cap is refused here, before anything is sent.
     public func uploadFile(projectId: String, path: String, data: Data) async throws -> GatewayUploadResult {
         guard data.count <= GatewayUploadRules.maxBytes else {
-            throw GatewayError.rpc(code: -32602, message: "The file is larger than 8 MB.")
+            throw GatewayError.rpc(code: -32602, message: "The file is larger than 10 MB.")
         }
         let encoded = data.base64EncodedString()
         guard encoded.utf8.count <= GatewayUploadRules.maxEncodedLength else {
-            throw GatewayError.rpc(code: -32602, message: "The file is larger than 8 MB.")
+            throw GatewayError.rpc(code: -32602, message: "The file is larger than 10 MB.")
         }
         let result = try await call("_acpcode/files/upload", .object([
             "projectId": .string(projectId),

@@ -99,7 +99,7 @@ test('a symbolic link at the name is refused and its target is not written', asy
   }
 });
 
-test('bad base64 and a decoded size over 8 MiB are refused before anything is written', async () => {
+test('bad base64 and a decoded size over 10 MiB are refused before anything is written', async () => {
   const { gw, ws, project } = await setup();
   try {
     const spaced = await rpc(ws, '_acpcode/files/upload', { projectId: project.id, path: 'a.txt', contentBase64: 'aGVs bG8=' });
@@ -108,10 +108,11 @@ test('bad base64 and a decoded size over 8 MiB are refused before anything is wr
     const url = await rpc(ws, '_acpcode/files/upload', { projectId: project.id, path: 'a.txt', contentBase64: 'aGVsbG8-_' });
     assert.match(url.error?.message ?? '', /not valid base64/);
 
-    const big = Buffer.alloc(8 * 1024 * 1024 + 1, 1);
+    // D-117: the cap is 10 MiB. One byte over it is refused.
+    const big = Buffer.alloc(10 * 1024 * 1024 + 1, 1);
     const tooBig = await rpc(ws, '_acpcode/files/upload', { projectId: project.id, path: 'big.png', contentBase64: b64(big) });
     assert.equal(tooBig.error?.code, -32602);
-    assert.match(tooBig.error.message, /larger than 8 MB/);
+    assert.match(tooBig.error.message, /larger than 10 MB/);
     assert.equal(existsSync(join(gw.dirs.project, 'big.png')), false);
     assert.equal(existsSync(join(gw.dirs.project, 'a.txt')), false);
   } finally {

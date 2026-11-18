@@ -183,4 +183,47 @@ final class SessionMetaUpdateTests: XCTestCase {
         XCTAssertEqual(ACPAgentErrorText.text(for: wrongCode), "Authentication required")
         XCTAssertEqual(ACPAgentErrorText.text(for: GatewayError.disconnected), "Not connected")
     }
+
+    // MARK: - Error details in the error text (omp "Internal error" cause)
+
+    func testErrorWithoutDataKeepsItsText() {
+        let error = ACPServiceError.rpc(id: .int(1), error: .serverError(code: -32603, message: "Internal error"))
+        XCTAssertEqual(ACPAgentErrorText.text(for: error), "Internal error")
+    }
+
+    func testErrorWithDataButNoDetailsKeepsItsText() {
+        let noDetails = ACPServiceError.rpcData(id: .int(1), error: .serverError(code: -32603, message: "Internal error"),
+                                                data: .object(["other": .string("x")]))
+        XCTAssertEqual(ACPAgentErrorText.text(for: noDetails), "Internal error")
+        let emptyDetails = ACPServiceError.rpcData(id: .int(1), error: .serverError(code: -32603, message: "Internal error"),
+                                                   data: .object(["details": .string("  ")]))
+        XCTAssertEqual(ACPAgentErrorText.text(for: emptyDetails), "Internal error")
+        let nonString = ACPServiceError.rpcData(id: .int(1), error: .serverError(code: -32603, message: "Internal error"),
+                                                data: .object(["details": .int(7)]))
+        XCTAssertEqual(ACPAgentErrorText.text(for: nonString), "Internal error")
+    }
+
+    func testMessageAndDetailsAreCombined() {
+        let error = ACPServiceError.rpcData(id: .int(1), error: .serverError(code: -32603, message: "Internal error"),
+                                            data: .object(["details": .string("model gpt-x is not configured")]))
+        XCTAssertEqual(ACPAgentErrorText.text(for: error), "Internal error: model gpt-x is not configured")
+    }
+
+    func testLongDetailsAreTruncatedWithAnEllipsis() {
+        let long = String(repeating: "a", count: 350)
+        let error = ACPServiceError.rpcData(id: .int(1), error: .serverError(code: -32603, message: "Internal error"),
+                                            data: .object(["details": .string(long)]))
+        let expected = "Internal error: " + String(repeating: "a", count: ACPAgentErrorText.detailsLimit) + "…"
+        XCTAssertEqual(ACPAgentErrorText.text(for: error), expected)
+        // The full details stay in the error for any code that reads rpcData.
+        guard case let ACPServiceError.rpcData(_, _, data) = error else { return XCTFail("expected rpcData") }
+        XCTAssertEqual(data.objectValue?["details"]?.stringValue, long)
+    }
+
+    func testDetailsAtTheLimitAreNotTruncated() {
+        let exact = String(repeating: "b", count: ACPAgentErrorText.detailsLimit)
+        let error = ACPServiceError.rpcData(id: .int(1), error: .serverError(code: -32603, message: "Internal error"),
+                                            data: .object(["details": .string(exact)]))
+        XCTAssertEqual(ACPAgentErrorText.text(for: error), "Internal error: " + exact)
+    }
 }

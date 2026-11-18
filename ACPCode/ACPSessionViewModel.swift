@@ -252,6 +252,26 @@ final class ACPSessionViewModel: ObservableObject {
         }
     }
 
+    /// Applies the controls stored on this device for a session (fix 1). Models come first, then the mode unless
+    /// this run already knows the session's mode, then config options. Each part is parsed by the live parser, so
+    /// a stored answer that no longer parses adds nothing and never blocks the session.
+    func restoreStoredControls(serverId: UUID, sessionId: String) {
+        guard let state = SessionControlStore.state(serverId: serverId, sessionId: sessionId),
+              let parsed = ACPSessionResponseParser.parseSessionNew(result: state, fallbackSessionId: sessionId)
+        else { return }
+
+        if availableModels.isEmpty, let models = parsed.models, !models.isEmpty {
+            availableModels = models.availableModels
+            currentModelId = models.currentModelId
+        }
+        if cachedMode(for: serverId, sessionId: sessionId) == nil, let modes = parsed.modes {
+            setAvailableModes(modes.availableModes, currentModeId: modes.currentModeId)
+        }
+        if sessionConfigOptions.isEmpty, !parsed.configOptions.isEmpty {
+            applySessionConfigOptions(parsed.configOptions, serverId: serverId, sessionId: sessionId)
+        }
+    }
+
     func cachedModels(for serverId: UUID, sessionId: String) -> ACPSessionModelInfo? {
         sessionModelCache[serverId]?[sessionId]
     }
@@ -313,6 +333,11 @@ final class ACPSessionViewModel: ObservableObject {
                 try await send(payload)
                 currentModelId = modelId
                 cacheSessionModels(serverId: serverId, sessionId: sessionId)
+                if let serverId {
+                    SessionControlStore.update(serverId: serverId, sessionId: sessionId) {
+                        SessionControlPatch.setModel(modelId, in: &$0)
+                    }
+                }
                 dependencies.append("Set model to: \(modelId)")
             } catch {
                 dependencies.append("Failed to set model: \(error)")
@@ -407,6 +432,11 @@ final class ACPSessionViewModel: ObservableObject {
                 }
                 setCurrentModeId(modeId)
                 cacheCurrentMode(serverId: serverId, sessionId: sessionId)
+                if let serverId {
+                    SessionControlStore.update(serverId: serverId, sessionId: sessionId) {
+                        SessionControlPatch.setMode(modeId, in: &$0)
+                    }
+                }
                 dependencies.append("Set mode to: \(modeId)")
             } catch {
                 dependencies.append("Failed to set mode: \(error)")
@@ -449,6 +479,11 @@ final class ACPSessionViewModel: ObservableObject {
                         currentValue: value
                     )
                     applySessionConfigOptions(sessionConfigOptions, serverId: serverId, sessionId: sessionId)
+                }
+                if let serverId {
+                    SessionControlStore.update(serverId: serverId, sessionId: sessionId) {
+                        SessionControlPatch.setConfigValue(value.acpValue, configId: configId, in: &$0)
+                    }
                 }
                 dependencies.append("Updated \(configId)")
             } catch {

@@ -243,6 +243,29 @@ func (s *Server) captureCapabilities(runnerID string, result *jsonv.Value) {
 	}
 }
 
+// nameFallbackAgent renames the built-in initialize result for the default runner, until that runner
+// has started once and its own result is cached. The built-in result is Bob's, so without this a
+// fresh gateway running another agent would show "Bob" in the app. The runner's configured id and
+// name stand in for the agent's name and title; no version is claimed.
+func (s *Server) nameFallbackAgent(v *jsonv.Value) {
+	info := v.Get("agentInfo")
+	if info == nil || info.Kind != jsonv.Object {
+		return
+	}
+	name, title := s.cfg.DefaultRunner, s.cfg.DefaultRunner
+	for _, a := range s.cfg.Runners {
+		if a.ID == s.cfg.DefaultRunner {
+			if a.Name != "" {
+				title = a.Name
+			}
+			break
+		}
+	}
+	info.Set("name", jsonv.Str(name))
+	info.Set("title", jsonv.Str(title))
+	info.Set("version", jsonv.Str(""))
+}
+
 // initializeResult is the gateway's answer to a phone's initialize: the agent's capabilities plus
 // _meta["acpcode/gateway"] (D-026). The phone's initialize never reaches an agent.
 func (s *Server) initializeResult() *jsonv.Value {
@@ -252,6 +275,7 @@ func (s *Server) initializeResult() *jsonv.Value {
 	v, err := jsonv.Parse(data)
 	if err != nil || v.Kind != jsonv.Object {
 		v, _ = jsonv.Parse(defaultInitialize)
+		s.nameFallbackAgent(v)
 	}
 	exts := &jsonv.Value{Kind: jsonv.Array}
 	for _, e := range extensions {

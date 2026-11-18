@@ -5,3 +5,24 @@ providers:
     apiKey: OMLX_API_KEY
     discovery:
       type: openai-models-list
+    # input lists what a model accepts. "image" marks vision-capable models.
+    # Vision status comes from each model's config.json (vision_config present) on the oMLX host, 2026-11-15.
+    models:
+      # Vision-capable (image + text)
+      - id: Qwen3.8-27B-MLX-4bit
+        input: [text, image]
+      - id: Qwen3.8-27B-oQ4e-fp16-mtp
+        input: [text, image]
+      - id: Tiel-Coder-35B-A3B-MLX-oQ4e
+        input: [text, image]
+      - id: Tiel-Coder-35B-A3B-MLX-oQ4e-MTP
+        input: [text, image]
+      - id: Ternary-Bonsai-27B-mlx-2bit
+        input: [text, image]
+      # Text only
+      - id: Jan-code-4b-MLX-mxfp4
+        input: [text]
+      - id: granite-4.2-3b-MLX-8bit
+        input: [text]
+      - id: granite-4.2-8b-MLX-6bit
+        input: [text]
