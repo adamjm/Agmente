@@ -379,7 +379,7 @@ private extension CodexSessionDetailView {
                 if sessionViewModel.chatMessages.isEmpty {
                     VStack(spacing: 12) {
                         PixelBot()
-                        Text("let's git together and code")
+                        Text("Start building here")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -459,7 +459,7 @@ private extension CodexSessionDetailView {
             if sessionViewModel.chatMessages.isEmpty {
                 VStack(spacing: 12) {
                     PixelBot()
-                    Text("let's git together and code")
+                    Text("Start building here")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -534,8 +534,16 @@ private extension CodexSessionDetailView {
             // Text input and send button
             HStack(alignment: .bottom, spacing: 8) {
                 ZStack(alignment: .topLeading) {
-                    TextEditor(text: $sessionViewModel.promptText)
-                        .focused($isTextEditorFocused)
+                    PromptComposerTextField(
+                        text: $sessionViewModel.promptText,
+                        isFocused: $isTextEditorFocused,
+                        canSend: canSendPrompt,
+                        onSend: {
+                            // Return sends only when the send button would. Otherwise it inserts a newline.
+                            guard canSendPrompt else { return }
+                            sendPrompt()
+                        }
+                    )
                         .frame(minHeight: 36, maxHeight: textEditorHeight)
                         .background(
                             GeometryReader { geo in

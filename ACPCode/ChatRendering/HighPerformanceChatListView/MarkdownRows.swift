@@ -15,6 +15,17 @@ final class MarkdownRowView: BaseRowView {
         return view
     }()
 
+    /// The words the row shows (rendered, without markdown syntax). Read when a copy happens, so a throttled render
+    /// is picked up. Long-press Copy on the card and the VoiceOver action copy this text.
+    private var renderedPlainText: String? {
+        markdownView.textView.attributedText.string
+    }
+
+    /// Copy behaviour for the rendered text. The rendered text keeps its own long-press selection.
+    private(set) lazy var copyController = MessageCopyController(textProvider: { [weak self] in
+        self?.renderedPlainText
+    })
+
     init(style: MarkdownStyle) {
         self.style = style
         super.init(frame: .zero)
@@ -24,6 +35,9 @@ final class MarkdownRowView: BaseRowView {
         backgroundCard.backgroundColor = style.backgroundColor
         rowContainer.addSubview(backgroundCard)
         backgroundCard.addSubview(markdownView)
+
+        copyController.attachContextMenu(to: backgroundCard)
+        copyController.attachAccessibility(to: markdownView)
     }
 
     @available(*, unavailable)

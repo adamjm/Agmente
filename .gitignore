@@ -3,8 +3,7 @@ DerivedData
 **/node_modules
 website/.docusaurus
 website/build/**
-AppServerClient/.build
-ACPClient/.build
+**/.build
 *.env
 *.env.*
 .acpcode.paths
@@ -27,3 +26,4 @@ secrets/
 
 # macOS Finder metadata
 .DS_Store
+*.crt

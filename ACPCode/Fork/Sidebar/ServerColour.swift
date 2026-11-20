@@ -14,8 +14,7 @@ enum ServerColour {
         .pink,
         .indigo,
         .cyan,
-        .brown,
-        .yellow
+        .brown
     ]
 
     /// The palette index for the connection at `position` in the connection list. Wraps after the palette runs

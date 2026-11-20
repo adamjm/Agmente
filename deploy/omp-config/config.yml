@@ -2,5 +2,5 @@ providers:
   webSearchOrder: []
 setupVersion: 2
 modelRoles:
-  default: omlx/Tiel-Coder-35B-A3B-MLX-oQ4e-MTP
+  default: omlx/Qwen3.8-27B-MLX-4bit
 defaultThinkingLevel: auto

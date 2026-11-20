@@ -3,10 +3,10 @@ import ACPClient
 
 /// The words and numbers of the context usage UI (D-093). Pure, so the text is tested without a view.
 enum ContextUsageFormat {
-    static let notReported = "Context: not reported by Bob"
+    static let notReported = "Context: not reported by the agent"
 
     /// The header chip's text: "42%, 84k left" when the size is known, "12k used" when only the used
-    /// tokens are known (size zero), and "Context: not reported by Bob" when there are no figures.
+    /// tokens are known (size zero), and "Context: not reported by the agent" when there are no figures.
     static func chipText(_ usage: GatewayUsage?) -> String {
         guard let usage else { return notReported }
         guard let left = usage.left, let percent = usage.percent else {

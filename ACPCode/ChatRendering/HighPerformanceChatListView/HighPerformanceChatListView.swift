@@ -103,8 +103,24 @@ final class HighPerformanceChatListView: UIView {
     /// Defaults to dropping the composer keyboard: UIKit's interactive dismissal cannot reach the SwiftUI TextEditor.
     var onUserDragBegan: @MainActor () -> Void = { ForkKeyboard.dismiss() }
 
+    /// Changes whenever `theme` changes. Read on the main thread, passed to background parsing as a value.
+    private var themeVersion = 0
+    private var thoughtThemeCache: (version: Int, theme: MarkdownTheme)?
+
+    /// The thought theme for the current `theme`, made once per theme instead of once per row configure.
+    private func currentThoughtTheme() -> MarkdownTheme {
+        if let cached = thoughtThemeCache, cached.version == themeVersion {
+            return cached.theme
+        }
+        let made = Self.makeThoughtMarkdownTheme(from: theme)
+        thoughtThemeCache = (themeVersion, made)
+        return made
+    }
+
     private(set) var theme: MarkdownTheme = ForkMarkdownTheme.make() {
         didSet {
+            // The markdown cache keys on this version, so a new theme never reuses a package made for the old one.
+            themeVersion &+= 1
             listView.reloadData()
         }
     }
@@ -158,7 +174,8 @@ final class HighPerformanceChatListView: UIView {
     ) {
         let scrollToBottomAnimated = scrollToBottomAnimated ?? animated
         let theme = self.theme
-        let thoughtTheme = Self.makeThoughtMarkdownTheme(from: theme)
+        let thoughtTheme = currentThoughtTheme()
+        let version = themeVersion
         updateQueue.async { [weak self] in
             guard let self else { return }
             let newEntries = mapper.entries(from: messages)
@@ -166,7 +183,7 @@ final class HighPerformanceChatListView: UIView {
             for entry in newEntries where entry.kind == .assistantMarkdown || entry.kind == .assistantThought || entry.kind == .assistantPlan {
                 guard !entry.text.isEmpty else { continue }
                 let entryTheme = entry.kind == .assistantThought ? thoughtTheme : theme
-                _ = markdownCache.package(for: entry.id, content: entry.text, theme: entryTheme)
+                _ = markdownCache.package(for: entry, theme: entryTheme, themeVersion: version)
             }
 
             DispatchQueue.main.async { [weak self] in
@@ -458,7 +475,7 @@ extension HighPerformanceChatListView: ListViewAdapter {
 
         case .assistantMarkdown:
             sizingMarkdownView.theme = theme
-            let package = markdownCache.package(for: entry.id, content: entry.text, theme: theme)
+            let package = markdownCache.package(for: entry, theme: theme, themeVersion: themeVersion)
             sizingMarkdownView.setMarkdownManually(package)
             let markdownWidth = max(0, width - (MarkdownStyle.assistant.horizontalPadding * 2))
             let size = sizingMarkdownView.boundingSize(for: markdownWidth)
@@ -466,7 +483,7 @@ extension HighPerformanceChatListView: ListViewAdapter {
 
         case .assistantPlan:
             sizingMarkdownView.theme = theme
-            let package = markdownCache.package(for: entry.id, content: entry.text, theme: theme)
+            let package = markdownCache.package(for: entry, theme: theme, themeVersion: themeVersion)
             sizingMarkdownView.setMarkdownManually(package)
             let markdownWidth = max(0, width - (MarkdownStyle.plan.horizontalPadding * 2))
             let size = sizingMarkdownView.boundingSize(for: markdownWidth)
@@ -475,9 +492,9 @@ extension HighPerformanceChatListView: ListViewAdapter {
         case .assistantThought:
             let isExpanded = isThoughtExpanded(for: entry)
             if isExpanded {
-                let thoughtTheme = Self.makeThoughtMarkdownTheme(from: theme)
+                let thoughtTheme = currentThoughtTheme()
                 sizingMarkdownView.theme = thoughtTheme
-                let package = markdownCache.package(for: entry.id, content: entry.text, theme: thoughtTheme)
+                let package = markdownCache.package(for: entry, theme: thoughtTheme, themeVersion: themeVersion)
                 sizingMarkdownView.setMarkdownManually(package)
                 let markdownWidth = max(0, width - (ThoughtRowView.horizontalPadding * 2))
                 let markdownSize = sizingMarkdownView.boundingSize(for: markdownWidth)
@@ -522,12 +539,12 @@ extension HighPerformanceChatListView: ListViewAdapter {
             row.images = entry.images
 
         case let row as MarkdownRowView:
-            let package = markdownCache.package(for: entry.id, content: entry.text, theme: theme)
+            let package = markdownCache.package(for: entry, theme: theme, themeVersion: themeVersion)
             row.setMarkdown(package, theme: theme, renderToken: "\(entry.id)#\(entry.contentHash)")
 
         case let row as ThoughtRowView:
-            let thoughtTheme = Self.makeThoughtMarkdownTheme(from: theme)
-            let package = markdownCache.package(for: entry.id, content: entry.text, theme: thoughtTheme)
+            let thoughtTheme = currentThoughtTheme()
+            let package = markdownCache.package(for: entry, theme: thoughtTheme, themeVersion: themeVersion)
             row.configure(
                 markdown: package,
                 theme: thoughtTheme,

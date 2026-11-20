@@ -1,3 +1,4 @@
+import ACP
 import Foundation
 
 /// What a person reads when the agent refuses a request (FR-35, T-35).
@@ -12,12 +13,18 @@ public enum ACPAgentErrorText {
         code == -32000 && message.localizedCaseInsensitiveContains("Authentication required")
     }
 
+    /// The longest `error.data.details` text shown after the message, in characters.
+    public static let detailsLimit = 300
+
     /// The text to show for an error from an ACP or gateway call.
     public static func text(for error: Error) -> String {
         switch error {
-        case let ACPServiceError.rpc(_, rpc), let ACPServiceError.rpcData(_, rpc, _):
+        case let ACPServiceError.rpc(_, rpc):
             if isAuthenticationRequired(code: rpc.code, message: rpc.message) { return authenticationRequired }
             return rpc.message
+        case let ACPServiceError.rpcData(_, rpc, data):
+            if isAuthenticationRequired(code: rpc.code, message: rpc.message) { return authenticationRequired }
+            return withDetails(rpc.message, data: data)
         case let GatewayError.rpc(code, message):
             if isAuthenticationRequired(code: code, message: message) { return authenticationRequired }
             return message
@@ -26,5 +33,22 @@ public enum ACPAgentErrorText {
         default:
             return error.localizedDescription
         }
+    }
+
+    /// The message, then `data.details` after a colon when that is a non-empty string. The gateway
+    /// passes an agent's error object through unchanged, so the cause of a generic "Internal error"
+    /// is in `details`. Without a usable `details`, the message alone is returned.
+    static func withDetails(_ message: String, data: ACP.Value) -> String {
+        guard let raw = data.objectValue?["details"]?.stringValue else { return message }
+        let details = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !details.isEmpty else { return message }
+        let shown = clipped(details)
+        return message.isEmpty ? shown : "\(message): \(shown)"
+    }
+
+    /// The first `detailsLimit` characters, then an ellipsis when anything was cut.
+    static func clipped(_ text: String) -> String {
+        guard text.count > detailsLimit else { return text }
+        return String(text.prefix(detailsLimit)) + "…"
     }
 }

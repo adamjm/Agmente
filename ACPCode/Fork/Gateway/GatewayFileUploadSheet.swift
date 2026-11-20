@@ -2,9 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ACPClient
 
-/// Upload File for a gateway project (D-115): one file, saved in the project's folder on the Mac. The file
-/// is checked here with the gateway's rules before anything is sent. The gateway's own text is shown when it
-/// still refuses. Nothing is retried on its own.
+/// Upload Files for a gateway project (D-115, extended to several files by D-117). The files are checked here with
+/// the gateway's rules before anything is sent, and they are sent one after another. The gateway's own text is shown
+/// when it still refuses a file. Nothing is retried on its own, except a busy project, which is asked again.
 struct GatewayFileUploadSheet: View {
     @StateObject private var model: GatewayFileUploadModel
     @State private var choosing = false
@@ -24,24 +24,40 @@ struct GatewayFileUploadSheet: View {
                     Button {
                         choosing = true
                     } label: {
-                        Label(model.pickedName ?? "Choose a File", systemImage: "doc.badge.plus")
+                        Label("Choose Files", systemImage: "doc.badge.plus")
                     }
-                    .disabled(isBusy)
+                    .disabled(model.isSending || model.isChecking)
                     .accessibilityIdentifier("uploadChooseFile")
                 } header: {
-                    Text("File")
+                    Text("Files")
                 } footer: {
-                    Text("Up to 8 MB. The file is saved in \(projectName)'s folder on the Mac, where the agent can read it. Allowed types: png, jpg, jpeg, gif, webp, heic, pdf, txt, md, csv, json.")
+                    Text(footerText)
                 }
 
-                statusSection
+                if let message = model.message {
+                    Section {
+                        Text(message)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("uploadProblem")
+                    }
+                }
+
+                if !model.items.isEmpty {
+                    Section {
+                        ForEach(model.items) { item in
+                            itemRow(item)
+                        }
+                    } header: {
+                        Text("Queue")
+                    }
+                }
             }
-            .navigationTitle("Upload File")
+            .navigationTitle("Upload Files")
             .navigationBarTitleDisplayModeIfAvailable()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
-                        model.discard()
+                        model.discardAll()
                         onClose()
                     }
                     .accessibilityIdentifier("uploadClose")
@@ -50,95 +66,122 @@ struct GatewayFileUploadSheet: View {
                     primaryButton
                 }
             }
-            .fileImporter(isPresented: $choosing, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    model.choose(url)
+            .fileImporter(isPresented: $choosing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+                if case .success(let urls) = result {
+                    model.choose(urls)
                 }
             }
         }
         .onDisappear {
-            model.discard()
+            model.discardAll()
         }
     }
 
-    private var isBusy: Bool {
-        if case .sending = model.phase { return true }
-        return model.isChecking
+    private var footerText: String {
+        "Up to \(GatewayUploadRules.maxBytes / (1024 * 1024)) MB per file, \(GatewayFileUploadModel.maxFiles) files at once and "
+            + "\(GatewayFileUploadModel.maxTotalBytes / (1024 * 1024)) MB in all. The files are saved in \(projectName)'s folder "
+            + "on the Mac, where the agent can read them. Allowed types: \(GatewayUploadRules.allowedTypesText)."
     }
 
     @ViewBuilder
     private var primaryButton: some View {
-        switch model.phase {
-        case .sending:
+        if model.isSending {
             Button("Cancel") { model.cancel() }
                 .accessibilityIdentifier("uploadCancel")
-        case .picked:
+        } else {
             Button("Upload") { model.send() }
+                .disabled(!model.canSend)
                 .accessibilityIdentifier("uploadSend")
-        default:
-            EmptyView()
         }
     }
 
     @ViewBuilder
-    private var statusSection: some View {
-        switch model.phase {
-        case .empty:
-            if let message = model.message {
-                Section {
-                    Text(message)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("uploadProblem")
-                }
+    private func itemRow(_ item: GatewayFileUploadModel.Item) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .lineLimit(1)
+                Text(Self.statusText(for: item.state, size: item.size))
+                    .font(.caption)
+                    .foregroundStyle(Self.statusColor(for: item.state))
+                    .accessibilityIdentifier("uploadItemStatus")
             }
-        case .picked(let name, let size):
-            Section {
-                Text("\(name), \(Self.describe(size)). Ready to upload to \(projectName).")
-                    .accessibilityIdentifier("uploadReady")
-                if let message = model.message {
-                    Text(message)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("uploadProblem")
-                }
-            }
-        case .sending(let name):
-            Section {
-                HStack(spacing: 12) {
+            Spacer(minLength: 8)
+            itemActions(item)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func itemActions(_ item: GatewayFileUploadModel.Item) -> some View {
+        switch item.state {
+        case .waiting:
+            removeButton(item)
+        case .refused:
+            Button("Send Again") { model.retry(item.id) }
+                .disabled(model.isSending)
+                .accessibilityIdentifier("uploadRetry")
+            removeButton(item)
+        case .unknown:
+            Button {
+                Task { await model.checkOutcome(item.id) }
+            } label: {
+                if model.isChecking {
                     ProgressView()
-                    Text("Sending \(name) to \(projectName)…")
+                } else {
+                    Text("Check")
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("uploadSending")
             }
-        case .saved(let path, let bytes):
-            Section {
-                Label("Saved as \(path), \(Self.describe(bytes)).", systemImage: "checkmark.circle")
-                    .accessibilityIdentifier("uploadSaved")
-                Button("Copy Path") {
+            .disabled(model.isChecking)
+            .accessibilityLabel("Check whether \(item.name) is on the Mac")
+            .accessibilityIdentifier("uploadCheck")
+            removeButton(item)
+        case .saved(let path, _):
 #if os(iOS)
-                    UIPasteboard.general.string = path
+            Button("Copy Path") {
+                UIPasteboard.general.string = path
+            }
+            .accessibilityIdentifier("uploadCopyPath")
+#else
+            EmptyView()
 #endif
-                }
-                .accessibilityIdentifier("uploadCopyPath")
-            }
-        case .unknownOutcome(let name):
-            Section {
-                Text(model.message ?? "Could not confirm the upload. The file may be on the Mac.")
-                    .foregroundStyle(.orange)
-                    .accessibilityIdentifier("uploadUnknown")
-                Button {
-                    Task { await model.checkOutcome() }
-                } label: {
-                    if model.isChecking {
-                        ProgressView()
-                    } else {
-                        Text("Check Files")
-                    }
-                }
-                .disabled(model.isChecking)
-                .accessibilityLabel("Check whether \(name) is on the Mac")
-                .accessibilityIdentifier("uploadCheck")
-            }
+        case .sending, .retrying:
+            ProgressView()
+        }
+    }
+
+    private func removeButton(_ item: GatewayFileUploadModel.Item) -> some View {
+        Button(role: .destructive) {
+            model.remove(item.id)
+        } label: {
+            Image(systemName: "trash")
+        }
+        .disabled(model.isSending)
+        .accessibilityLabel("Remove \(item.name)")
+        .accessibilityIdentifier("uploadRemove")
+    }
+
+    static func statusText(for state: GatewayFileUploadModel.Item.State, size: Int) -> String {
+        switch state {
+        case .waiting:
+            return "Waiting, \(describe(size))"
+        case .sending:
+            return "Sending…"
+        case .retrying(let attempt):
+            return "The project is busy. Trying again (\(attempt) of \(GatewayFileUploadModel.busyAttemptLimit))."
+        case .saved(let path, let bytes):
+            return "Saved as \(path), \(describe(bytes))."
+        case .refused(let text), .unknown(let text):
+            return text
+        }
+    }
+
+    static func statusColor(for state: GatewayFileUploadModel.Item.State) -> Color {
+        switch state {
+        case .refused: return .red
+        case .unknown: return .orange
+        case .saved: return .green
+        default: return .secondary
         }
     }
 

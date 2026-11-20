@@ -363,7 +363,7 @@ private extension SessionDetailView {
                     } else {
                         VStack(spacing: 12) {
                             PixelBot()
-                            Text("let's git together and code")
+                            Text("Start building here")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -450,7 +450,7 @@ private extension SessionDetailView {
                 } else {
                     VStack(spacing: 12) {
                         PixelBot()
-                        Text("let's git together and code")
+                        Text("Start building here")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -518,8 +518,12 @@ private extension SessionDetailView {
             // One card: the prompt on top, controls and send along the bottom (design pass).
             VStack(alignment: .leading, spacing: 6) {
                 ZStack(alignment: .topLeading) {
-                    TextEditor(text: $sessionViewModel.promptText)
-                        .focused($isTextEditorFocused)
+                    PromptComposerTextField(
+                        text: $sessionViewModel.promptText,
+                        isFocused: $isTextEditorFocused,
+                        canSend: canSendPrompt,
+                        onSend: composerActions.send
+                    )
                         .frame(minHeight: 36, maxHeight: textEditorHeight)
                         .background(
                             GeometryReader { geo in
@@ -547,40 +551,45 @@ private extension SessionDetailView {
                 }
 
                 HStack(spacing: 10) {
+                    // Attach and send stay outside the scroll view so they are always visible and hittable.
                     imageAttachmentButton
 
-                    if !sessionViewModel.availableCommands.isEmpty {
-                        commandPicker
+                    // Pickers scroll sideways on a narrow width (a 393 pt iPhone), so none of them can push Send off screen.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            if !sessionViewModel.availableCommands.isEmpty {
+                                commandPicker
+                            }
+
+                            Button {
+                                showingWorkingDirectoryPicker = true
+                            } label: {
+                                Image(systemName: "folder")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(model.currentSessionCwd.isEmpty ? .secondary : .primary)
+                                    .frame(width: 32, height: 32)
+                                    .background(Circle().fill(Color(.systemGray5)))
+                                    .forkHitTarget()
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Working directory")
+
+                            if !sessionViewModel.availableModes.isEmpty {
+                                modePicker
+                            }
+
+                            SessionModelMenu(
+                                sessionViewModel: sessionViewModel,
+                                sessionId: serverViewModel.sessionId,
+                                serverId: model.selectedServerId
+                            )
+
+                            ForEach(sessionViewModel.visibleConfigOptions(), id: \.id) { option in
+                                configOptionControl(for: option)
+                            }
+                        }
+                        .padding(.horizontal, 4)
                     }
-
-                    Button {
-                        showingWorkingDirectoryPicker = true
-                    } label: {
-                        Image(systemName: "folder")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(model.currentSessionCwd.isEmpty ? .secondary : .primary)
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(Color(.systemGray5)))
-                            .forkHitTarget()
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Working directory")
-
-                    if !sessionViewModel.availableModes.isEmpty {
-                        modePicker
-                    }
-
-                    SessionModelMenu(
-                        sessionViewModel: sessionViewModel,
-                        sessionId: serverViewModel.sessionId,
-                        serverId: model.selectedServerId
-                    )
-
-                    ForEach(sessionViewModel.visibleConfigOptions(), id: \.id) { option in
-                        configOptionControl(for: option)
-                    }
-
-                    Spacer(minLength: 0)
 
                     Button {
                         if serverViewModel.isStreaming {
@@ -1192,12 +1201,11 @@ private extension SessionDetailView {
                     .font(.footnote.weight(.semibold))
                 Text(currentModeName)
                     .font(.footnote.weight(.medium))
-                    .fixedSize()
+                    .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            .fixedSize()
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(colorForMode(sessionViewModel.currentModeId).opacity(0.15))

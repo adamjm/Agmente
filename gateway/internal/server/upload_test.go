@@ -37,6 +37,18 @@ func TestUploadNameRules(t *testing.T) {
 		{"run.sh", uploadRefusedType, nil},
 		{"page.html", uploadRefusedType, nil},
 		{"noext", uploadRefusedType, nil},
+		// D-117: text and data formats, archives and non-macro Office files are allowed.
+		{"bundle.zip", "", nil},
+		{"brief.docx", "", nil},
+		{"sheet.xlsx", "", nil},
+		{"deck.pptx", "", nil},
+		{"config.yaml", "", nil},
+		{"notes.rtf", "", nil},
+		// Macro-enabled Office files and binaries stay refused.
+		{"macros.docm", uploadRefusedType, nil},
+		{"macros.xlsm", uploadRefusedType, nil},
+		{"deck.pptm", uploadRefusedType, nil},
+		{"weights.bin", uploadRefusedType, nil},
 		{"AGENTS.md", uploadRefusedReserved, nil},
 		{"agents.md", uploadRefusedReserved, nil},
 		{"CLAUDE.md", uploadRefusedReserved, nil},
@@ -63,10 +75,13 @@ func TestUploadSyntaxRules(t *testing.T) {
 	}
 }
 
-// The encoded cap is the length of maxUploadBytes in base64: 4 * ceil(n/3).
+// The encoded cap is the length of maxUploadBytes in base64: 4 * ceil(n/3). D-117 raised the cap to 10 MiB.
 func TestUploadEncodedCapMatchesTheRawCap(t *testing.T) {
-	if maxUploadEncoded != 11184812 {
-		t.Fatalf("maxUploadEncoded = %d, want 11184812 (8 MiB in base64)", maxUploadEncoded)
+	if maxUploadBytes != 10<<20 {
+		t.Fatalf("maxUploadBytes = %d, want 10 MiB", maxUploadBytes)
+	}
+	if maxUploadEncoded != 13981016 {
+		t.Fatalf("maxUploadEncoded = %d, want 13981016 (10 MiB in base64)", maxUploadEncoded)
 	}
 }
 

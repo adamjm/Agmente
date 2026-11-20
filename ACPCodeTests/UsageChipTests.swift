@@ -20,7 +20,7 @@ struct UsageChipTests {
     }
 
     @Test func chipSaysNotReportedWhenBobSentNoFigures() {
-        #expect(ContextUsageFormat.chipText(nil) == "Context: not reported by Bob")
+        #expect(ContextUsageFormat.chipText(nil) == "Context: not reported by the agent")
     }
 
     @Test func chipShowsOnlyTheUsedTokensWhenTheSizeIsZero() {
@@ -35,7 +35,7 @@ struct UsageChipTests {
         let live = ACPSessionUsage(usedTokens: 116_000, contextSize: 200_000)
         let figures = try #require(GatewayUsage(live: live, updatedAt: stamp))
         #expect(ContextUsageFormat.chipText(figures) == "58%, 84k left")
-        #expect(ContextUsageFormat.chipText(GatewayUsage(live: ACPSessionUsage(costAmount: 1), updatedAt: stamp)) == "Context: not reported by Bob")
+        #expect(ContextUsageFormat.chipText(GatewayUsage(live: ACPSessionUsage(costAmount: 1), updatedAt: stamp)) == "Context: not reported by the agent")
     }
 
     // MARK: - Home row bar

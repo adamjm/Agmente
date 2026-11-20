@@ -27,9 +27,10 @@ import (
 )
 
 const (
-	// maxUploadBytes is the decoded size cap of one upload (the critic's verdict, D-115). It is a
-	// constant, not config: the phone checks the same number before it sends.
-	maxUploadBytes = 8 << 20
+	// maxUploadBytes is the decoded size cap of one upload. D-115 set it at 8 MiB; D-117 raised it to
+	// 10 MiB. It is a constant, not config: the phone checks the same number before it sends. Base64
+	// adds a third, so the encoded file stays inside the 16 MiB message cap (NFR-3).
+	maxUploadBytes = 10 << 20
 	// maxUploadEncoded is the base64 length of maxUploadBytes: 4 * ceil(n / 3). A longer string is
 	// refused before it is decoded.
 	maxUploadEncoded = 4 * ((maxUploadBytes + 2) / 3)
@@ -37,10 +38,14 @@ const (
 )
 
 // uploadTypes is the allow-list of file extensions (lowercase, without the dot). Scripts, markup that
-// a browser runs, and binaries are not in it. PDF is stored and not previewed (D-062 serves neither).
+// a browser runs, macro-enabled Office files and binaries are not in it. PDF is stored and not previewed
+// (D-062 serves neither). D-117 adds text and data formats, archives and the non-macro Office formats; the
+// owner trusts the uploaders, so an archive is stored as bytes and never extracted by the gateway.
 var uploadTypes = map[string]bool{
 	"png": true, "jpg": true, "jpeg": true, "gif": true, "webp": true, "heic": true,
 	"pdf": true, "txt": true, "md": true, "csv": true, "json": true,
+	"yaml": true, "yml": true, "toml": true, "xml": true, "tsv": true, "rtf": true, "log": true,
+	"zip": true, "docx": true, "xlsx": true, "pptx": true,
 }
 
 // uploadReserved are names Bob or oh-my-pi reads as instructions or agent configuration (D-108). An
@@ -130,11 +135,11 @@ func uploadSyntaxReason(name string) string {
 
 var uploadRefusalText = map[string]string{
 	uploadRefusedName:     "the name must be a file name of 1 to 64 characters: letters, digits, space, dot, hyphen and underscore, not starting with a dot",
-	uploadRefusedType:     "this file type is not allowed. Allowed: png, jpg, jpeg, gif, webp, heic, pdf, txt, md, csv, json",
+	uploadRefusedType:     "this file type is not allowed. Allowed: png, jpg, jpeg, gif, webp, heic, pdf, txt, md, csv, json, yaml, yml, toml, xml, tsv, rtf, log, zip, docx, xlsx, pptx",
 	uploadRefusedReserved: "this name is reserved: agent instruction files cannot be uploaded",
 	uploadRefusedSecret:   "this looks like a secret file and cannot be uploaded",
 	uploadRefusedExists:   "a file with this name already exists in the project; nothing was changed",
-	uploadRefusedSize:     "the file is larger than 8 MB",
+	uploadRefusedSize:     "the file is larger than 10 MB",
 	uploadRefusedBase64:   "the file content is not valid base64",
 	uploadRefusedMissing:  "the project folder is missing",
 	uploadRefusedOutside:  "the project folder is outside the allowed roots",
