@@ -1,0 +1,38 @@
+{
+  "sessionId": "ses_e33283185ffeiuZZrgmmWr9tM8",
+  "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "call_b9986046",
+    "status": "completed",
+    "kind": "edit",
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "Wrote file successfully."
+        }
+      },
+      {
+        "type": "diff",
+        "path": "<HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt",
+        "oldText": "",
+        "newText": "hi"
+      }
+    ],
+    "title": "hello.txt",
+    "rawInput": {
+      "filePath": "<HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt",
+      "content": "hi"
+    },
+    "rawOutput": {
+      "output": "Wrote file successfully.",
+      "metadata": {
+        "diagnostics": {},
+        "filepath": "<HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt",
+        "exists": false,
+        "truncated": false
+      }
+    }
+  }
+}

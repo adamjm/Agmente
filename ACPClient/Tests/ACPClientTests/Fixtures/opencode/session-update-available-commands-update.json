@@ -1,0 +1,20 @@
+{
+  "sessionId": "ses_e33283185ffeiuZZrgmmWr9tM8",
+  "update": {
+    "sessionUpdate": "available_commands_update",
+    "availableCommands": [
+      {
+        "name": "init",
+        "description": "create/update AGENTS.md"
+      },
+      {
+        "name": "review",
+        "description": "review changes [commit|branch|pr], defaults to uncommitted"
+      },
+      {
+        "name": "compact",
+        "description": "compact the session"
+      }
+    ]
+  }
+}

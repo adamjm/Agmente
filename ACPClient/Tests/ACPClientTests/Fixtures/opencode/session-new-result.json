@@ -1,0 +1,74 @@
+{
+  "sessionId": "ses_e3338fb81ffemYNZBSDO4XZIOl",
+  "models": {
+    "currentModelId": "omlx/Qwen3.8-27B-MLX-4bit",
+    "availableModels": [
+      {
+        "modelId": "omlx/Qwen3.8-27B-MLX-4bit",
+        "name": "oMLX (local test)/Qwen3.8 27B 4bit (oMLX)"
+      },
+      {
+        "modelId": "opencode/big-pickle",
+        "name": "OpenCode Zen/Big Pickle"
+      },
+      {
+        "modelId": "opencode/big-pickle/high",
+        "name": "OpenCode Zen/Big Pickle (high)"
+      },
+      {
+        "modelId": "opencode/big-pickle/max",
+        "name": "OpenCode Zen/Big Pickle (max)"
+      },
+      {
+        "modelId": "opencode/gpt-5-nano",
+        "name": "OpenCode Zen/GPT-5 Nano"
+      },
+      {
+        "modelId": "opencode/gpt-5-nano/minimal",
+        "name": "OpenCode Zen/GPT-5 Nano (minimal)"
+      },
+      {
+        "modelId": "opencode/gpt-5-nano/low",
+        "name": "OpenCode Zen/GPT-5 Nano (low)"
+      },
+      {
+        "modelId": "opencode/gpt-5-nano/medium",
+        "name": "OpenCode Zen/GPT-5 Nano (medium)"
+      },
+      {
+        "modelId": "opencode/gpt-5-nano/high",
+        "name": "OpenCode Zen/GPT-5 Nano (high)"
+      },
+      {
+        "modelId": "opencode/trinity-large-preview-free",
+        "name": "OpenCode Zen/Trinity Large Preview"
+      },
+      {
+        "modelId": "opencode/minimax-m2.5-free",
+        "name": "OpenCode Zen/MiniMax M2.5 Free"
+      }
+    ]
+  },
+  "modes": {
+    "availableModes": [
+      {
+        "id": "build",
+        "name": "build",
+        "description": "The default agent. Executes tools based on configured permissions."
+      },
+      {
+        "id": "plan",
+        "name": "plan",
+        "description": "Plan mode. Disallows all edit tools."
+      }
+    ],
+    "currentModeId": "build"
+  },
+  "_meta": {
+    "opencode": {
+      "modelId": "omlx/Qwen3.8-27B-MLX-4bit",
+      "variant": null,
+      "availableVariants": []
+    }
+  }
+}

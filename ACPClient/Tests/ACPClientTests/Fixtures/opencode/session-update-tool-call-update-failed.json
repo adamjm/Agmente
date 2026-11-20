@@ -1,0 +1,26 @@
+{
+  "sessionId": "ses_e3329674cffeivA7BQd0cKG4pK",
+  "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "call_deb7414c",
+    "status": "failed",
+    "kind": "edit",
+    "title": "write",
+    "rawInput": {
+      "filePath": "<HARNESS_SCRATCH>/opencode-omlx/proj/test-project/hello.txt",
+      "content": "hi"
+    },
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "Error: The user rejected permission to use this specific tool call."
+        }
+      }
+    ],
+    "rawOutput": {
+      "error": "Error: The user rejected permission to use this specific tool call."
+    }
+  }
+}

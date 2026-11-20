@@ -1,0 +1,12 @@
+{
+  "sessionId": "ses_e33283185ffeiuZZrgmmWr9tM8",
+  "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "call_b9986046",
+    "title": "write",
+    "kind": "edit",
+    "status": "pending",
+    "locations": [],
+    "rawInput": {}
+  }
+}
