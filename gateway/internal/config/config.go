@@ -59,11 +59,27 @@ type Limits struct {
 	StallSeconds              int64 `json:"stallSeconds"` // a turn with no event for this long is flagged stalled (D-106)
 }
 
-// Runner says how a project's agent starts (D-025): "host" (tests and development only) or
-// "podman" (one container per project, D-008).
+// Runner says how a project's agent starts (D-025): "host" (tests and development only),
+// "podman" or "apple" (one container per project, D-008), or "srt" (a process under the OS
+// sandbox of Anthropic sandbox-runtime, D-122).
 type Runner struct {
 	Kind   string `json:"kind"`
 	Podman string `json:"podman,omitempty"`
+	// SRT is the absolute path of the `srt` command for kind "srt" (D-122). It must lie outside
+	// every project root and the state folder, which the sandboxed agent can write.
+	SRT string `json:"srt,omitempty"`
+	// AllowedDomains are the hosts the agent may reach under kind "srt" (srt's allowedDomains
+	// grammar: `host`, `*.host`, optional `:port`). Everything else is refused by the proxy.
+	AllowedDomains []string `json:"allowedDomains,omitempty"`
+	// AllowRead are extra absolute paths the agent may read under kind "srt", inside the
+	// regions the gateway denies (the gateway user's home, the project roots, the state folder).
+	AllowRead []string `json:"allowRead,omitempty"`
+	// WeakerNetworkIsolation turns on srt's enableWeakerNetworkIsolation (macOS trustd access).
+	WeakerNetworkIsolation bool `json:"weakerNetworkIsolation,omitempty"`
+	// AllowLocalBinding turns on srt's network.allowLocalBinding for the agent only: it may then
+	// connect to any port on localhost and bind any local port. Every service on the Mac's
+	// loopback becomes reachable by the agent, so it is off by default. Git and push never get it.
+	AllowLocalBinding bool `json:"allowLocalBinding,omitempty"`
 	// Container is the Apple `container` CLI for kind "apple" (D-079). Absolute when set.
 	Container string `json:"container,omitempty"`
 	// DNS is the nameserver the Apple runner gives its containers (--dns), an IP address. Empty
@@ -271,6 +287,8 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			add("runner.kind \"host\" runs agents without a container; it needs runner.allowHost: true and is for tests and development only (D-008)")
 		}
 		runner = Runner{Kind: "host"}
+	case "srt":
+		runner = validateSRT(rv, roots, stateDir, add)
 	case "podman", "apple":
 		for i := range agents.specs {
 			sp := &agents.specs[i]
@@ -327,7 +345,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 			*id.dst = int(n)
 		}
 	default:
-		add("runner.kind must be \"podman\", \"apple\" or \"host\"")
+		add("runner.kind must be \"podman\", \"apple\", \"srt\" or \"host\"")
 	}
 
 	limits := map[string]int64{}

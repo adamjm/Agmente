@@ -13,6 +13,8 @@ final class ApprovalActivityController {
     /// ends. A new activity starts only when `canStart` is true: ActivityKit refuses a request from the background,
     /// so the caller passes true only in the foreground or while the gateway is connected.
     func sync(_ content: ApprovalActivityStateMapper.Content?, canStart: Bool, now: Date = Date()) async {
+        // Designed for iPad on Mac has no Live Activities. Local notifications cover approvals there.
+        if ProcessInfo.processInfo.isiOSAppOnMac { return }
         guard let content else {
             await end()
             return

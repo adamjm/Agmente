@@ -1,0 +1,77 @@
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8788
+  },
+  "trustProxy": true,
+  "tokens": [
+    {
+      "id": "iphone",
+      "identity": "owner",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "agent": {
+    "command": [
+      "/opt/homebrew/bin/bob",
+      "acp",
+      "--accept-license",
+      "--log-level",
+      "warn"
+    ],
+    "envPassthrough": [
+      "PATH",
+      "LANG",
+      "BOB_API_KEY"
+    ]
+  },
+  "projects": {
+    "roots": [
+      "/Users/you/acpcode/projects"
+    ]
+  },
+  "stateDir": "/Users/you/acpcode/state",
+  "runner": {
+    "kind": "srt",
+    "srt": "/opt/homebrew/bin/srt",
+    "allowedDomains": [
+      "api.us-east.bob.ibm.com",
+      "bob.ibm.com",
+      "iam.cloud.ibm.com"
+    ],
+    "allowRead": [
+      "/opt/homebrew",
+      "/usr/local"
+    ]
+  },
+  "files": {
+    "host": "files.example.com",
+    "ttlSeconds": 300,
+    "maxBytes": 20971520
+  },
+  "limits": {
+    "maxMessageBytes": 16777216,
+    "maxAgentsPerIdentity": 1,
+    "maxAgentsTotal": 4,
+    "maxConnectionsPerIdentity": 8,
+    "authFailuresPerWindow": 10,
+    "authWindowSeconds": 60,
+    "lockoutSeconds": 600,
+    "approvalTimeoutSeconds": 43200,
+    "idleSeconds": 1800
+  },
+  "connector": {
+    "enabled": false,
+    "port": 8789,
+    "publicOrigin": "https://your-public-name.example:8443",
+    "allowedOrigins": [],
+    "pairingTimeoutSeconds": 300,
+    "limits": {
+      "maxConcurrentTurns": 1,
+      "promptsPerHour": 20,
+      "maxPromptBytes": 8192,
+      "maxResultChars": 20000,
+      "sendPromptWaitSeconds": 200
+    }
+  }
+}

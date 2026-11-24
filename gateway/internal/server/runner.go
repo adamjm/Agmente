@@ -35,6 +35,8 @@ func newRunner(cfg *config.Config) runner {
 		return podmanRunner{cfg: cfg}
 	case "apple":
 		return newAppleRunner(cfg)
+	case "srt":
+		return &srtRunner{cfg: cfg}
 	}
 	return hostRunner{cfg: cfg}
 }

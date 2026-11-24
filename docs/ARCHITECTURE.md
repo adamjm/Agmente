@@ -9,12 +9,12 @@ Read with [SPEC.md](SPEC.md). Decision IDs (D-n) refer to [DECISIONS.md](DECISIO
 | Edge | Caddy | Terminate TLS. Require a client certificate (mutual TLS). Forward to loopback. | `deploy/Caddyfile` |
 | Gateway: admission | `server.go`, `auth.go` | Reject before upgrade: Origin, rate limit, token, capacity. | `gateway/internal/server/` |
 | Gateway: protocol guard | `guard.go`, `jsonv` | One JSON object per message; `cwd` inside roots; size caps; re-serialized as one line. | `gateway/internal/` |
-| Gateway: agent control | `agent.go`, `runner.go`, `supervisor.go`, `client.go` | One agent per project (host, podman or apple runner, project lock), id remapping, routing by cwd and sessionId, per-socket send queues. | `gateway/internal/server/` |
+| Gateway: agent control | `agent.go`, `runner.go`, `supervisor.go`, `client.go` | One agent per project (host, podman, apple or srt runner, project lock), id remapping, routing by cwd and sessionId, per-socket send queues. | `gateway/internal/server/` |
 | Gateway: config and audit | `config`, `audit` | Validate the config file; one JSON audit line per event on stderr. | `gateway/internal/` |
 | Gateway: sessions (phase 3) | `projects.go`, `store`, `subscribe.go`; approvals and idle close planned | Project registry, event log, subscribe and replay (D-028), approval queue, idle close. | `gateway/internal/server/`, `gateway/internal/store/` |
 | Gateway: project data (phases 3, 5, 6) | `git.go`, `gitexec.go`, `snapshot.go`, `watch.go`; planned `files/`, `mcp/`, `skills/` | Read-only git (D-034, D-035); later signed file URLs, MCP and skill config. | `gateway/internal/server/` |
 | Gateway: notify (phase 3) | `push/`, `push_deliver.go` | APNs payloads (D-038), token-based auth, HTTP/2 send, cleanup and retry (D-053); triggers and suppression (D-054). | `gateway/internal/push/`, `gateway/internal/server/` |
-| Project runtime | One container per project | Run `bob acp` and git as the project user. Podman on Linux, Apple `container` on a Mac (D-079). | `deploy/` (planned); Mac: `docs/MAC-SETUP.md` |
+| Project runtime | One container per project | Run `bob acp` and git as the project user. Podman on Linux, Apple `container` on a Mac (D-079), or `srt` processes on a Mac (D-122, a weaker boundary). | `deploy/` (planned); Mac: `docs/MAC-SETUP.md` |
 | App: transport | `ACPCodeTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `ACPCodeTransport/`, upstream folders |
 | App: security | Keychain store | Tokens, client identity, MCP headers. | `ACPCode/Security/` (new) |
 | App: features | Home, Git, Preview, MCP, Skills screens | UI for the gateway features. | `ACPCode/Fork/` (new) |

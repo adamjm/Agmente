@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -35,6 +36,9 @@ type agentProcess struct {
 	lock   *os.File // the project lock (host runner); closed after the process exits
 
 	stdoutDone chan struct{} // closed when the gateway has read all of stdout
+
+	kidsMu sync.Mutex
+	kids   []treeMember // descendants seen at a signal; later signals reach them after their parents died
 }
 
 // startProcess starts cmd with pipes the gateway owns. extra files are passed to the child as
@@ -111,14 +115,41 @@ func (p *agentProcess) terminate(grace time.Duration) {
 	if p.hasExited() {
 		return
 	}
-	_ = p.cmd.Process.Signal(syscall.SIGTERM)
+	p.signal(syscall.SIGTERM)
 	go func() {
 		select {
 		case <-p.exited:
 		case <-time.After(grace):
-			_ = p.cmd.Process.Kill()
+			p.signal(syscall.SIGKILL)
 		}
 	}()
+}
+
+// signal sends sig to the process, or to its whole process group when the runner started it as a
+// group leader (the srt runner: killing srt alone leaves the sandboxed agent's children running).
+// Bob starts some commands in a group of their own, so the process tree is read first and each
+// member gets the signal too. The members are remembered: when the parents have died by the next
+// signal (the kill after the grace time), the children are reparented and no longer in the tree.
+func (p *agentProcess) signal(sig syscall.Signal) {
+	if a := p.cmd.SysProcAttr; a != nil && a.Setpgid {
+		pid := p.cmd.Process.Pid
+		p.kidsMu.Lock()
+		seen := map[int]bool{}
+		for _, k := range p.kids {
+			seen[k.pid] = true
+		}
+		for _, k := range descendantsOf(listProcesses(), pid) {
+			if !seen[k.pid] {
+				p.kids = append(p.kids, k)
+			}
+		}
+		kids := append([]treeMember(nil), p.kids...)
+		p.kidsMu.Unlock()
+		_ = syscall.Kill(-pid, sig)
+		signalTree(kids, sig)
+		return
+	}
+	_ = p.cmd.Process.Signal(sig)
 }
 
 // writeLine writes one line to the agent's stdin. It reports whether the pipe was full (the

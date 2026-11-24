@@ -25,6 +25,23 @@ func runnersConfig(t *testing.T, members, extra string) (*Config, error) {
 	return Validate(raw)
 }
 
+// runnersConfigIn is runnersConfig with a given state folder, for tests that need a real one.
+func runnersConfigIn(t *testing.T, members, stateDir string) (*Config, error) {
+	t.Helper()
+	block := `{
+	  "listen": {"host": "127.0.0.1", "port": 8788},
+	  "tokens": [{"id": "phone", "identity": "owner", "sha256": "` + strings.Repeat("a", 64) + `"}],
+	  "projects": {"roots": ["/tmp/acp-test-root"]},
+	  "stateDir": "` + stateDir + `",
+	  ` + members + `
+	}`
+	raw, err := jsonv.Parse([]byte(block))
+	if err != nil {
+		t.Fatalf("parse test config: %v", err)
+	}
+	return Validate(raw)
+}
+
 const twoRunners = `
 	  "runner": {"kind": "apple", "container": "/opt/homebrew/bin/container"},
 	  "runners": {

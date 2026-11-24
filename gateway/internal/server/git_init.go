@@ -155,7 +155,8 @@ func (s *Server) checkGitOptions(ctx context.Context, g gitOptions, createFolder
 // gitInitFolder runs `git init -b main` and, with a remote, `git remote add origin` in the new
 // folder, through the runner (one-off, --network none, D-034). It does not fetch or push.
 func (s *Server) gitInitFolder(ctx context.Context, p store.Project, g gitOptions) (*gitInitResult, *rpcError) {
-	steps := [][]string{{"init", "-q", "-b", "main"}}
+	// --template= copies no sample hooks: the srt runner never lets git write .git/hooks (D-122).
+	steps := [][]string{{"init", "-q", "-b", "main", "--template="}}
 	if g.remote != "" {
 		steps = append(steps, []string{"remote", "add", "origin", g.remote})
 	}

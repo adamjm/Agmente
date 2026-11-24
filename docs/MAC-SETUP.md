@@ -362,3 +362,65 @@ The gateway's startup output names the connector listener on `127.0.0.1:8789`. C
 3. **Remove the public route.** Delete the `import` line from the Caddy config (or the `Caddyfile.connector` import) and reload Caddy: `caddy validate`, then `caddy reload`. The connector host name then has no site on 8443, and the phone's site keeps running.
 4. **Optional.** Remove the connector's DNS record. Remove the router's 8443 forward only if the phone does not use it. That forward also serves the phone's site.
 5. **Optional.** Revoke the DNS provider token in the provider's dashboard, and delete `CADDY_DNS_API_TOKEN` from the secrets file.
+
+## 14. The lean runner: `srt` instead of containers (D-122)
+
+`runner.kind: "srt"` runs Bob, git and the push commands as processes under Anthropic sandbox-runtime. There is no image, no VM and no DNS step, so sections 2 to 4 do not apply. The boundary is weaker than a container: same user id, same kernel, a Seatbelt profile (D-122). Choose it knowingly.
+
+1. **Node 22.21 or later.** Older Node ignores the sandbox's proxy variables and the agent would have no network.
+2. **Install `srt` outside every project root and the state folder.** The gateway refuses a path inside them (the agent could replace it):
+
+   ```bash
+   npm install -g @anthropic-ai/sandbox-runtime
+   ```
+
+   Tested with 0.0.83. `which srt` gives the absolute path for `runner.srt`.
+3. **Use a git that is not the Xcode shim.** `/usr/bin/git` costs about 3 s a call in the sandbox. The gateway uses `/usr/local/bin/git` if it exists, else the git under `xcode-select -p`. Install the Xcode Command Line Tools or a git in `/usr/local/bin`.
+4. **Config.** Copy `gateway/config.mac-srt.example.json`. The runner block is:
+
+   ```json
+   "runner": {
+     "kind": "srt",
+     "srt": "/opt/homebrew/bin/srt",
+     "allowedDomains": ["api.us-east.bob.ibm.com", "bob.ibm.com", "iam.cloud.ibm.com"],
+     "allowRead": ["/opt/homebrew", "/usr/local"]
+   }
+   ```
+
+   - `allowedDomains` is the only network the agent has. Bob needed the three hosts above on 2026-11-22. A prompt that works in a container but fails here with `fetch failed` needs another host: run the agent once under `srt --debug` and read the denied hosts (the debug log also prints the command line, including secrets, so delete it).
+   - `allowRead` is how the agent finds Bob, node and your toolchains. The agent cannot read your home, the other projects or the state folder.
+   - `enableWeakerNetworkIsolation` (default off) lets Go tools verify certificates through the macOS trust service. It opens a Mach service, so leave it off unless `go` or `gh` fails on TLS.
+   - `allowLocalBinding` (default off) lets the **agent only** connect to any port on `127.0.0.1` and bind local ports, for example an http MCP server you run on the Mac (the gateway accepts `http` MCP URLs to loopback only). It also makes every service on the Mac's loopback reachable by the agent, so turn it on only for that need. Git and push never get it. Verified with real srt on 2026-11-22: off, a loopback connection fails; on, it works.
+   - **MCP servers under srt** (real Bob, 2026-11-22, 25 of 25 checks):
+     - A stdio server under `/opt/homebrew` works; one in your home is unreadable and Bob reports it unavailable (no hang). It is denied home, `~/.ssh`, writes outside the project and `.git/config`.
+     - **Any http or https MCP entry makes Bob open a local listener**, so without `allowLocalBinding` `session/new` fails with `listen EPERM 127.0.0.1`. Turn the key on for any list that has an http or https entry.
+     - Write loopback MCP URLs as `http://localhost:PORT`, not `127.0.0.1`: Bob sends even loopback MCP requests through srt's proxy, which refuses unlisted hosts. With `allowLocalBinding` on, the gateway adds `localhost` to the agent's `allowedDomains`.
+     - An https MCP server works when its host is in `allowedDomains` and is unusable when it is not.
+     - **Limit:** a stdio MCP server that needs the network cannot reach it, even when the host is allowed. Bob starts MCP children with a clean environment (no proxy variables, no `$VAR` expansion in an entry's env), and the proxy URL and token are per run. Use an http or https MCP server for network tools, or the Podman or Apple runner for a stdio server that needs the network.
+   - `agent.command` should be an absolute path to `bob`, and `envPassthrough` should not include `HOME` (the gateway sets the project home).
+5. **Live check:**
+
+   ```bash
+   set -a; . ./.env; set +a; node gateway/scripts/live-bob.mjs --runner srt --srt "$(which srt)" --domains api.us-east.bob.ibm.com,bob.ibm.com,iam.cloud.ibm.com
+   ```
+
+   24 of 24 passed on 2026-11-22. The Go live tests need `ACPCODE_TEST_SRT=$(which srt)`.
+
+**Toolchains under srt** (agent sandbox, `allowRead` = `/opt/homebrew`, `/usr/local`; measured 2026-11-22 by `go test ./internal/server -run LiveSRTToolchains` with `ACPCODE_TEST_SRT` and `ACPCODE_TEST_SRT_TOOLCHAINS=1`):
+
+| Toolchain | Task | Result | Time | What it needs |
+|---|---|---|---|---|
+| Go | `go mod download`, `build`, `test` | Fails on TLS by default (`x509: OSStatus -26276`) | 0.7 s | `weakerNetworkIsolation: true`, then it works (8 s); `proxy.golang.org`, `sum.golang.org` |
+| Rust | `cargo build`, `cargo test` (crate `itoa`) | Works (12 s) | 12 s | `allowRead` of `~/.cargo/bin` and `~/.rustup` (both are under the denied home); `CARGO_HOME` under the project home; `crates.io`, `index.crates.io`, `static.crates.io` |
+| Python | `python3 -m venv`, `pip install pytest`, `pytest` | Works | 10 s | `pypi.org`, `files.pythonhosted.org`; `/usr/bin/python3` is an Xcode shim (slow) |
+| Node | `npm install`, `npm ci`, `npm test` | Works | 2.3 s | `registry.npmjs.org` |
+| make, clang | `make` with `clang` | Works, but prints `couldn't create cache file ... xcrun_db` and takes about 5 s | 5 s | Xcode shim cost; install the command line tools or use a Homebrew compiler |
+| git over ssh | `ssh -T git@github.com` | Fails at once (`Could not resolve hostname`) | 0.5 s | Nothing works: no agent socket, no key, no ssh network. Use https |
+| `git clone` / `git init` in the agent | | Denied (`cannot copy ... .git/hooks/...: Operation not permitted`) | 3 s | By design (D-122): `.git/hooks` and `.git/config` are not writable by the agent. The gateway creates the repo |
+| Malicious install script (`npm postinstall`) | read `~/.ssh`, list home, read sibling project, read state folder, write `.git/hooks`, write home, reach example.com | All denied | 3.4 s | |
+
+The rows list what a user must add. Go needs `weakerNetworkIsolation`, which opens a Mach service to the agent. The Xcode shim (`/usr/bin/python3`, `clang`, `make`) costs about 3 s per call, so prefer Homebrew tools.
+
+**Memory and start time** (8 projects at once, 3 rounds, `bench-concurrent.mjs --runner srt`): 3.3 GB RSS in total (2.7 GB footprint) against 6.2 GB for the Apple runner; load median 6.7 s (Apple 9.2 s), still above the 3 s NFR-15 target because the sandbox adds about 3 s to Bob's start. A busy Bob grows to about 1.9 GB, so plan 2 GB per working project. Eight srt processes started in the same instant lost one agent in most runs (`Shell 'bash' not found in PATH`, srt's own 1 s lookup); the gateway spaces launches 250 ms apart.
+
+**Known limits.** Linux, a push to a real remote and a soak longer than 15 minutes with two projects were not tested. A shell command in a turn is stopped by Bob itself after about 260 s, with or without srt. With two busy projects a git call took up to 4.8 s against the 5 s limit. A tool that needs a host outside `allowedDomains` fails and Bob reports a network error. A stdio MCP server cannot use the network (see the MCP bullets above).

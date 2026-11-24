@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live run of the gateway with real IBM Bob (PLAN 4, RESULTS 2026-11-07).
 // BOB_API_KEY must be in the environment (e.g. `set -a; . ./.env; set +a`); this script never prints it.
-//   node gateway/scripts/live-bob.mjs --runner host|podman|apple [--image localhost/acpcode-bob:2.0.9] [--dns IP, default the Mac's resolver] [--serve] [--no-key]
+//   node gateway/scripts/live-bob.mjs --runner host|podman|apple|srt [--srt PATH] [--domains a.com,b.com] [--image localhost/acpcode-bob:2.0.9] [--dns IP, default the Mac's resolver] [--serve] [--no-key]
 // Scenarios use a scratch git project under ~/.acpcode-live/ (a place Podman's VM can mount), real Bob,
 // and short prompts. The gateway never approves; this test client answers: allow only for the one
 // scratch-file edit, reject for everything else (D-009).
@@ -20,6 +20,8 @@ const { values } = parseArgs({
     runner: { type: 'string', default: 'host' },
     image: { type: 'string', default: 'localhost/acpcode-bob:2.0.9' },
     dns: { type: 'string', default: '' },
+    srt: { type: 'string', default: '/tmp/srt-prefix/bin/srt' },
+    domains: { type: 'string', default: '*.ibm.com' },
     serve: { type: 'boolean', default: false },
     'no-key': { type: 'boolean', default: false },
     'idle-seconds': { type: 'string', default: '8' },
@@ -33,6 +35,7 @@ const macResolver = () => {
 };
 if (apple && !values.dns) values.dns = macResolver();
 if (apple && !values.dns) { console.error('no IPv4 resolver found; pass --dns'); process.exit(2); }
+const srt = values.runner === 'srt'; // the sandbox-runtime runner: bob runs from the host PATH under srt (D-122)
 const podman = values.runner === 'podman' || apple; // a container runner: the image's entrypoint is bob
 const log = (...a) => console.log(...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -73,6 +76,7 @@ const config = {
   stateDir: join(base, 'state'),
   runner: apple
     ? { kind: 'apple', image: values.image, container: '/opt/homebrew/bin/container', ...(values.dns ? { dns: values.dns } : {}) }
+    : srt ? { kind: 'srt', srt: values.srt, allowedDomains: values.domains.split(','), allowRead: ['/opt/homebrew', '/usr/local'] }
     : podman ? { kind: 'podman', image: values.image } : { kind: 'host', allowHost: true },
   limits: { idleSeconds: Number(values['idle-seconds']) },
 };
