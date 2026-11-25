@@ -389,7 +389,7 @@ The gateway's startup output names the connector listener on `127.0.0.1:8789`. C
 
    - `allowedDomains` is the only network the agent has. Bob needed the three hosts above on 2026-11-22. A prompt that works in a container but fails here with `fetch failed` needs another host: run the agent once under `srt --debug` and read the denied hosts (the debug log also prints the command line, including secrets, so delete it).
    - `allowRead` is how the agent finds Bob, node and your toolchains. The agent cannot read your home, the other projects or the state folder.
-   - `enableWeakerNetworkIsolation` (default off) lets Go tools verify certificates through the macOS trust service. It opens a Mach service, so leave it off unless `go` or `gh` fails on TLS.
+   - `weakerNetworkIsolation` (default off; srt calls it `enableWeakerNetworkIsolation`) lets Go tools verify certificates through the macOS trust service. It opens a Mach service, so leave it off unless `go` or `gh` fails on TLS.
    - `allowLocalBinding` (default off) lets the **agent only** connect to any port on `127.0.0.1` and bind local ports, for example an http MCP server you run on the Mac (the gateway accepts `http` MCP URLs to loopback only). It also makes every service on the Mac's loopback reachable by the agent, so turn it on only for that need. Git and push never get it. Verified with real srt on 2026-11-22: off, a loopback connection fails; on, it works.
    - **MCP servers under srt** (real Bob, 2026-11-22, 25 of 25 checks):
      - A stdio server under `/opt/homebrew` works; one in your home is unreadable and Bob reports it unavailable (no hang). It is denied home, `~/.ssh`, writes outside the project and `.git/config`.
@@ -405,6 +405,81 @@ The gateway's startup output names the connector listener on `127.0.0.1:8789`. C
    ```
 
    24 of 24 passed on 2026-11-22. The Go live tests need `ACPCODE_TEST_SRT=$(which srt)`.
+
+### Tighter or weaker: what you can change (D-122)
+
+The sandbox has a fixed core and a few dials in the `runner` block. The core is not configurable: a setting cannot weaken it.
+
+**Fixed (cannot be loosened by config):**
+- The agent cannot read your home folder, the project roots (other projects), the state folder, `/tmp` or `/var/folders`. Its own project folder, its own home (`<stateDir>/homes/<id>`) and the `allowRead` paths are allowed back. **Reads elsewhere are open:** srt allows reading everything it is not told to deny, so system folders (`/etc`, `/Library`, `/Applications`, `/usr`, `/opt` outside `allowRead`) and any other user's files that the gateway user can read stay readable. There is no setting to deny more. If another folder outside the home holds secrets (for example `/Volumes/backup` or `/opt/secrets`), the agent can read it; move it into the home or use the Podman or Apple runner.
+- The agent can write only its project folder and its own home. `TMPDIR` is `<home>/tmp`.
+- `.git/hooks` is never writable, and `.git/config` is writable only by the gateway's own git commands, never by the agent.
+- Git has no network. A push command reaches only the git hosts, only while it runs.
+- The settings file lives in the state folder, which the agent cannot read or write, and `runner.srt` must lie outside the project roots and the state folder.
+- Same user id and kernel as the gateway. This is the weaker boundary D-122 accepted; no setting turns it into a container.
+
+**The dials, from most to least effect:**
+
+| Setting | Default | Tighter | Weaker | What the weaker value opens |
+|---|---|---|---|---|
+| `runner.allowedDomains` | the three Bob hosts in the example (required, 1 to 64) | List only Bob's hosts. Use exact names, not `*.` patterns, and no `:port` you do not need | Add registries (`registry.npmjs.org`, `pypi.org`, `proxy.golang.org`, `crates.io`), then `*.example.com` | Everything the agent runs, and any package install script, can send data to those hosts. A wildcard host that lets users publish content (a storage or paste service) is an exfiltration path |
+| `runner.allowRead` | `/opt/homebrew`, `/usr/local` (optional key) | Empty, when `bob`, `node` and your tools are outside your home | Add toolchain paths under the home, for example `~/.cargo/bin` and `~/.rustup`, or a `bob` installed under the home (nvm, `~/.local`) | The agent can read everything inside each path, including every file and key kept there. Never list the home, `~/.ssh`, `~/.aws`, `~/.config`, a credentials file or a project root. `/` and globs are refused |
+| `runner.weakerNetworkIsolation` | `false` | Keep `false` | `true` | srt opens the macOS trust service (`com.apple.trustd.agent`) so Go and `gh` can verify certificates. srt's README names it as a possible data-exfiltration route. Needed only for Go and other tools that use the system trust store |
+| `runner.allowLocalBinding` | `false` | Keep `false` | `true` | The agent (not git or push) can connect to every port on `127.0.0.1` and open its own listener. Needed for any http or https MCP entry (Bob opens a local listener). `localhost` is added to the agent's allowed hosts |
+| `git.hosts` (top level, not in `runner`) | `["github.com"]` | Name only the host you push to | Add a second host | The hosts a remote URL and a stored git credential may name, and the only network a push gets |
+| `limits.idleSeconds` | 1800 | A lower value stops an unused agent sooner, so its process and anything it started do not stay running | A higher value keeps it longer | An idle agent keeps its memory (about 0.4 to 1.9 GB) |
+| `agent.envPassthrough` | `PATH`, `LANG`, `BOB_API_KEY` | List only what Bob needs | Adding a name hands that variable's value to the agent and to everything it runs | A secret in the gateway's environment becomes readable by the agent. Do not add cloud or git tokens |
+
+**Three presets.** Copy the `runner` block, set `srt` to `which srt`, and restart the gateway. The gateway refuses a bad value at start and prints the key.
+
+*Tightest.* Bob only, no toolchains, no loopback. Use it for reviewing or explaining code, not for running builds:
+
+```json
+"runner": {
+  "kind": "srt",
+  "srt": "/opt/homebrew/bin/srt",
+  "allowedDomains": ["api.us-east.bob.ibm.com", "bob.ibm.com", "iam.cloud.ibm.com"],
+  "allowRead": ["/opt/homebrew"]
+}
+```
+
+The agent can edit files and run programs from `/opt/homebrew` and the system, and cannot install anything: `npm install`, `pip` and `cargo` fail with a network error.
+
+*Default (the example config).* Same hosts, plus `/usr/local`. Builds that need no downloads work. Add registries one at a time as a task needs them.
+
+*Working builds.* For Node, Python, Go and Rust projects. It is the preset the toolchain table in this section was measured with, plus the Go and Rust lines:
+
+```json
+"runner": {
+  "kind": "srt",
+  "srt": "/opt/homebrew/bin/srt",
+  "allowedDomains": [
+    "api.us-east.bob.ibm.com", "bob.ibm.com", "iam.cloud.ibm.com",
+    "registry.npmjs.org", "pypi.org", "files.pythonhosted.org",
+    "proxy.golang.org", "sum.golang.org", "storage.googleapis.com",
+    "crates.io", "index.crates.io", "static.crates.io"
+  ],
+  "allowRead": ["/opt/homebrew", "/usr/local", "/Users/you/.cargo/bin", "/Users/you/.rustup"],
+  "weakerNetworkIsolation": true
+}
+```
+
+Drop the lines of the languages you do not use: each registry you remove is one fewer place data can go, and `weakerNetworkIsolation` can go if you do not use Go. `go` needs `proxy.golang.org`, `sum.golang.org` and, for some modules, `storage.googleapis.com`. A project that pulls from GitHub (`go get github.com/...` with a direct fetch, a git dependency) needs `github.com`, which also lets the agent reach any public repository, so add it only when you must.
+
+**How to choose.** Start with the tightest preset. Run the task; if it fails with `fetch failed`, `ENOTFOUND`, `Operation not permitted` or an `x509` error, add exactly what the message points to:
+
+| Symptom in the turn | Cause | Change |
+|---|---|---|
+| `fetch failed` or `ENOTFOUND` for a host | host not in `allowedDomains` | add that host |
+| `x509: OSStatus -26276` (Go) or `failed to copy trust settings` | no access to the macOS trust service | `weakerNetworkIsolation: true`, or avoid Go in the sandbox |
+| `Operation not permitted` reading a path under your home | path not in `allowRead` | add the narrowest path that holds the tool |
+| `listen EPERM 127.0.0.1` at `session/new` | an http or https MCP entry | `allowLocalBinding: true` |
+| `git clone` or `git init` fails with `.git/hooks` | by design | the gateway creates and pushes the repo; do not loosen it |
+| a command stops at about 260 s | Bob's own limit, not the sandbox | run it in smaller steps |
+
+Every change takes effect at the next agent start. Stop or wait for the idle stop of a running project, then send a prompt; an already running agent keeps the settings it started with.
+
+**What a change does not give you.** None of these dials reaches the container-level boundary (a separate user, a separate filesystem). If a project must not be able to affect the Mac at all, use the Podman or Apple runner. Loosening `allowedDomains` or `allowRead` is the common way a sandbox stops protecting you, so loosen one entry at a time and record why.
 
 **Toolchains under srt** (agent sandbox, `allowRead` = `/opt/homebrew`, `/usr/local`; measured 2026-11-22 by `go test ./internal/server -run LiveSRTToolchains` with `ACPCODE_TEST_SRT` and `ACPCODE_TEST_SRT_TOOLCHAINS=1`):
 
