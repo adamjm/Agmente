@@ -1927,3 +1927,15 @@ Not run or not built:
   - `createWorktree {projectId, runner: "claude"}` made a child project (parent id, branch `acpcode/claude/<8 hex>`, runner `claude`). A Claude session there created `hello.txt` with `hi`. The parent folder had no `hello.txt`. `git status` in the worktree showed only `?? hello.txt`.
 - **No token value** was written to the repo, a log or this file; a scan of every changed file for the value found nothing.
 - **Not run:** a tool call that asks for approval; the app on a device; real Bob next to Claude in one project; a commit from inside a worktree under `srt`; merging the worktree branch by hand; `scripts/check.sh` end to end; the mutation checks of PLAN I1.
+
+## 2026-11-27: main gateway moved from the Apple runner to `srt`, with Bob, Claude Code and omp (D-122, D-125, D-126)
+
+- **What changed on the Mac:** `~/acpcode/config.json` went from `runner.kind: "apple"` (Bob and omp in containers) to `"srt"` with three runners (`bob`, `claude`, `omp`), default `bob`, `allowLocalBinding: true`. The binary was rebuilt from the repo. `srt` 0.0.83 and `claude-agent-acp` 0.113.0 were installed with `npm install -g`. The old config, binary, launchd plist and `gateway.db` were copied to `~/acpcode/backups/pre-srt-2026-11-27/`. The separate omp gateway on port 8791 was not touched.
+- **Dry run:** `Config OK` for the new config. A first omp entry with `192.168.64.1:18000` in `allowedDomains` was refused: an IP address is not a valid host there.
+- **Live run through the running gateway (WebSocket, bearer token, a prompt asking for the word `pong`):**
+  - Bob in `ben-test`: `session/new` in about 4 s, `end_turn`, `pong`.
+  - Claude Code in `ben-test` (`_meta["acpcode/runner"] = "claude"`), model `claude-haiku-5-5`: `session/new` in about 5 s, `end_turn`, `pong`.
+  - omp: three failures in turn, then a pass. (1) "No model selected": the project home had no `models.yml`. (2) `403 Connection to adams-mac-studio.local blocked: resolved to a loopback address`, and the same with `192.168.64.1`: srt blocks any host that is this Mac. Fixed with `allowLocalBinding: true` and `http://localhost:18000/v1`. (3) `404 Model 'Qwen3.8-27B-MLX-4bit' not found`: the oMLX server no longer serves that name. Fixed by listing the 15 models it serves today (`deploy/omp-config/models.yml`) and setting the default to `Qwen3.8-27B-pi-adapted-MLX-4bit`. Then `ohmypi-test` and `ben-test` both returned `pong`. The first omp turn took about 3 minutes (cold model load).
+  - `initialize` listed `bob`, `claude` and `omp`, default `bob`.
+- **Side effects found:** a test agent kept retrying a failed model call and had to be stopped by hand. The sandbox cannot read `~/.local/bin`, so the omp binary was copied to `~/acpcode/tools/omp`.
+- **Not run:** a tool call that asks for approval under any of the three runners; the app on a device against this config; two runners in one project on the live gateway; a worktree on the live gateway; a soak under the new config.

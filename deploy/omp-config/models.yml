@@ -6,21 +6,37 @@ providers:
     discovery:
       type: openai-models-list
     # input lists what a model accepts. "image" marks vision-capable models.
-    # Vision status comes from each model's config.json (vision_config present) on the oMLX host, 2026-11-15.
+    # Vision status comes from each model's config.json (vision_config present) on the oMLX host, 2026-11-27.
+    # baseUrl is the container view of the Mac (Apple container runner). seed-omp-srt-homes.sh rewrites it to
+    # localhost for the srt runner.
     models:
       # Vision-capable (image + text)
-      - id: Qwen3.8-27B-MLX-4bit
+      - id: Inkling-2-Mini-oQ4e-mtp
         input: [text, image]
-      - id: Qwen3.8-27B-oQ4e-fp16-mtp
+      - id: Qwen3.8-27B-pi-adapted-MLX-4bit
+        input: [text, image]
+      - id: Qwen3.8-27B-pi-adapted-MLX-6bit
         input: [text, image]
       - id: Tiel-Coder-35B-A3B-MLX-oQ4e
         input: [text, image]
       - id: Tiel-Coder-35B-A3B-MLX-oQ4e-MTP
         input: [text, image]
+      - id: Ternary-Bonsai-2-27B-MTPLX-Optimized-Speed
+        input: [text, image]
       - id: Ternary-Bonsai-27B-mlx-2bit
+        input: [text, image]
+      - id: granite-vision-4.1-4b-oQ4
         input: [text, image]
       # Text only
       - id: Jan-code-4b-MLX-mxfp4
+        input: [text]
+      - id: Ling-3.0-tiny-oQ6e
+        input: [text]
+      - id: Mellum2.1-12B-A2.5B-Instruct-mlx-mxfp4
+        input: [text]
+      - id: SenseNova-Loop-9B-Preview-MLX-6bit
+        input: [text]
+      - id: granite-4.0-h-350m-6bit
         input: [text]
       - id: granite-4.2-3b-MLX-8bit
         input: [text]

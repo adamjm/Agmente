@@ -2,5 +2,5 @@ providers:
   webSearchOrder: []
 setupVersion: 2
 modelRoles:
-  default: omlx/Qwen3.8-27B-MLX-4bit
+  default: omlx/Qwen3.8-27B-pi-adapted-MLX-4bit
 defaultThinkingLevel: auto

@@ -579,7 +579,7 @@ This section adds Claude Code as a second runner, next to Bob, under the `srt` r
 
    The gateway refuses to start when the secrets file is missing or too open, or when an `srt` runner has no domain.
 
-7. **Confirm it works.** In the app, start a session in a project and choose the Claude Code runner. Send a short prompt. The first turn starts `claude-agent-acp` under `srt`, which takes a few seconds. **Verify:** this path was not run through the ACP Code gateway at the time of writing. If the turn fails:
+7. **Confirm it works.** In the app, start a session in a project and choose the Claude Code runner. Send a short prompt. The first turn starts `claude-agent-acp` under `srt`, which takes a few seconds. Run through the live gateway on 2026-11-27 (RESULTS): a prompt to the Claude runner returned an answer. If the turn fails:
 
    | Symptom | Cause | Change |
    | --- | --- | --- |
