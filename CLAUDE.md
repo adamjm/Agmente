@@ -55,4 +55,5 @@ A "fail" result is a valid outcome. Do not change a test to make it pass.
 - Go unit tests: `(cd gateway && go test ./...)`
 - Gateway latency (NFR-1, NFR-2): `node gateway/test/bench.mjs` (same `ACPCODE_GATEWAY_CMD`)
 - App tests (macOS): `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'platform=iOS Simulator,name=iPhone 17' test`
+- App tests on a Mac (Designed for iPad, D-123): `xcodebuild -project ACPCode.xcodeproj -scheme ACPCode -destination 'id=<Mac id from -showdestinations>,arch=arm64' -allowProvisioningUpdates DEVELOPMENT_TEAM=JNPGD7477Q -only-testing:ACPCodeTests test`
 - New token: `gateway/bin/acpcode-gateway new-token <device-id> <identity>`

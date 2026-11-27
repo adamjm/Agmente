@@ -82,6 +82,29 @@ struct DesignTokenTableContrastTests {
         }
     }
 
+    /// Designed for iPad on a Mac: the dark system surfaces are row 323232, grouped 1E1E1E (and 202020 with
+    /// Increase Contrast). Measured on macOS 27 with iOS SDK 27.2.
+    @Test func macDarkTokensMeetContrastOnTheMacDarkSurfaces() {
+        let surfaces = [0x323232, 0x1E1E1E, 0x202020].map { ForkContrast.RGB(hex: UInt32($0)) }
+        for tone in ForkTone.allCases {
+            let text = ForkContrast.RGB(hex: ForkTokenTable.hex(tone, .dark, onMac: true))
+            for surface in surfaces {
+                let fill = text.over(surface, alpha: ForkTokenTable.fillAlpha(.dark))
+                #expect(ForkContrast.ratio(text, surface) >= ForkContrast.textMinimum, Comment(rawValue: "\(tone) mac dark on surface"))
+                #expect(ForkContrast.ratio(text, fill) >= ForkContrast.textMinimum, Comment(rawValue: "\(tone) mac dark on fill"))
+            }
+        }
+        // Tones the Mac does not override keep the iOS value.
+        #expect(ForkTokenTable.hex(.approval, .dark, onMac: true) == ForkTokenTable.hex(.approval, .dark))
+        #expect(ForkTokenTable.hex(.ok, .dark, onMac: true) == ForkTokenTable.hex(.ok, .dark))
+        // Light and high contrast appearances are not overridden on the Mac.
+        for tone in ForkTone.allCases {
+            for appearance in [ForkAppearance.light, .lightHighContrast, .darkHighContrast] {
+                #expect(ForkTokenTable.hex(tone, appearance, onMac: true) == ForkTokenTable.hex(tone, appearance))
+            }
+        }
+    }
+
     @Test func fillAlphaMatchesThePlan() {
         #expect(ForkTokenTable.fillAlpha(.light) == 0.12)
         #expect(ForkTokenTable.fillAlpha(.lightHighContrast) == 0.12)
@@ -171,7 +194,7 @@ struct DesignTokensUIKitContrastTests {
     @Test func resolvedColourTokensMatchTheTable() {
         for (appearance, traits) in Self.appearances {
             for tone in ForkTone.allCases {
-                let expected = ForkContrast.RGB(hex: ForkTokenTable.hex(tone, appearance))
+                let expected = ForkContrast.RGB(hex: ForkTokenTable.hex(tone, appearance, onMac: ProcessInfo.processInfo.isiOSAppOnMac))
                 let (text, textAlpha) = Self.rgb(ForkColor.uiColor(tone).resolvedColor(with: traits))
                 let label = "\(tone) \(appearance)"
                 #expect(Self.close(text, expected), Comment(rawValue: "\(label) text token"))

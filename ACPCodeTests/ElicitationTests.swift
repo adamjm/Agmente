@@ -397,6 +397,9 @@ final class ElicitationFormModelTests: XCTestCase {
 
     /// The model keeps content values out of logs and out of the console: no print, dump or logger call.
     func testContentValuesAreNeverLogged() throws {
+        // Designed for iPad on Mac runs in the app sandbox, which cannot read the source tree (#filePath).
+        // The iOS simulator run covers this test.
+        try XCTSkipIf(ProcessInfo.processInfo.isiOSAppOnMac, "The Mac sandbox cannot read the source tree")
         let testFile = URL(fileURLWithPath: #filePath)
         let source = testFile
             .deletingLastPathComponent()

@@ -7,6 +7,9 @@ import ACPClient
 final class CodexThreadReadMergeFixtureTests: XCTestCase {
 
     func testThreadReadMergeFixturesFromArtifacts() throws {
+        // Designed for iPad on Mac runs in the app sandbox, which cannot read the repo's fixture folder (#filePath).
+        // The iOS simulator run covers this test.
+        try XCTSkipIf(ProcessInfo.processInfo.isiOSAppOnMac, "The Mac sandbox cannot read the fixture folder in the source tree")
         let fixtureURLs = try loadFixtureURLs()
         XCTAssertFalse(fixtureURLs.isEmpty, "Expected at least one fixture file")
 

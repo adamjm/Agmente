@@ -48,7 +48,8 @@ enum ForkColor {
     private static func uiColorOrNS(_ tone: ForkTone, fill: Bool) -> UIColor {
         UIColor { traits in
             let a = appearance(for: traits)
-            return rgbColor(ForkTokenTable.hex(tone, a), alpha: fill ? ForkTokenTable.fillAlpha(a) : 1)
+            return rgbColor(ForkTokenTable.hex(tone, a, onMac: ProcessInfo.processInfo.isiOSAppOnMac),
+                            alpha: fill ? ForkTokenTable.fillAlpha(a) : 1)
         }
     }
 

@@ -23,7 +23,17 @@ enum ForkAppearance: CaseIterable {
 
 enum ForkTokenTable {
     /// Text and glyph colour for a status tone, as 0xRRGGBB.
-    static func hex(_ tone: ForkTone, _ appearance: ForkAppearance) -> UInt32 {
+    /// `onMac` is true for the iPad app running on a Mac (Designed for iPad). There the system dark surfaces are
+    /// lighter (row 323232, grouped 1E1E1E) than on iOS (1C1C1E, 000000), so three dark tones are lifted to keep 4.5:1.
+    static func hex(_ tone: ForkTone, _ appearance: ForkAppearance, onMac: Bool = false) -> UInt32 {
+        if onMac, appearance == .dark {
+            switch tone {
+            case .running: return 0x88BBFF
+            case .error: return 0xFF9C94
+            case .neutral: return 0xB9B9BC
+            case .approval, .ok: break
+            }
+        }
         switch (tone, appearance) {
         case (.running, .light): return 0x0057B8
         case (.approval, .light): return 0x7A4300
