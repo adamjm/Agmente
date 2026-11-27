@@ -56,10 +56,12 @@ type projectJSON struct {
 	WatchSkip []string `json:"watchSkip,omitempty"`
 	// Runner is the id of the agent this project runs (multi-runner). Fixed at creation.
 	Runner string `json:"runner"`
+	// AutoApprove is true when the gateway answers this project's permission requests itself (D-124).
+	AutoApprove bool `json:"autoApprove"`
 }
 
 func toProjectJSON(p store.Project) projectJSON {
-	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip, Runner: p.Runner}
+	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip, Runner: p.Runner, AutoApprove: p.AutoApprove}
 	if p.DefaultMode != "" {
 		mode := p.DefaultMode
 		out.DefaultMode = &mode
@@ -116,6 +118,8 @@ func (s *Server) handleExtension(ctx context.Context, who audit.Who, method stri
 		return s.addProjectList(ctx, who, params, "denyPaths")
 	case "_acpcode/projects/addWatchSkip":
 		return s.addProjectList(ctx, who, params, "watchSkip")
+	case "_acpcode/projects/setAutoApprove":
+		return s.setAutoApprove(ctx, who, params)
 	case "_acpcode/sessions/index":
 		return s.sessionIndex(ctx, who, params)
 	case "_acpcode/sessions/read":

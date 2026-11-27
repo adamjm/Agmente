@@ -599,7 +599,8 @@ func (a *projectAgent) detach(c *client) {
 
 // agentRequest handles a request from the agent. A permission request goes to the sockets
 // attached to its session under a gateway id; the first answer goes back (D-009: the gateway
-// itself never answers one). Other agent requests are refused: the phone offers no fs or terminal.
+// itself never answers one, except for a project with auto-approve on, D-124). Other agent requests
+// are refused: the phone offers no fs or terminal.
 func (a *projectAgent) agentRequest(proc *agentProcess, msg *jsonv.Value, method string, id *jsonv.Value) {
 	if method == "elicitation/create" {
 		a.elicitationRequest(proc, msg, id)
@@ -610,6 +611,9 @@ func (a *projectAgent) agentRequest(proc *agentProcess, msg *jsonv.Value, method
 		return
 	}
 	sid, _ := msg.Get("params").Get("sessionId").StringValue()
+	if a.s.tryAutoApprove(a, proc, id, sid, msg.Get("params")) { // D-124: this project's owner opted in
+		return
+	}
 	gwID := a.s.addPermission(a, proc, id, sid, msg.Get("params"))
 	msg.Obj["id"] = &jsonv.Value{Kind: jsonv.String, Str: gwID}
 	out := msg.Marshal()

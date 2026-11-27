@@ -234,3 +234,61 @@ test('a gateway restart closes open approvals, and new approval ids do not repea
     await dirs.cleanup();
   }
 });
+
+test('D-124: a project with autoApprove on answers permission requests itself with an allow option; off asks the phone', async () => {
+  const gw = await startGateway();
+  try {
+    const a = (await connect(gw.url, auth())).ws;
+    const { project, sessionId } = await useProject(gw, a);
+    assert.equal(project.autoApprove, false, 'off by default');
+
+    // Bad input is refused and changes nothing.
+    assert.equal((await rpc(a, '_acpcode/projects/setAutoApprove', { projectId: project.id })).error.code, -32602);
+    assert.equal((await rpc(a, '_acpcode/projects/setAutoApprove', { projectId: project.id, enabled: 'yes' })).error.code, -32602);
+    assert.equal((await rpc(a, '_acpcode/projects/setAutoApprove', { projectId: 'nope', enabled: true })).error.code, -32602);
+
+    // On: the turn finishes with no phone answer; the agent got allow_once, not allow_always.
+    const on = await rpc(a, '_acpcode/projects/setAutoApprove', { projectId: project.id, enabled: true });
+    assert.equal(on.result.project.autoApprove, true);
+    const listed = (await rpc(a, '_acpcode/projects/list', {})).result.projects.find((p) => p.id === project.id);
+    assert.equal(listed.autoApprove, true);
+    assert.deepEqual((await rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'run it [permission]' }] })).result, { stopReason: 'end_turn' });
+    let answers = await agentAnswers(a);
+    assert.equal(answers.length, 1);
+    assert.deepEqual(answers[0].response.result.outcome, { outcome: 'selected', optionId: 'proceed_once' });
+    const row = query(gw.config.stateDir, 'SELECT answered_by, outcome FROM approvals')[0];
+    assert.equal(row.answered_by, 'auto');
+    assert.deepEqual(JSON.parse(row.outcome), { outcome: 'selected', optionId: 'proceed_once' });
+    assert.equal((await rpc(a, '_acpcode/approvals/pending', {})).result.approvals.length, 0, 'nothing was left for the phone');
+
+    // A request with only reject options is not auto-answered: the phone is asked. (The fake agent
+    // always offers allows, so this case is the Go unit test's; here we check allow-only still works.)
+    assert.deepEqual((await rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'run it [permission:allow-only]' }] })).result, { stopReason: 'end_turn' });
+    answers = await agentAnswers(a);
+    assert.deepEqual(answers.at(-1).response.result.outcome, { outcome: 'selected', optionId: 'proceed_once' });
+
+    // Off again: the request waits for the phone as before.
+    assert.equal((await rpc(a, '_acpcode/projects/setAutoApprove', { projectId: project.id, enabled: false })).result.project.autoApprove, false);
+    const { turn, req } = await askPermission(a, collect(a), sessionId);
+    assert.equal((await rpc(a, '_acpcode/approvals/pending', {})).result.approvals.length, 1, 'asked the phone');
+    assert.deepEqual((await answer(a, { approvalId: req.id, optionId: 'cancel' })).result, {});
+    await turn;
+    a.close();
+  } finally {
+    await gw.stop();
+  }
+});
+
+test('D-124: the switch is per project: another project still asks the phone', async () => {
+  const gw = await startGateway();
+  try {
+    const a = (await connect(gw.url, auth())).ws;
+    const { project } = await useProject(gw, a);
+    await rpc(a, '_acpcode/projects/setAutoApprove', { projectId: project.id, enabled: true });
+    const list = (await rpc(a, '_acpcode/projects/list', {})).result.projects;
+    for (const p of list) assert.equal(p.autoApprove, p.id === project.id, `${p.name}`);
+    a.close();
+  } finally {
+    await gw.stop();
+  }
+});

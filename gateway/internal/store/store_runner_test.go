@@ -58,6 +58,9 @@ func TestSchema8ProjectsGetNoRunnerUntilTheBackfill(t *testing.T) {
 	if err := s.CreateProject(ctx, Project{ID: "dddddddddddd", Name: "old", Path: "/r/d", Created: time.Now().UTC().Format(time.RFC3339)}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`ALTER TABLE projects DROP COLUMN auto_approve`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`ALTER TABLE projects DROP COLUMN runner`); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +74,8 @@ func TestSchema8ProjectsGetNoRunnerUntilTheBackfill(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 9 {
-		t.Fatalf("schema version = %d, %v; want 9", version, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 10 {
+		t.Fatalf("schema version = %d, %v; want 10", version, err)
 	}
 	if n, err := s.AssignUnsetRunners(ctx, "bob"); err != nil || n != 1 {
 		t.Fatalf("backfill = %d, %v; want the one old project", n, err)
@@ -80,5 +83,40 @@ func TestSchema8ProjectsGetNoRunnerUntilTheBackfill(t *testing.T) {
 	p, err := s.ProjectByID(ctx, "dddddddddddd")
 	if err != nil || p == nil || p.Runner != "bob" {
 		t.Fatalf("old project after backfill = %+v, %v", p, err)
+	}
+}
+
+// Schema 10 (D-124): auto-approve is off by default, per project, and survives a read.
+func TestProjectAutoApproveDefaultsOffAndIsPerProject(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "state", "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	created := time.Now().UTC().Format(time.RFC3339)
+	for _, p := range []Project{
+		{ID: "aaaaaaaaaaaa", Name: "one", Path: "/r/a", Created: created, Runner: "bob"},
+		{ID: "bbbbbbbbbbbb", Name: "two", Path: "/r/b", Created: created, Runner: "omp"},
+	} {
+		if err := s.CreateProject(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p, _ := s.ProjectByID(ctx, "aaaaaaaaaaaa"); p == nil || p.AutoApprove {
+		t.Fatalf("a new project must not auto-approve: %+v", p)
+	}
+	p, err := s.SetAutoApprove(ctx, "aaaaaaaaaaaa", true)
+	if err != nil || p == nil || !p.AutoApprove {
+		t.Fatalf("SetAutoApprove(on) = %+v, %v", p, err)
+	}
+	if other, _ := s.ProjectByID(ctx, "bbbbbbbbbbbb"); other == nil || other.AutoApprove {
+		t.Fatalf("the other project changed: %+v", other)
+	}
+	if p, err := s.SetAutoApprove(ctx, "aaaaaaaaaaaa", false); err != nil || p == nil || p.AutoApprove {
+		t.Fatalf("SetAutoApprove(off) = %+v, %v", p, err)
+	}
+	if p, err := s.SetAutoApprove(ctx, "nope", true); err != nil || p != nil {
+		t.Fatalf("an unknown project = %+v, %v; want nil, nil", p, err)
 	}
 }

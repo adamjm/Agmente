@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -99,6 +99,12 @@ var schemaV4 = []string{
 // (AssignUnsetRunners), so a project keeps the agent it was made with.
 var schemaV9 = []string{
 	`ALTER TABLE projects ADD COLUMN runner TEXT`,
+}
+
+// schemaV10 adds the project's auto-approve switch (D-124): 1 means the gateway answers the
+// project's permission requests with an allow option. NULL and 0 mean it asks the phone.
+var schemaV10 = []string{
+	`ALTER TABLE projects ADD COLUMN auto_approve INTEGER`,
 }
 
 // schemaV5 adds a project's watcher skip list (D-065): a JSON array, NULL when none.
@@ -189,7 +195,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}, {9, schemaV9}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}, {9, schemaV9}, {10, schemaV10}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -272,6 +278,9 @@ type Project struct {
 	// Runner is the id of the agent this project runs, from the gateway config's runners. It is
 	// fixed at creation. "" only before the startup backfill (AssignUnsetRunners).
 	Runner string
+	// AutoApprove makes the gateway answer this project's permission requests with an allow
+	// option instead of asking the phone (D-124). Off by default.
+	AutoApprove bool
 }
 
 // ErrDuplicatePath means a project with the same path is already registered.
@@ -300,6 +309,23 @@ func (s *Store) CreateProject(ctx context.Context, p Project) error {
 	return err
 }
 
+// SetAutoApprove turns a project's auto-approve switch on or off (D-124). It returns the project as
+// stored, or nil when no project has this id.
+func (s *Store) SetAutoApprove(ctx context.Context, id string, on bool) (*Project, error) {
+	v := 0
+	if on {
+		v = 1
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET auto_approve = ? WHERE id = ?`, v, id)
+	if err != nil {
+		return nil, err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return nil, err
+	}
+	return s.ProjectByID(ctx, id)
+}
+
 // AssignUnsetRunners gives every project with no runner the id runner, once. The gateway calls it
 // at start with its configured default, so projects made before multi-runner keep the agent they
 // were made with. It returns how many projects it changed.
@@ -312,15 +338,17 @@ func (s *Store) AssignUnsetRunners(ctx context.Context, runner string) (int64, e
 }
 
 // projectColumns is the SELECT list of every project read, in the order scanProject reads it.
-const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, ''), COALESCE(runner, '')`
+const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, ''), COALESCE(runner, ''), COALESCE(auto_approve, 0)`
 
 // scanProject reads one row of projectColumns.
 func scanProject(row interface{ Scan(...any) error }) (Project, error) {
 	var p Project
 	var deny, skip string
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip, &p.Runner); err != nil {
+	var auto int
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip, &p.Runner, &auto); err != nil {
 		return Project{}, err
 	}
+	p.AutoApprove = auto == 1
 	var err error
 	if p.DenyPaths, err = parseList("stored denyPaths", deny); err != nil {
 		return Project{}, err

@@ -122,7 +122,7 @@ func TestIntentScopeAllowsInitializeAndOnlyItsOwnCalls(t *testing.T) {
 func TestFullScopeTokenIsAllowedEverything(t *testing.T) {
 	methods := []string{
 		"initialize", "session/new", "session/load", "session/list", "session/prompt", "session/cancel",
-		"_acpcode/sessions/create", "_acpcode/sessions/prompt", "_acpcode/projects/create",
+		"_acpcode/sessions/create", "_acpcode/sessions/prompt", "_acpcode/projects/create", "_acpcode/projects/setAutoApprove",
 		"_acpcode/connector/approve", "_acpcode/connector/revoke", "_acpcode/git/push", "", "some/other",
 	}
 	mcp, err := jsonv.Parse([]byte(`{"mcpServers":[]}`))
@@ -181,5 +181,14 @@ func TestIntentScopeDropsPermissionAnswers(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"event":"scope_denied"`) {
 		t.Fatalf("the dropped answer is not audited: %s", logs.String())
+	}
+}
+
+// D-124: only a full-scope token may switch a project to auto-approve.
+func TestOnlyFullScopeMaySetAutoApprove(t *testing.T) {
+	for _, scope := range []string{config.ScopeIntent, config.ScopeConnector, ""} {
+		if rerr := scopeDenial(scope, "_acpcode/projects/setAutoApprove", nil); rerr == nil || rerr.Code != rpcForbidden {
+			t.Fatalf("scope %q was not refused setAutoApprove: %+v", scope, rerr)
+		}
 	}
 }

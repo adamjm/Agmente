@@ -1,13 +1,15 @@
 package server
 
-// The approval queue (FR-22, NFR-10, PLAN 3.9, D-009, D-031).
+// The approval queue (FR-22, NFR-10, PLAN 3.9, D-009, D-031). A project the owner switched to
+// auto-approve is the one exception to D-009 (D-124, autoapprove.go).
 //
 // Every session/request_permission from an agent becomes an approval with a gateway id
 // (acpcode-perm-<n>). The phones answer it, with `_acpcode/approvals/answer` or with a plain
 // JSON-RPC response to that id. The first answer goes to the agent; later ones are told it was
 // answered elsewhere. With no answer within limits.approvalTimeoutSeconds, the gateway sends a
 // reject option, or `cancelled` when the request offers none. No path here sends an allow option
-// on its own (D-009): the only answers the gateway writes itself are rejectOutcome and cancelled.
+// on its own (D-009): the only answers the gateway writes itself are rejectOutcome and cancelled,
+// and allowOutcome for a project with auto-approve on (D-124).
 
 import (
 	"context"
@@ -53,8 +55,15 @@ func (s *Server) approvalTimeout() time.Duration {
 	return time.Duration(s.cfg.Limits.ApprovalTimeoutSeconds) * time.Second
 }
 
-// addPermission opens an approval for an agent request and starts its timeout.
+// addPermission opens an approval for an agent request, starts its timeout and tells the phones.
 func (s *Server) addPermission(a *projectAgent, proc *agentProcess, agentID *jsonv.Value, sessionID string, params *jsonv.Value) string {
+	p := s.openPermission(a, proc, agentID, sessionID, params)
+	s.pushNotify(push.ApprovalNeeded, a.id, sessionID, approvalSummary(p.toolCall))
+	return p.id
+}
+
+// openPermission records an approval and starts its timeout. It sends no push.
+func (s *Server) openPermission(a *projectAgent, proc *agentProcess, agentID *jsonv.Value, sessionID string, params *jsonv.Value) *permission {
 	p := &permission{
 		agent: a, proc: proc, agentID: agentID, session: sessionID,
 		toolCall: params.Get("toolCall"), options: params.Get("options"),
@@ -74,8 +83,7 @@ func (s *Server) addPermission(a *projectAgent, proc *agentProcess, agentID *jso
 	if err != nil {
 		s.audit.Log("store_error", a.fields(audit.Fields{Reason: "insert_approval"}))
 	}
-	s.pushNotify(push.ApprovalNeeded, a.id, sessionID, approvalSummary(p.toolCall))
-	return p.id
+	return p
 }
 
 // approvalSummary is the short text the approval push shows: the tool call's title with a verb for
