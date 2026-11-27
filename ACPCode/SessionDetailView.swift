@@ -66,10 +66,15 @@ struct SessionDetailView: View {
 #endif
     }
 
-    /// The agent's title when it sent one (FR-33), else the session summary's title.
+    /// The agent's title when it sent one (FR-33), else the gateway's (it names a session from its first prompt),
+    /// else the session summary's title.
     private var sessionDisplayTitle: String {
         if let title = sessionViewModel.forkMeta.title { return title }
         let id = serverViewModel.sessionId
+        if serverViewModel.isGatewayServer,
+           let title = model.gatewayHome.sessions.first(where: { $0.sessionId == id })?.title, !title.isEmpty {
+            return title
+        }
         return serverViewModel.sessionSummaries.first(where: { $0.id == id })?.title ?? "Session"
     }
 
@@ -239,7 +244,19 @@ struct SessionDetailView: View {
                             }
                             .accessibilityIdentifier("sessionStopMenuItem")
                         }
-                        if model.canDeleteSessionsLocally {
+                        if serverViewModel.isGatewayServer {
+                            // The gateway removes the session for every device and asks the agent too. The root
+                            // view shows the confirmation, and a running session is refused there.
+                            Button(role: .destructive) {
+                                let sessionId = serverViewModel.sessionId
+                                let title = sessionViewModel.forkMeta.title
+                                    ?? model.gatewayHome.sessions.first(where: { $0.sessionId == sessionId })?.title
+                                model.gatewaySessionActions.requestDelete(sessionId: sessionId, title: title)
+                            } label: {
+                                Label(GatewayDeleteCopy.button, systemImage: "trash")
+                            }
+                            .accessibilityIdentifier("sessionDeleteMenuItem")
+                        } else if model.canDeleteSessionsLocally {
                             Button(role: .destructive) {
                                 showDeleteSessionConfirm = true
                             } label: {

@@ -18,6 +18,8 @@ struct ProjectDetailView: View {
     var runners: [GatewayRunner] = []
     /// The gateway's default runner id, for the new-session sheet.
     var defaultRunner: String?
+    /// Asks to delete a session (the caller confirms first). Nil hides the action.
+    var onDeleteSession: ((GatewaySession) -> Void)?
 
     @State private var showingNewSession = false
     /// The Upload File sheet for this project (D-115).
@@ -132,6 +134,14 @@ struct ProjectDetailView: View {
                     .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets())
                     .accessibilityIdentifier("gatewaySession.\(session.sessionId)")
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if let onDeleteSession, !GatewayStopRules.canStopTurn(session.status) {
+                            Button(role: .destructive) { onDeleteSession(session) } label: {
+                                Label(GatewayDeleteCopy.button, systemImage: "trash")
+                            }
+                            .accessibilityIdentifier("gatewaySessionDeleteSwipe.\(session.sessionId)")
+                        }
+                    }
                 }
             } header: {
                 Text("Sessions")

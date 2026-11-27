@@ -530,6 +530,14 @@ func (s *Store) SetSessionTitle(ctx context.Context, sessionID, title string) er
 	return err
 }
 
+// SetSessionTitleIfEmpty records a provisional title taken from the first prompt. It changes nothing
+// when the session already has a title, so the agent's own title is never overwritten by it.
+func (s *Store) SetSessionTitleIfEmpty(ctx context.Context, sessionID, title string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET title = ? WHERE session_id = ? AND (title IS NULL OR title = '')`, title, sessionID)
+	return err
+}
+
 // SetSessionStatus records how a session's last turn ended: "idle" or "error".
 func (s *Store) SetSessionStatus(ctx context.Context, sessionID, status string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET status = ? WHERE session_id = ?`, status, sessionID)

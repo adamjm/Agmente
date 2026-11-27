@@ -34,6 +34,21 @@ struct GatewaySessionDialogs: ViewModifier {
                 Text(GatewayStopCopy.agentStopMessage(prompt.candidates))
             }
             .confirmationDialog(
+                GatewayDeleteCopy.question,
+                isPresented: Binding(get: { actions.deletion != nil }, set: { if !$0 { actions.deletion = nil } }),
+                titleVisibility: .visible,
+                presenting: actions.deletion
+            ) { prompt in
+                Button(GatewayDeleteCopy.button, role: .destructive) {
+                    Task { await actions.confirmDelete(prompt) }
+                }
+                .accessibilityIdentifier("gatewayDeleteConfirm")
+                Button("Cancel", role: .cancel) {}
+                    .accessibilityIdentifier("gatewayDeleteCancel")
+            } message: { prompt in
+                Text("\u{201C}\(prompt.title)\u{201D}. \(GatewayDeleteCopy.message)")
+            }
+            .confirmationDialog(
                 GatewayRemovalCopy.title,
                 isPresented: Binding(get: { actions.removal != nil }, set: { if !$0 { actions.removal = nil } }),
                 titleVisibility: .visible,

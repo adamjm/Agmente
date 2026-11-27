@@ -191,6 +191,14 @@ extension SidebarGatewaySections {
             }
             .accessibilityIdentifier("gatewayAgentStop.\(session.sessionId)")
         }
+        // A running session cannot be deleted: the gateway refuses it, so the item is off until the turn ends.
+        Button(role: .destructive) {
+            actions.requestDelete(sessionId: session.sessionId, title: session.title)
+        } label: {
+            Label(GatewayDeleteCopy.button, systemImage: "trash")
+        }
+        .disabled(GatewayStopRules.canStopTurn(session.status))
+        .accessibilityIdentifier("gatewaySessionDelete.\(session.sessionId)")
     }
 }
 

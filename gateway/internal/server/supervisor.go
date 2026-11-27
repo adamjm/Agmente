@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -375,7 +376,8 @@ func (a *projectAgent) notify(msg *jsonv.Value) {
 				a.setMode(sid, mode)
 			}
 		case "session_info_update":
-			if title, ok := u.Get("title").StringValue(); ok {
+			// An empty title would blank the row on the phone, so it leaves the last title in place.
+			if title, ok := u.Get("title").StringValue(); ok && strings.TrimSpace(title) != "" {
 				a.mu.Unlock()
 				if err := a.s.store.SetSessionTitle(context.Background(), sid, title); err != nil {
 					a.s.audit.Log("store_error", a.fields(audit.Fields{Reason: "session_title"}))
@@ -773,7 +775,8 @@ func (a *projectAgent) forward(c *client, msg *jsonv.Value, method string, isReq
 		if turn != "" {
 			// Logged before the agent sees the prompt, so it precedes every update of the turn.
 			a.logTurnStarted(turn, msg.Get("params").Get("prompt"))
-			a.snapshotTurnStart(turn) // before the agent sees the prompt, so it cannot change files first (D-036)
+			a.nameFromPrompt(turn, msg.Get("params").Get("prompt")) // a title until the agent sends its own
+			a.snapshotTurnStart(turn)                               // before the agent sees the prompt, so it cannot change files first (D-036)
 		}
 		full, werr := a.write(proc, append(msg.Marshal(), '\n')) // after an exit, the exit path answers
 		if turnReq != nil {

@@ -608,6 +608,11 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 			}
 			return
 		}
+		if method == "_acpcode/sessions/delete" && !id.IsNull() {
+			// It can wait for the agent (sessions_delete.go): its own goroutine, as a stop is.
+			go s.serveDelete(who, id, msg.Get("params"), reply)
+			return
+		}
 		if method == "_acpcode/sessions/stop" && !id.IsNull() {
 			// Stopping can wait for the agent (D-106): answer from a goroutine, as git requests do.
 			go s.serveStop(ctx, who, id, msg.Get("params"), reply)

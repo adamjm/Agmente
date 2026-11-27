@@ -40,6 +40,29 @@ enum GatewayUnknownSession {
     }
 }
 
+/// The words for deleting a session on the gateway.
+enum GatewayDeleteCopy {
+    static let title = "Delete session"
+    static let question = "Delete this session?"
+    static let button = "Delete Session"
+    static let untitled = "New Chat"
+    static let message = "The session and its chat history are removed from the gateway and from this phone, and Bob is asked to delete it too. This cannot be undone."
+    static let running = "This session is running. Stop it first, then delete it."
+    static let oldGateway = "This gateway cannot delete sessions yet. Update the gateway."
+
+    /// The text for a refused or failed delete.
+    static func failure(_ error: Error) -> String {
+        if let gateway = error as? GatewayError {
+            switch gateway {
+            case .rpc(-32001, _): return running
+            case .rpc(-32601, _): return oldGateway
+            default: return gateway.message
+            }
+        }
+        return error.localizedDescription
+    }
+}
+
 /// The words for removing a phone record. Shared by every confirmation that removes one.
 enum GatewayRemovalCopy {
     static let title = "Remove from this phone?"

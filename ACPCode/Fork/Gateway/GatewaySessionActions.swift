@@ -27,12 +27,21 @@ final class GatewaySessionActions: ObservableObject {
         let title: String
     }
 
+    /// The delete confirmation for a session the gateway lists.
+    struct DeletePrompt: Identifiable, Equatable {
+        let id = UUID()
+        let sessionId: String
+        let title: String
+    }
+
     /// The outcome of an action, shown as one alert.
     @Published var notice: Notice?
     /// The agent-scope confirmation, while it is open.
     @Published var agentStop: AgentStopPrompt?
     /// The removal confirmation for a record the gateway does not know, while it is open.
     @Published var removal: RemovalPrompt?
+    /// The delete confirmation, while it is open.
+    @Published var deletion: DeletePrompt?
     /// The phone-only sheet, while it is open.
     @Published var showingPhoneOnly = false
 
@@ -128,6 +137,29 @@ final class GatewaySessionActions: ObservableObject {
             }
         }
         removal = RemovalPrompt(sessionId: sessionId, title: record.title ?? "New Chat")
+    }
+
+    /// Opens the delete confirmation. Nothing is sent until the person agrees.
+    func requestDelete(sessionId: String, title: String?) {
+        deletion = DeletePrompt(sessionId: sessionId, title: title ?? GatewayDeleteCopy.untitled)
+    }
+
+    /// Deletes the session on the gateway, then drops this phone's copy. The gateway removes it for every device
+    /// and asks the agent to delete it too. A session that is running is refused, and stays.
+    func confirmDelete(_ prompt: DeletePrompt) async {
+        deletion = nil
+        guard let client = client() else { return notify(GatewayDeleteCopy.title, GatewayStopCopy.notConnected) }
+        do {
+            _ = try await client.deleteSession(sessionId: prompt.sessionId)
+        } catch {
+            if GatewayUnknownSession.isUnknown(error) {
+                // The gateway has no such session, so only this phone's copy is left to remove.
+            } else {
+                return notify(GatewayDeleteCopy.title, GatewayDeleteCopy.failure(error))
+            }
+        }
+        removeFromPhone(sessionId: prompt.sessionId)
+        await home.refresh()
     }
 
     /// The person confirmed removing the phone's copy of a record. Only this phone changes.

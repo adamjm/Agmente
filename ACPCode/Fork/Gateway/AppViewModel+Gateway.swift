@@ -56,6 +56,8 @@ extension AppViewModel {
             Task { await refreshGatewayApprovals() }
         case .turnEnded(let stopReason, _):
             sessionViewModel?.handleStopReason(stopReason ?? "end_turn", serverId: serverId, sessionId: event.sessionId)
+            // The agent's title arrives with the first turn: reload the list now, not at the next 15 s poll.
+            Task { await gatewayHome.refresh() }
             if let client = server.gatewayClient {
                 // Looking at the session: its finished turns are read (D-030).
                 let seq = event.seq, id = event.sessionId

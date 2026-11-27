@@ -386,7 +386,10 @@ private extension ContentView {
                 onOpenSession: { sessionId in navigationPath.append(.session(sessionId)) },
                 onCreateSession: { project, mcpIDs, choice in await startSession(in: project, mcpIDs: mcpIDs, choice: choice) },
                 runners: model.selectedGatewayInfo?.runners ?? [],
-                defaultRunner: model.selectedGatewayInfo?.defaultRunner
+                defaultRunner: model.selectedGatewayInfo?.defaultRunner,
+                onDeleteSession: { session in
+                    model.gatewaySessionActions.requestDelete(sessionId: session.sessionId, title: session.title)
+                }
             )
         case .folderSessions(let path, let displayName):
             FolderSessionsView(

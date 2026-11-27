@@ -172,3 +172,65 @@ test('index survives a gateway restart and starts no agent; a deleted session le
     await dirs.cleanup();
   }
 });
+
+test('the first prompt names a session at once, and the agent title replaces it', async () => {
+  const gw = await startGateway();
+  try {
+    const a = (await connect(gw.url, auth())).ws;
+    const { sessionId } = await useProject(gw, a);
+    // [slow] keeps the turn open, so the title seen first is the gateway's, before the agent sends its own.
+    const turn = rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: '\n  rename   the widget [chunks:3][slow:150]' }] });
+    await until(async () => (await index(a)).find((s) => s.sessionId === sessionId)?.title, 'a title during the turn');
+    assert.equal(byId(await index(a), sessionId).title, 'rename the widget [chunks:3][slow:150]');
+    await turn;
+    assert.equal(byId(await index(a), sessionId).title, '\n  rename   the widget [chunks:3][slow:150]'.slice(0, 50), "the agent's own title, the first 50 characters of the prompt");
+    a.close();
+  } finally {
+    await gw.stop();
+  }
+});
+
+test('sessions/delete removes the session for every device, and refuses while a turn runs', async () => {
+  const gw = await startGateway();
+  try {
+    const a = (await connect(gw.url, auth())).ws;
+    const { sessionId } = await useProject(gw, a);
+    const turn = rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'long one [chunks:6][slow:200]' }] });
+    await until(async () => byId(await index(a), sessionId)?.status === 'running', 'a running turn');
+    const refused = await rpc(a, '_acpcode/sessions/delete', { sessionId });
+    assert.equal(refused.error?.code, -32001, 'a running session is not deleted');
+    assert.ok(byId(await index(a), sessionId), 'it is still listed');
+    await turn;
+
+    const done = await rpc(a, '_acpcode/sessions/delete', { sessionId });
+    assert.equal(done.result?.deleted, true);
+    assert.equal(done.result?.agent, true, 'the fake agent accepts session/delete');
+    assert.equal(byId(await index(a), sessionId), undefined, 'gone from the index');
+
+    const again = await rpc(a, '_acpcode/sessions/delete', { sessionId });
+    assert.equal(again.error?.code, -32602, 'a second delete says the session is unknown');
+    const noId = await rpc(a, '_acpcode/sessions/delete', {});
+    assert.equal(noId.error?.code, -32602);
+    a.close();
+  } finally {
+    await gw.stop();
+  }
+});
+
+test('sessions/delete removes a session the agent no longer has open, and starts no agent', async () => {
+  const gw = await startGateway();
+  try {
+    const a = (await connect(gw.url, auth())).ws;
+    const { sessionId } = await useProject(gw, a);
+    await rpc(a, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'one' }] });
+    const stop = await rpc(a, '_acpcode/sessions/stop', { sessionId, scope: 'agent' });
+    assert.ok(stop.result, JSON.stringify(stop.error));
+    const done = await rpc(a, '_acpcode/sessions/delete', { sessionId });
+    assert.equal(done.result?.deleted, true);
+    assert.equal(done.result?.agent, false, 'no agent had it open');
+    assert.equal(byId(await index(a), sessionId), undefined);
+    a.close();
+  } finally {
+    await gw.stop();
+  }
+});
