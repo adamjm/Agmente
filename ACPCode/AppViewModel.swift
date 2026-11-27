@@ -1911,12 +1911,31 @@ final class AppViewModel: ObservableObject, ACPClientManagerDelegate, ACPSession
     }
 
     /// A new gateway session with the MCP servers the new-session sheet chose (D-107). Nil sends no key.
-    func sendNewGatewaySession(workingDirectory: String, mcpEnabledIDs: [String]?) {
+    /// `runner` is a runner id other than the project's own, or nil.
+    func sendNewGatewaySession(workingDirectory: String, mcpEnabledIDs: [String]?, runner: String? = nil) {
         guard let serverViewModel = selectedServerViewModel else {
             sendNewSession(workingDirectory: workingDirectory)
             return
         }
-        serverViewModel.startNewSession(workingDirectory: workingDirectory, mcpEnabledIDs: mcpEnabledIDs)
+        serverViewModel.startNewSession(workingDirectory: workingDirectory, mcpEnabledIDs: mcpEnabledIDs, runner: runner)
+    }
+
+    /// Starts a gateway session from the new-session sheet, with the runner and worktree choice. With a worktree,
+    /// the gateway makes it first and the home list is reloaded and shows it. Returns the gateway's message
+    /// when the worktree could not be made (and then nothing is started), else nil.
+    func startGatewaySession(in project: GatewayProject, mcpIDs: [String]?, choice: GatewayNewSessionChoice) async -> String? {
+        await GatewayNewSessionStarter.start(
+            project: project,
+            choice: choice,
+            client: selectedGatewayClient(),
+            reload: { [weak self] child in
+                await self?.gatewayHome.refresh()
+                if let child { self?.gatewayHome.select(projectId: child.id) }
+            },
+            begin: { [weak self] cwd, runner in
+                self?.sendNewGatewaySession(workingDirectory: cwd, mcpEnabledIDs: mcpIDs, runner: runner)
+            }
+        )
     }
 
     /// Update the working directory for a pending (local-only) session.

@@ -8,6 +8,7 @@ import (
 	"net"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"acpcode/gateway/internal/jsonv"
@@ -21,7 +22,9 @@ var srtDomainPattern = regexp.MustCompile(`^(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0
 
 // validateSRT reads the runner block of kind "srt". roots and stateDir are the agent-writable
 // regions: the srt command must not lie inside them, or the sandboxed agent could rewrite it.
-func validateSRT(rv *jsonv.Value, roots []string, stateDir string, add func(string, ...any)) Runner {
+// specs are the parsed runners: each ends with its own allowedDomains and allowRead when it set
+// them, else the shared lists of this block, and must have at least one domain (D-126).
+func validateSRT(rv *jsonv.Value, roots []string, stateDir string, specs []agentSpec, add func(string, ...any)) Runner {
 	r := Runner{Kind: "srt"}
 	for _, key := range rv.Keys {
 		switch key {
@@ -56,38 +59,27 @@ func validateSRT(rv *jsonv.Value, roots []string, stateDir string, add func(stri
 		}
 	}
 
-	dv := rv.Get("allowedDomains")
-	if dv.IsNull() || dv.Kind != jsonv.Array || len(dv.Arr) == 0 || len(dv.Arr) > maxSRTDomains {
-		add("runner.allowedDomains must list 1 to %d hosts the agent may reach (Bob's own service at least), for example \"*.example.com\"", maxSRTDomains)
-	} else {
-		seen := map[string]bool{}
-		for i, item := range dv.Arr {
-			s, ok := item.StringValue()
-			host, _, _ := strings.Cut(s, ":")
-			if !ok || len(s) > 253 || !srtDomainPattern.MatchString(s) || net.ParseIP(strings.TrimPrefix(host, "*.")) != nil || allDigitsTLD(host) {
-				add("runner.allowedDomains[%d] must be a lowercase host name, optionally \"*.\" first and \":port\" last", i)
-				continue
+	if dv := rv.Get("allowedDomains"); !dv.IsNull() {
+		r.AllowedDomains = parseSRTDomains(dv, "runner", add)
+	}
+	r.AllowRead = parseSRTAllowRead(rv.Get("allowRead"), "runner", add)
+
+	// Each runner takes its own lists when it set them, else the shared ones.
+	sharedMissing := false
+	for i := range specs {
+		sp := &specs[i]
+		if !sp.hasDomains {
+			sp.AllowedDomains = slices.Clone(r.AllowedDomains)
+			if rv.Get("allowedDomains").IsNull() {
+				sharedMissing = true
 			}
-			if !seen[s] {
-				seen[s] = true
-				r.AllowedDomains = append(r.AllowedDomains, s)
-			}
+		}
+		if !sp.hasRead {
+			sp.AllowRead = slices.Clone(r.AllowRead)
 		}
 	}
-
-	if av := rv.Get("allowRead"); !av.IsNull() {
-		if av.Kind != jsonv.Array {
-			add("runner.allowRead must be a list of absolute paths")
-		} else {
-			for i, item := range av.Arr {
-				s, ok := item.StringValue()
-				if !ok || !filepath.IsAbs(s) || s == "/" || strings.ContainsAny(s, "*?[]") {
-					add("runner.allowRead[%d] must be an absolute path other than \"/\", with no glob characters", i)
-					continue
-				}
-				r.AllowRead = append(r.AllowRead, filepath.Clean(s))
-			}
-		}
+	if sharedMissing {
+		add("runner.allowedDomains must list 1 to %d hosts the agent may reach (Bob's own service at least), for example \"*.example.com\"; or give every runner its own allowedDomains", maxSRTDomains)
 	}
 
 	if wv := rv.Get("weakerNetworkIsolation"); !wv.IsNull() {
@@ -105,6 +97,51 @@ func validateSRT(rv *jsonv.Value, roots []string, stateDir string, add func(stri
 		}
 	}
 	return r
+}
+
+// parseSRTDomains reads an allowedDomains list: 1 to maxSRTDomains hosts, duplicates dropped. what
+// names the owner in error messages ("runner" or "runners.<id>").
+func parseSRTDomains(dv *jsonv.Value, what string, add func(string, ...any)) []string {
+	if dv.IsNull() || dv.Kind != jsonv.Array || len(dv.Arr) == 0 || len(dv.Arr) > maxSRTDomains {
+		add("%s.allowedDomains must list 1 to %d hosts the agent may reach (Bob's own service at least), for example \"*.example.com\"", what, maxSRTDomains)
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for i, item := range dv.Arr {
+		s, ok := item.StringValue()
+		host, _, _ := strings.Cut(s, ":")
+		if !ok || len(s) > 253 || !srtDomainPattern.MatchString(s) || net.ParseIP(strings.TrimPrefix(host, "*.")) != nil || allDigitsTLD(host) {
+			add("%s.allowedDomains[%d] must be a lowercase host name, optionally \"*.\" first and \":port\" last", what, i)
+			continue
+		}
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// parseSRTAllowRead reads an allowRead list of absolute paths. Absent gives nil.
+func parseSRTAllowRead(av *jsonv.Value, what string, add func(string, ...any)) []string {
+	if av.IsNull() {
+		return nil
+	}
+	if av.Kind != jsonv.Array {
+		add("%s.allowRead must be a list of absolute paths", what)
+		return nil
+	}
+	var out []string
+	for i, item := range av.Arr {
+		s, ok := item.StringValue()
+		if !ok || !filepath.IsAbs(s) || s == "/" || strings.ContainsAny(s, "*?[]") {
+			add("%s.allowRead[%d] must be an absolute path other than \"/\", with no glob characters", what, i)
+			continue
+		}
+		out = append(out, filepath.Clean(s))
+	}
+	return out
 }
 
 // allDigitsTLD reports whether the last label is numeric, as in 10.0.0.1 or 1.2.3.4.5: srt reads

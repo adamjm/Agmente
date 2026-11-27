@@ -174,6 +174,26 @@ final class GatewayHomeModelTests: XCTestCase {
         XCTAssertEqual(model.projects.map(\.name), ["NewServer"])
     }
 
+    func testSetAutoApproveUpdatesOnlyThatProjectAndAFailureKeepsTheOldValue() async {
+        let calls = fake(projects: [("p1", "Site"), ("p2", "API")], sessions: [])
+        let model = GatewayHomeModel()
+        model.configure { GatewayClient(calls) }
+        await model.refresh()
+        XCTAssertEqual(model.projects.map(\.autoApprove), [false, false], "off by default")
+
+        calls.results["_acpcode/projects/setAutoApprove"] = .object(["project": .object([
+            "id": .string("p1"), "name": .string("Site"), "path": .string("/srv/Site"), "autoApprove": .bool(true),
+        ])])
+        await model.setAutoApprove(projectId: "p1", enabled: true)
+        XCTAssertEqual(model.projects.map(\.autoApprove), [true, false], "only p1 changed, and in place")
+        XCTAssertNil(model.errorMessage)
+
+        calls.error = ACPServiceError.rpc(id: .number(1), error: .internalError("cannot save the project"))
+        await model.setAutoApprove(projectId: "p1", enabled: false)
+        XCTAssertEqual(model.projects.first?.autoApprove, true, "a refusal keeps what the gateway last said")
+        XCTAssertEqual(model.errorMessage, "cannot save the project")
+    }
+
     func testWithNoClientRefreshDoesNothing() async {
         let model = GatewayHomeModel()
         model.configure(clientProvider: nil)

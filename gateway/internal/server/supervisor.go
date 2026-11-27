@@ -73,8 +73,12 @@ type reload struct {
 
 type projectAgent struct {
 	s  *Server
-	id string
-	// runner is the config runner this agent runs, set at start. Its capabilities are cached under it.
+	id string // the project id, for audit, state and the store; shared by every agent of the project
+	// key is this agent's key in Server.agents: the project id for the project's own runner,
+	// id+"@"+runner for another one (agents.go).
+	key string
+	// runner is the config runner this agent runs. A non-own agent has it from construction; the
+	// project's own agent gets it at start. Its capabilities are cached under it. Guarded by mu.
 	runner string
 
 	mu       sync.Mutex
@@ -98,23 +102,14 @@ type projectAgent struct {
 	turnEnds      map[string]turnEnd      // turns ended per session, for the turn-scope stop (D-106)
 
 	writeMu sync.Mutex
-
-	stateMu     sync.Mutex           // guards the state notification fields (projectstate.go, C2)
-	stateSubs   map[*client]struct{} // sockets that listed this project
-	stateWant   string               // the newest agent state
-	stateSince  time.Time            // when stateWant began
-	stateSent   string               // the state last sent; "" until the first transition
-	stateSentAt time.Time            // when stateSent was sent
-	stateTimer  *time.Timer          // a flush due when the gap ends, or nil
 }
 
 func newProjectAgent(s *Server, id string) *projectAgent {
 	return &projectAgent{
-		s: s, id: id, changed: make(chan struct{}),
+		s: s, id: id, key: id, changed: make(chan struct{}),
 		pending: map[int64]*pendingRequest{}, sessions: map[string]map[*client]struct{}{}, users: map[*client]struct{}{},
 		live: map[string]*liveSession{}, reloads: map[string]*reload{}, sessionActive: map[string]time.Time{},
-		mcp:       map[string]*jsonv.Value{},
-		stateSubs: map[*client]struct{}{},
+		mcp: map[string]*jsonv.Value{},
 	}
 }
 
@@ -127,11 +122,12 @@ func (a *projectAgent) setState(st agentState) {
 	a.noteState(st)
 }
 
-// project is the project as git needs it: its id and folder.
+// project is the project as git needs it: its id and folder, and the runner this agent runs once
+// it has started (so a container name or an image derived from it is this agent's, D-125).
 func (a *projectAgent) project() store.Project {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return store.Project{ID: a.id, Path: a.path}
+	return store.Project{ID: a.id, Path: a.path, Runner: a.runner, Secondary: a.key != a.id}
 }
 
 func (a *projectAgent) fields(f audit.Fields) audit.Fields {
@@ -185,9 +181,22 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 	if err != nil || project == nil {
 		return failStart("project", &rpcError{Code: rpcAgentUnavailable, Message: "unknown project"})
 	}
-	a.reapIfNeeded(*project) // D-106: a leftover container under the name would fail this start
-	a.runner = project.Runner
-	proc, err := a.s.runner.start(*project, a.s.projectHome(a.id))
+	// The runner this agent runs: the one it was made for, or the project's own. The runner side
+	// gets a copy of the project with Runner set to it, so it needs no new parameter (D-125).
+	a.mu.Lock()
+	if a.runner == "" {
+		a.runner = project.Runner
+		if a.runner == "" {
+			a.runner = a.s.cfg.DefaultRunner
+		}
+	}
+	runnerID := a.runner
+	a.mu.Unlock()
+	started := *project
+	started.Runner = runnerID
+	started.Secondary = a.key != a.id // another runner's agent: its names carry the runner
+	a.reapIfNeeded(started)           // D-106: a leftover container under the name would fail this start
+	proc, err := a.s.runner.start(started, a.s.projectHome(a.id))
 	if errors.Is(err, errProjectLocked) {
 		return failStart("locked", &rpcError{Code: rpcAgentUnavailable, Message: err.Error()})
 	}
@@ -230,7 +239,7 @@ func (a *projectAgent) start() (*agentProcess, *rpcError) {
 		if result == nil || result.Kind != jsonv.Object {
 			return fail("initialize")
 		}
-		a.s.captureCapabilities(a.runner, result)
+		a.s.captureCapabilities(runnerID, result)
 		a.mu.Lock()
 		a.canClose = result.Get("agentCapabilities").Get("sessionCapabilities").Get("close") != nil
 		a.mu.Unlock()
@@ -461,6 +470,7 @@ func (a *projectAgent) agentResponse(msg, id *jsonv.Value) {
 				}
 				a.mu.Unlock()
 				a.recordSession(sid, p.c)
+				a.recordRunner(sid) // D-125: only when this agent is not the project's own
 				if p.mcpRec {
 					a.s.recordSessionMCP(sid, p.mcpIDs) // D-107: the set the session took
 				}

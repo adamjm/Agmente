@@ -16,6 +16,16 @@ type AgentRunner struct {
 	EnvPassthrough []string
 	// Image is the project image for the podman and apple kinds. Empty for the host kind.
 	Image string
+	// SecretsFile is the absolute path of this runner's NAME=value secrets file, "" when it has none.
+	// SecretNames are the names in it the agent may receive (listed in EnvPassthrough) and
+	// SecretsIgnored the names it lists that EnvPassthrough does not (D-126).
+	SecretsFile    string
+	SecretNames    []string
+	SecretsIgnored []string
+	// AllowedDomains and AllowRead are what the srt kind lets this runner reach and read. They are
+	// resolved at load: the runner's own list when it has one, else the shared runner block's (D-126).
+	AllowedDomains []string
+	AllowRead      []string
 }
 
 // agentIDPattern is the rule for a runner id. It goes in URLs-free protocol fields and in container
@@ -40,6 +50,8 @@ func (c *Config) Agent(id string) (AgentRunner, bool) {
 type agentSpec struct {
 	AgentRunner
 	imageRaw *jsonv.Value
+	// hasDomains and hasRead say the runner set its own srt lists; otherwise it takes the shared ones.
+	hasDomains, hasRead bool
 }
 
 // agentParse is the agent part of the config: the runners in config order, the default id, and
@@ -98,9 +110,6 @@ func parseAgents(raw *jsonv.Value, add func(string, ...any)) agentParse {
 			add("%s must be an object", what)
 			continue
 		}
-		if !entry.Get("secretsFile").IsNull() {
-			add("%s.secretsFile is not supported with runners; the agent secrets file is only read in the single-agent form", what)
-		}
 		name := id
 		if n := entry.Get("name"); !n.IsNull() {
 			s, ok := n.StringValue()
@@ -112,10 +121,26 @@ func parseAgents(raw *jsonv.Value, add func(string, ...any)) agentParse {
 		}
 		command := parseCommand(entry.Get("command"), what, add)
 		env := parseEnv(entry.Get("envPassthrough"), what, add)
-		out.specs = append(out.specs, agentSpec{
-			AgentRunner: AgentRunner{ID: id, Name: name, Command: command, EnvPassthrough: env},
-			imageRaw:    entry.Get("image"),
-		})
+		secretsFile, secretNames, secretsIgnored, secretErrs := validateSecrets(entry.Get("secretsFile"), what, env)
+		for _, e := range secretErrs {
+			add("%s", e)
+		}
+		sp := agentSpec{
+			AgentRunner: AgentRunner{
+				ID: id, Name: name, Command: command, EnvPassthrough: env,
+				SecretsFile: secretsFile, SecretNames: secretNames, SecretsIgnored: secretsIgnored,
+			},
+			imageRaw: entry.Get("image"),
+		}
+		if dv := entry.Get("allowedDomains"); !dv.IsNull() {
+			sp.hasDomains = true
+			sp.AllowedDomains = parseSRTDomains(dv, what, add)
+		}
+		if av := entry.Get("allowRead"); !av.IsNull() {
+			sp.hasRead = true
+			sp.AllowRead = parseSRTAllowRead(av, what, add)
+		}
+		out.specs = append(out.specs, sp)
 	}
 	def := raw.Get("defaultRunner")
 	switch {
@@ -146,14 +171,17 @@ func parseSingleAgent(raw *jsonv.Value, add func(string, ...any)) agentParse {
 	agent := raw.Get("agent")
 	command := parseCommand(agent.Get("command"), "agent", add)
 	env := parseEnv(agent.Get("envPassthrough"), "agent", add)
-	secretsFile, secretNames, secretsIgnored, secretErrs := validateSecrets(agent.Get("secretsFile"), env)
+	secretsFile, secretNames, secretsIgnored, secretErrs := validateSecrets(agent.Get("secretsFile"), "agent", env)
 	for _, e := range secretErrs {
 		add("%s", e)
 	}
 	return agentParse{
 		specs: []agentSpec{{
-			AgentRunner: AgentRunner{ID: "default", Name: "default", Command: command, EnvPassthrough: env},
-			imageRaw:    raw.Get("runner").Get("image"),
+			AgentRunner: AgentRunner{
+				ID: "default", Name: "default", Command: command, EnvPassthrough: env,
+				SecretsFile: secretsFile, SecretNames: secretNames, SecretsIgnored: secretsIgnored,
+			},
+			imageRaw: raw.Get("runner").Get("image"),
 		}},
 		defaultRunner:  "default",
 		secretsFile:    secretsFile,

@@ -11,17 +11,28 @@ public struct GatewayProject: Codable, Equatable, Hashable, Sendable, Identifiab
     /// The id of the runner (agent) the project was made with (multi-runner). Nil when the gateway sends
     /// none or an empty string, as it does for very old projects.
     public let runner: String?
+    /// True when the gateway answers this project's permission requests itself with an allow option
+    /// (D-124). False when the gateway sends none, as an older gateway does.
+    public let autoApprove: Bool
+    /// The id of the project this one is a git worktree of. Nil for an ordinary project, and when the gateway
+    /// sends none or an empty string. A worktree project is never itself the parent of another.
+    public let parentId: String?
+    /// The git branch of a worktree project (`acpcode/<runner>/<8 hex>`). Nil otherwise.
+    public let branch: String?
 
-    public init(id: String, name: String, path: String, defaultMode: String? = nil, runner: String? = nil) {
+    public init(id: String, name: String, path: String, defaultMode: String? = nil, runner: String? = nil, autoApprove: Bool = false, parentId: String? = nil, branch: String? = nil) {
         self.id = id
         self.name = name
         self.path = path
         self.defaultMode = defaultMode
         self.runner = runner
+        self.autoApprove = autoApprove
+        self.parentId = parentId
+        self.branch = branch
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, defaultMode, runner
+        case id, name, path, defaultMode, runner, autoApprove, parentId, branch
     }
 
     public init(from decoder: Decoder) throws {
@@ -31,7 +42,13 @@ public struct GatewayProject: Codable, Equatable, Hashable, Sendable, Identifiab
         path = try container.decode(String.self, forKey: .path)
         defaultMode = try container.decodeIfPresent(String.self, forKey: .defaultMode)
         runner = try container.decodeIfPresent(String.self, forKey: .runner).flatMap { $0.isEmpty ? nil : $0 }
+        autoApprove = try container.decodeIfPresent(Bool.self, forKey: .autoApprove) ?? false
+        parentId = try container.decodeIfPresent(String.self, forKey: .parentId).flatMap { $0.isEmpty ? nil : $0 }
+        branch = try container.decodeIfPresent(String.self, forKey: .branch).flatMap { $0.isEmpty ? nil : $0 }
     }
+
+    /// True when this project is a git worktree of another project.
+    public var isWorktree: Bool { parentId != nil }
 }
 
 /// One agent the gateway can run (multi-runner), as `initialize` lists it in `_meta["acpcode/gateway"]`.
@@ -98,13 +115,16 @@ public struct GatewaySession: Codable, Equatable, Hashable, Sendable, Identifiab
     /// The gateway flags a running turn that has had no event for a long time, with no approval open (D-106). It
     /// changes nothing by itself. Nil when an older gateway does not send the field.
     public let stalled: Bool?
+    /// The id of the runner the session runs on (the session's own, else its project's). Nil when the gateway
+    /// sends none or an empty string, as an older gateway does.
+    public let runner: String?
 
     public var id: String { sessionId }
 
     /// True when the gateway flags this session as stalled (D-106).
     public var isStalled: Bool { stalled == true }
 
-    public init(sessionId: String, projectId: String, title: String?, status: GatewaySessionStatus, lastActivity: String, headSeq: Int, unread: Int, stalled: Bool? = nil) {
+    public init(sessionId: String, projectId: String, title: String?, status: GatewaySessionStatus, lastActivity: String, headSeq: Int, unread: Int, stalled: Bool? = nil, runner: String? = nil) {
         self.sessionId = sessionId
         self.projectId = projectId
         self.title = title
@@ -113,6 +133,24 @@ public struct GatewaySession: Codable, Equatable, Hashable, Sendable, Identifiab
         self.headSeq = headSeq
         self.unread = unread
         self.stalled = stalled
+        self.runner = runner
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId, projectId, title, status, lastActivity, headSeq, unread, stalled, runner
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try container.decode(String.self, forKey: .sessionId)
+        projectId = try container.decode(String.self, forKey: .projectId)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        status = try container.decode(GatewaySessionStatus.self, forKey: .status)
+        lastActivity = try container.decode(String.self, forKey: .lastActivity)
+        headSeq = try container.decode(Int.self, forKey: .headSeq)
+        unread = try container.decode(Int.self, forKey: .unread)
+        stalled = try container.decodeIfPresent(Bool.self, forKey: .stalled)
+        runner = try container.decodeIfPresent(String.self, forKey: .runner).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// `lastActivity` as a date, or nil when it is not in the gateway's format.

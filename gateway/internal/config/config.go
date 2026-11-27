@@ -288,7 +288,7 @@ func Validate(raw *jsonv.Value) (*Config, error) {
 		}
 		runner = Runner{Kind: "host"}
 	case "srt":
-		runner = validateSRT(rv, roots, stateDir, add)
+		runner = validateSRT(rv, roots, stateDir, agents.specs, add)
 	case "podman", "apple":
 		for i := range agents.specs {
 			sp := &agents.specs[i]

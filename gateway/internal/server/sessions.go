@@ -19,9 +19,10 @@ type sessionJSON struct {
 	LastActivity string     `json:"lastActivity"`
 	HeadSeq      int64      `json:"headSeq"`
 	Unread       int64      `json:"unread"`
-	Usage        *usageJSON `json:"usage,omitempty"` // C1: left out until the agent reports usage
-	Stalled      bool       `json:"stalled"`         // a running turn with no event for limits.stallSeconds, no approval open (D-106)
-	LastEventAt  string     `json:"lastEventAt"`     // when this gateway last saw an event for the session (D-106)
+	Usage        *usageJSON `json:"usage,omitempty"`  // C1: left out until the agent reports usage
+	Stalled      bool       `json:"stalled"`          // a running turn with no event for limits.stallSeconds, no approval open (D-106)
+	LastEventAt  string     `json:"lastEventAt"`      // when this gateway last saw an event for the session (D-106)
+	Runner       string     `json:"runner,omitempty"` // the session's recorded runner, else its project's runner (D-125)
 }
 
 // usageJSON is a session's last reported usage (C1, D-092). Remaining context is size - used; the
@@ -91,6 +92,18 @@ func (s *Server) sessionIndex(ctx context.Context, who audit.Who, params *jsonv.
 	if err != nil {
 		return nil, &rpcError{Code: rpcInternal, Message: "cannot read sessions"}
 	}
+	recorded, err := s.store.SessionRunners(ctx, projectID)
+	if err != nil {
+		return nil, &rpcError{Code: rpcInternal, Message: "cannot read sessions"}
+	}
+	projects, err := s.store.Projects(ctx)
+	if err != nil {
+		return nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"}
+	}
+	projectRunner := make(map[string]string, len(projects))
+	for _, p := range projects {
+		projectRunner[p.ID] = p.Runner
+	}
 	s.watchProjectStates(ctx, who.Conn, projectID) // C2: this socket is told the agent state of the projects it lists
 	running, awaiting := s.liveStatus()
 	events, now, stall := s.lastEvents(), time.Now(), s.stallTime()
@@ -109,6 +122,7 @@ func (s *Server) sessionIndex(ctx context.Context, who audit.Who, params *jsonv.
 			LastActivity: r.LastActivity, HeadSeq: r.HeadSeq, Unread: r.Unread, Usage: toUsageJSON(r.Usage),
 			Stalled:     running[r.SessionID] && turnStalled(seen, now, stall, awaiting[r.SessionID]),
 			LastEventAt: r.LastActivity, // the stored last event, so it does not change across a restart
+			Runner:      sessionRunnerOf(recorded[r.SessionID], projectRunner[r.ProjectID]),
 		})
 	}
 	return map[string]any{"sessions": out}, nil

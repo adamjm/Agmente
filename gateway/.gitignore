@@ -8,3 +8,8 @@ secrets/
 .env
 .env.*
 bin/
+
+# Instance config (real paths, hosts, secrets files); the *.example.json files stay tracked
+config.*.json
+!config.example.json
+!config.*.example.json

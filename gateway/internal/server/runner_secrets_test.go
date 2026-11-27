@@ -23,11 +23,13 @@ func secretsRunnerConfig(t *testing.T, mode os.FileMode, agentCommand []string) 
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatal(err)
 	}
-	return withRunner(&config.Config{
+	cfg := withRunner(&config.Config{
 		SecretsFile: path,
 		SecretNames: []string{"BOB_API_KEY"},
 		Runner:      config.Runner{Kind: "host"},
 	}, agentCommand, []string{"PATH", "BOB_API_KEY"}, "")
+	cfg.Runners[0].SecretsFile, cfg.Runners[0].SecretNames = path, []string{"BOB_API_KEY"}
+	return cfg
 }
 
 // lastEnv is the value a child process would see for name: the last entry wins (exec's rule).
@@ -118,7 +120,7 @@ func TestAgentRefusesAnUnreadableSecretsFile(t *testing.T) {
 		t.Fatal("the error holds the value")
 	}
 	// Nothing was locked or started: the lock file can be taken now.
-	lock, lerr := lockHome(home)
+	lock, lerr := lockHome(home, "")
 	if lerr != nil {
 		t.Fatalf("the home is locked after a refused start: %v", lerr)
 	}
@@ -126,7 +128,7 @@ func TestAgentRefusesAnUnreadableSecretsFile(t *testing.T) {
 }
 
 func TestSecretEnvWithoutFileIsEmpty(t *testing.T) {
-	env, err := secretEnv(&config.Config{})
+	env, err := secretEnv(config.AgentRunner{})
 	if err != nil || env != nil {
 		t.Fatalf("no file: %v %v", env, err)
 	}

@@ -68,6 +68,7 @@ func TestMigrationFromV5AddsSessionUsage(t *testing.T) {
 	if _, err := s.db.Exec(`DROP TABLE session_usage`); err != nil {
 		t.Fatal(err)
 	}
+	dropV11Columns(t, s.db)
 	if _, err := s.db.Exec(`ALTER TABLE projects DROP COLUMN auto_approve`); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func TestMigrationFromV5AddsSessionUsage(t *testing.T) {
 	}
 	defer again.Close()
 	var version int
-	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion || SchemaVersion != 10 { // schema 10 adds projects.auto_approve (D-124); schema 9 adds projects.runner; schema 8 adds session_mcp (D-107)
+	if err := again.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion || SchemaVersion != 11 { // schema 11 adds sessions.runner and projects.parent_id and branch (D-125); schema 10 adds projects.auto_approve (D-124); schema 9 adds projects.runner; schema 8 adds session_mcp (D-107)
 		t.Fatalf("version = %d, %v", version, err)
 	}
 	var n int

@@ -249,10 +249,7 @@ func (t *connectorTurn) finish(out connector.PromptOutcome) {
 		out.Reply = t.reply.String()
 		t.out = out
 		t.mu.Unlock()
-		t.s.mu.Lock()
-		a := t.s.agents[t.pid]
-		t.s.mu.Unlock()
-		if a != nil {
+		for _, a := range t.s.agentsOf(t.pid) { // the session's agent is one of the project's agents (D-125)
 			a.detach(t.c)
 		}
 		t.c.closing.Store(true)
@@ -339,15 +336,15 @@ func (b *connectorBridge) stopReason(ctx context.Context, sid string) (string, e
 // sessionAlwaysAllow reports whether the session's MCP list has an alwaysAllow entry (D-089). It is
 // nil when the gateway holds no list for the session (none sent since the gateway started).
 func (s *Server) sessionAlwaysAllow(pid, sid string) *bool {
-	s.mu.Lock()
-	a := s.agents[pid]
-	s.mu.Unlock()
-	if a == nil {
-		return nil
+	var list *jsonv.Value
+	for _, a := range s.agentsOf(pid) { // the list is kept by the agent the session runs on
+		a.mu.Lock()
+		list = a.mcp[sid]
+		a.mu.Unlock()
+		if list != nil {
+			break
+		}
 	}
-	a.mu.Lock()
-	list := a.mcp[sid]
-	a.mu.Unlock()
 	if list == nil {
 		return nil
 	}

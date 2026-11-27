@@ -39,6 +39,24 @@ final class GatewayProjectCreationClientTests: XCTestCase {
                        "the path-based call sends the same params it always did")
     }
 
+    func testAutoApproveDefaultsToOffAndDecodesWhenTheGatewaySendsIt() throws {
+        let old = try JSONDecoder().decode(GatewayProject.self, from: Data(#"{"id":"a","name":"A","path":"/a"}"#.utf8))
+        XCTAssertFalse(old.autoApprove, "an older gateway sends no field")
+        let on = try JSONDecoder().decode(GatewayProject.self, from: Data(#"{"id":"a","name":"A","path":"/a","autoApprove":true}"#.utf8))
+        XCTAssertTrue(on.autoApprove)
+    }
+
+    func testSetAutoApproveSendsTheProjectAndAnExplicitBoolAndDecodesTheProject() async throws {
+        let fake = CreationFakeGateway()
+        fake.results["_acpcode/projects/setAutoApprove"] = .object(["project": .object([
+            "id": .string("a1"), "name": .string("Site"), "path": .string("/srv/site"), "autoApprove": .bool(true),
+        ])])
+        let project = try await GatewayClient(fake).setAutoApprove(projectId: "a1", enabled: true)
+        XCTAssertTrue(project.autoApprove)
+        XCTAssertEqual(fake.calls.map(\.method), ["_acpcode/projects/setAutoApprove"])
+        XCTAssertEqual(fake.calls.first?.params, .object(["projectId": .string("a1"), "enabled": .bool(true)]))
+    }
+
     func testTheRunnerIsSentOnlyWhenGiven() async throws {
         let fake = CreationFakeGateway()
         fake.results["_acpcode/projects/create"] = .object(["project": .object([

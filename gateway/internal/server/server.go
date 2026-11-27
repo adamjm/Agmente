@@ -55,8 +55,11 @@ type Server struct {
 	mu          sync.Mutex
 	perIdentity map[string]int64 // open sockets per identity
 	clients     map[*client]struct{}
-	agents      map[string]*projectAgent // by project id
-	agentSlots  int64                    // starting, running or stopping agents
+	agents      map[string]*projectAgent // by agent key: the project id for its own runner, id@runner for another (agents.go)
+	agentSlots  int64                    // starting, running or stopping agents, across every project and runner
+
+	pstMu   sync.Mutex            // guards pstates
+	pstates map[string]*projState // the agent state of each project, aggregated over its agents (projectstate.go)
 
 	permMu  sync.Mutex
 	perms   map[string]*permission // gateway permission id -> agent request
@@ -193,17 +196,6 @@ func (s *Server) Shutdown() {
 	wg.Wait()
 }
 
-func (s *Server) agent(projectID string) *projectAgent {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	a := s.agents[projectID]
-	if a == nil {
-		a = newProjectAgent(s, projectID)
-		s.agents[projectID] = a
-	}
-	return a
-}
-
 func (s *Server) takeAgentSlot() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -325,7 +317,9 @@ func (s *Server) projectForCwd(ctx context.Context, cwd string) (*store.Project,
 }
 
 // route picks the project for a phone message: by sessionId when the gateway knows the session,
-// else by cwd, else the project this socket used last (D-025).
+// else by cwd, else the project this socket used last (D-025). Within the project it picks the agent
+// of the request's runner: a session/new names it in _meta["acpcode/runner"], an existing session
+// has the one recorded for it, and none means the project's own (agents.go, D-125).
 func (s *Server) route(ctx context.Context, c *client, msg *jsonv.Value, method string) (*projectAgent, *rpcError) {
 	params := msg.Get("params")
 	sid, _ := params.Get("sessionId").StringValue()
@@ -348,11 +342,11 @@ func (s *Server) route(ctx context.Context, c *client, msg *jsonv.Value, method 
 			if byCwd != nil && byCwd.ID != pid {
 				return nil, invalidParams("the session belongs to another project")
 			}
-			return s.agent(pid), nil
+			return s.agentForRequest(ctx, pid, method, params, sid)
 		}
 	}
 	if byCwd != nil {
-		return s.agent(byCwd.ID), nil
+		return s.agentForRequest(ctx, byCwd.ID, method, params, "")
 	}
 	switch {
 	case cwd != "":
@@ -598,6 +592,11 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 			}
 			return
 		}
+		if method == "_acpcode/projects/createWorktree" && !id.IsNull() {
+			// A checkout can take a while: its own goroutine (worktree.go, D-125).
+			go s.serveCreateWorktree(who, id, msg.Get("params"), reply)
+			return
+		}
 		if strings.HasPrefix(method, "_acpcode/connector/") { // the phone's pairing and grant methods (C5, D-095)
 			if !id.IsNull() {
 				result, cerr := s.connector.Phone(ctx, who, method, msg.Get("params"))
@@ -644,6 +643,9 @@ func (s *Server) handleMessage(ctx context.Context, c *client, typ websocket.Mes
 		s.audit.Log("route_refused", with(who, audit.Fields{Method: method, Reason: rerr.Message}))
 		reply(id, nil, rerr)
 		return
+	}
+	if method == "session/new" {
+		dropRunnerKey(msg.Get("params")) // the gateway's own _meta key: the agent never sees it
 	}
 	c.setProject(a)
 	s.audit.Log("rpc", with(who, audit.Fields{Dir: "in", Method: method, Project: a.id}))

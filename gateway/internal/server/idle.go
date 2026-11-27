@@ -116,7 +116,7 @@ func (s *Server) subscribedSessions(projectID string) (map[string]bool, bool) {
 // idleCheck stops the agent or closes idle sessions. It reports true when it stopped the agent.
 func (a *projectAgent) idleCheck(proc *agentProcess, idle time.Duration) bool {
 	approvals, anyApproval := a.s.openApprovals(a)
-	subs, anySub := a.s.subscribedSessions(a.id)
+	subs, anySub := a.s.agentSubscribed(a) // only the sessions that run on this agent (agents.go)
 	now := time.Now()
 
 	a.mu.Lock()

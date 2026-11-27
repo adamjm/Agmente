@@ -48,6 +48,21 @@ func (s *Server) snapshotEnv(p store.Project, gitDir string, extra ...string) []
 	return append(env, extra...)
 }
 
+// commonGitDir is the directory that holds the repository's objects, from the output of
+// `rev-parse --git-common-dir`, made absolute against the project folder. For an ordinary repository
+// it is the .git folder; in a linked worktree it is the parent repository's .git, where the objects
+// are, not the worktree's own git folder (D-125).
+func commonGitDir(p store.Project, out []byte) string {
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return ""
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(p.Path, dir)
+	}
+	return filepath.Clean(dir)
+}
+
 // takeSnapshot records the project's current files as a tree and returns its id.
 func (s *Server) takeSnapshot(ctx context.Context, p store.Project) (string, error) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -66,7 +81,7 @@ func (s *Server) takeSnapshot(ctx context.Context, p store.Project) (string, err
 	go run(0, &cached, "ls-files", "-s", "-z")
 	go run(1, &others, "ls-files", "-z", "--others", "--exclude-standard")
 	go run(2, &deleted, "ls-files", "-z", "--deleted")
-	go run(3, &gitDirRes, "rev-parse", "--absolute-git-dir")
+	go run(3, &gitDirRes, "rev-parse", "--git-common-dir")
 	wg.Wait()
 	for i, res := range []gitResult{cached, others, deleted, gitDirRes} {
 		if errs[i] != nil {
@@ -76,7 +91,7 @@ func (s *Server) takeSnapshot(ctx context.Context, p store.Project) (string, err
 			return "", errors.New("the file list is too long for a snapshot")
 		}
 	}
-	gitDir := strings.TrimSpace(string(gitDirRes.Out))
+	gitDir := commonGitDir(p, gitDirRes.Out)
 	if !filepath.IsAbs(gitDir) {
 		return "", errors.New("unexpected git directory")
 	}
@@ -235,11 +250,11 @@ func (a *projectAgent) snapshotTurnEnd(sessionID string) {
 
 // gitTreeDiff diffs two trees with the deny-list applied, using the snapshot object store.
 func (s *Server) gitTreeDiff(ctx context.Context, p store.Project, from, to string, path string) (map[string]any, *rpcError) {
-	gitDirRes, err := s.runGit(ctx, p, nil, nil, "rev-parse", "--absolute-git-dir")
+	gitDirRes, err := s.runGit(ctx, p, nil, nil, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return nil, gitError(err)
 	}
-	env := s.snapshotEnv(p, strings.TrimSpace(string(gitDirRes.Out)))
+	env := s.snapshotEnv(p, commonGitDir(p, gitDirRes.Out))
 	names, err := s.runGit(ctx, p, env, nil, "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", from, to, "--")
 	if err != nil {
 		return nil, gitError(err)

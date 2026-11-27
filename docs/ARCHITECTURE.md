@@ -9,12 +9,12 @@ Read with [SPEC.md](SPEC.md). Decision IDs (D-n) refer to [DECISIONS.md](DECISIO
 | Edge | Caddy | Terminate TLS. Require a client certificate (mutual TLS). Forward to loopback. | `deploy/Caddyfile` |
 | Gateway: admission | `server.go`, `auth.go` | Reject before upgrade: Origin, rate limit, token, capacity. | `gateway/internal/server/` |
 | Gateway: protocol guard | `guard.go`, `jsonv` | One JSON object per message; `cwd` inside roots; size caps; re-serialized as one line. | `gateway/internal/` |
-| Gateway: agent control | `agent.go`, `runner.go`, `supervisor.go`, `client.go` | One agent per project (host, podman, apple or srt runner, project lock), id remapping, routing by cwd and sessionId, per-socket send queues. | `gateway/internal/server/` |
+| Gateway: agent control | `agent.go`, `runner.go`, `supervisor.go`, `client.go` | One agent per project and runner (host, podman, apple or srt runner, a lock per runner), id remapping, routing by cwd and sessionId, per-socket send queues. | `gateway/internal/server/` |
 | Gateway: config and audit | `config`, `audit` | Validate the config file; one JSON audit line per event on stderr. | `gateway/internal/` |
 | Gateway: sessions (phase 3) | `projects.go`, `store`, `subscribe.go`; approvals and idle close planned | Project registry, event log, subscribe and replay (D-028), approval queue, idle close. | `gateway/internal/server/`, `gateway/internal/store/` |
 | Gateway: project data (phases 3, 5, 6) | `git.go`, `gitexec.go`, `snapshot.go`, `watch.go`; planned `files/`, `mcp/`, `skills/` | Read-only git (D-034, D-035); later signed file URLs, MCP and skill config. | `gateway/internal/server/` |
 | Gateway: notify (phase 3) | `push/`, `push_deliver.go` | APNs payloads (D-038), token-based auth, HTTP/2 send, cleanup and retry (D-053); triggers and suppression (D-054). | `gateway/internal/push/`, `gateway/internal/server/` |
-| Project runtime | One container per project | Run `bob acp` and git as the project user. Podman on Linux, Apple `container` on a Mac (D-079), or `srt` processes on a Mac (D-122, a weaker boundary). | `deploy/` (planned); Mac: `docs/MAC-SETUP.md` |
+| Project runtime | One container per project and runner | Run `bob acp` (or another runner's agent) and git as the project user. Podman on Linux, Apple `container` on a Mac (D-079), or `srt` processes on a Mac (D-122, a weaker boundary). | `deploy/` (planned); Mac: `docs/MAC-SETUP.md` |
 | App: transport | `ACPCodeTransport` (one WebSocket client, D-017), wrapped by `ACPClient` and `AppServerClient` | WebSocket, TLS, SPKI pinning, client certificate, 16 MiB message cap, connect timeout. | `ACPCodeTransport/`, upstream folders |
 | App: security | Keychain store | Tokens, client identity, MCP headers. | `ACPCode/Security/` (new) |
 | App: features | Home, Git, Preview, MCP, Skills screens | UI for the gateway features. | `ACPCode/Fork/` (new) |
@@ -115,11 +115,70 @@ Phone ─session/new, session/resume (mcpServers)─▶ Gateway: list kept in me
 - **Container reachability.** An HTTP MCP server for a container-run agent must listen on an address the container can reach, not loopback on the Mac. The Apple container check (RESULTS 2026-11-07) used the Mac's LAN address. See [MAC-SETUP.md](MAC-SETUP.md) section 9.
 - **URL rule (`mcp_guard.go`).** https to any host; http to a loopback host only.
 
+### 2.7 Runner per session (phase 9, in progress)
+
+Contract: `docs/design/per-session-runner.md`. D-125 supersedes the "fixed at creation" part of D-116, D-126 adds the Claude Code runner.
+
+```
+Phone ─session/new(cwd, _meta["acpcode/runner"]?)─▶ Gateway
+        runner id absent or empty ─▶ the project's runner (projects.runner, the project's default)
+        runner id not in the config ─▶ JSON-RPC error -32602 (not forwarded)
+        agent key = (project, runner)
+            the project's own runner ─▶ key "<projectId>"          container "acpcode-<projectId>"
+            any other runner         ─▶ key "<projectId>@<runner>"  container "acpcode-<projectId>-<runner>"
+        no agent for the key? ─▶ start one: runner command, runner's secrets file, runner's domains and read paths
+        session/new succeeds ─▶ record sessions.runner, only when it differs from the project's runner
+Phone ─prompt, subscribe, load for an existing session─▶ route by sessions.runner, else the project's runner
+```
+
+- **Agent key.** The key for the project's own runner is the project id, so code that looks up a project's agent still finds the default one. Another runner uses `<projectId>@<runner>`. Two runners may run in one project at once, each with its own process.
+- **Lock and names.** The lock file is per runner (`<home>/.acpcode-<runner>.lock`), so two runners in one project do not collide. Container names (podman, apple) are `acpcode-<projectId>` for the project's own runner and `acpcode-<projectId>-<runner>` for another. `HOME` stays per project.
+- **Whole-project actions.** Stop, state, idle stop and shutdown reach every agent of a project.
+- **Session records.** `sessions.runner` is NULL when the session uses the project's runner (schema 11). `_acpcode/sessions/index` returns the effective runner on each row.
+
+```mermaid
+flowchart LR
+  P[Phone] -->|"session/new + _meta acpcode/runner"| G[Gateway]
+  G -->|"runner absent: project default"| K{"agent key (project, runner)"}
+  K -->|"project's own runner"| A1["agent: key = projectId"]
+  K -->|"another runner"| A2["agent: key = projectId@runner"]
+  A1 --> R1["srt: Bob, Bob secrets, Bob domains"]
+  A2 --> R2["srt: claude-agent-acp, claude.env, model gateway domain"]
+  G -->|"session recorded"| DB[("sessions.runner")]
+```
+
+### 2.8 Separate worktree (phase 9, in progress)
+
+```
+Phone ─_acpcode/projects/createWorktree {projectId, runner?}─▶ Gateway
+        project is a git repository with a commit? ── no ─▶ -32602
+        project is itself a worktree project?     ── yes ─▶ -32602
+        runner kind is srt?                       ── no ─▶ refused
+        git worktree add -b acpcode/<runner>/<8 hex> <parent path>-<runner>-<8 hex>   (from the parent's current HEAD)
+        register child project: parent_id = parent, branch = acpcode/<runner>/<8 hex>, runner = chosen runner
+        ─▶ result: the child project object
+Phone ─session/new(cwd = child path, _meta["acpcode/runner"])─▶ the child's agent, in the sibling folder
+```
+
+- **Optional.** The app makes a worktree only when the person ticks "Separate worktree". Otherwise the session uses the project folder.
+- **Sibling folder.** The path is the parent's path plus `-<runner>-<8 hex>`, inside the same project root, so the cwd rule (FR-6) holds with no new root.
+- **Child project.** It is listed like any project, with `parentId` and `branch`. Its name is `<parent name> (<runner name>)`. A worktree project cannot have a worktree.
+- **Sandbox allowances (srt only).** A worktree's git directory is `<parent>/.git/worktrees/<name>`, outside the worktree folder, and its objects are in the parent's `.git`. Under srt the agent's write list for a worktree project is widened by: the worktree's own git directory; and, in the common git directory, `objects`, `refs`, `logs` and `packed-refs`. `hooks` and `config` are never writable (D-122), so the agent still cannot plant a program that git or the person runs later. The parent's working files stay unwritable for the child's agent, apart from those git paths.
+- **Merge.** The gateway never merges. The person merges the branch back, for example with `git merge acpcode/<runner>/<8 hex>` in the parent.
+
+### 2.9 Runner secrets and domains (phase 9, in progress)
+
+Each runner entry may carry `secretsFile`, `allowedDomains` and `allowRead` (D-126). At config load, an absent `allowedDomains` or `allowRead` takes the shared `runner` value, and the result is held on the `AgentRunner`. The runner side reads them only from there.
+
+- **Secrets file.** Absolute, a regular file, no group or other access (0600), and it never sets `HOME` or `PATH`. Its names must be in the runner's `envPassthrough`. The gateway passes the values in the process environment, never in argv, a settings file or a log (D-083).
+- **Claude Code runner.** `claude-agent-acp` runs the `claude` CLI. Its file holds `ANTHROPIC_AUTH_TOKEN` (the secret), and the non-secret `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` and `CLAUDE_CODE_EXECUTABLE`. Under srt it may reach only `model-gateway.example.com`.
+- **Bob next to it.** Bob's key and hosts stay in Bob's entry. A runner does not see another runner's secrets file or hosts.
+
 ## 3. Trust boundaries
 
 1. Internet to Caddy: only clients with a certificate from your client CA pass.
 2. Caddy to gateway: loopback only. The gateway trusts `X-Forwarded-For` only when `trustProxy` is true and the peer is loopback, and then uses only the last entry, which the proxy wrote.
-3. Gateway to agent: the agent is untrusted output. Its lines are size-capped and parsed. It runs as another user in a container.
+3. Gateway to agent: the agent is untrusted output. Its lines are size-capped and parsed. It runs as another user in a container, or under `srt` with a Seatbelt profile (D-122). Each runner gets only its own secrets and hosts (D-126).
 4. Repository content: untrusted. It can carry git config that runs programs (F-20).
 5. Agent HTML and images: untrusted. Sandboxed in the app (FR-37, FR-39).
 
@@ -133,6 +192,8 @@ Phone ─session/new, session/resume (mcpServers)─▶ Gateway: list kept in me
 - Phase 1 keeps one agent per connection; phase 3 moves to one per project. See D-006.
 - Event log in SQLite through `modernc.org/sqlite`, WAL, `synchronous=NORMAL`, in `gateway/internal/store`. See D-023, which supersedes D-007.
 - Git and Bob run in the project container. See D-008.
+- A runner is chosen per session, and an agent is keyed by (project, runner). See D-125, which supersedes the "fixed at creation" part of D-116.
+- Claude Code runs as a runner through `claude-agent-acp`, with per-runner secrets and domains. See D-126.
 - The gateway never approves. See D-009.
 - The overlay replaces `CLAUDE.md` and leaves the upstream `README.md`. See D-010.
 - The shared `.claude/` files are tracked in git. See D-011.

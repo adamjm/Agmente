@@ -12,9 +12,12 @@ struct ProjectDetailView: View {
     /// Opens a session in the main area (the caller pushes it).
     let onOpenSession: (String) -> Void
     /// Starts a session in the chosen project. The caller sends it, as the gateway's new-session flow does.
-    let onCreateSession: (GatewayProject, [String]?) -> Void
+    /// Returns the gateway's message when the session could not be started, else nil.
+    let onCreateSession: (GatewayProject, [String]?, GatewayNewSessionChoice) async -> String?
     /// The runners the gateway lists (multi-runner). Empty when there is no choice to show.
     var runners: [GatewayRunner] = []
+    /// The gateway's default runner id, for the new-session sheet.
+    var defaultRunner: String?
 
     @State private var showingNewSession = false
     /// The Upload File sheet for this project (D-115).
@@ -46,10 +49,13 @@ struct ProjectDetailView: View {
                 projects: home.projects,
                 initialSelection: projectId,
                 mcpClient: mcpClient,
+                runners: runners,
+                defaultRunner: defaultRunner,
                 onCancel: { showingNewSession = false },
-                onCreate: { chosen, mcpIDs in
-                    onCreateSession(chosen, mcpIDs)
-                    showingNewSession = false
+                onCreate: { chosen, mcpIDs, choice in
+                    let message = await onCreateSession(chosen, mcpIDs, choice)
+                    if message == nil { showingNewSession = false }
+                    return message
                 }
             )
         }
@@ -119,7 +125,8 @@ struct ProjectDetailView: View {
                             title: session.title ?? "New Chat",
                             status: ForkStatusKind(session.status),
                             unread: session.unread,
-                            isHighlighted: session.status == .running
+                            isHighlighted: session.status == .running,
+                            secondary: GatewaySessionRunnerRules.sessionLabel(session, project: project, runners: runners)
                         )
                     }
                     .buttonStyle(.plain)

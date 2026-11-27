@@ -43,7 +43,12 @@ esac
 // that can run a program or send a push somewhere else: credential helpers, ssh and askpass
 // commands, git proxies, rewriting of URLs (insteadOf, pushInsteadOf), push URLs, HTTP proxies and
 // extra headers, and includes. The repository's config is the one Bob can write (F-20).
+//
+// cfgfile is the repository config: <common git dir>/config. In a linked worktree (D-125) .git is a
+// file and the config lives in the parent repository's git directory, which is also what
+// `git config --local` reads and writes, so the neutralizer and the hash look at the same file.
 const pushNeutralize = `
+cfgfile="$(git rev-parse --git-common-dir)/config"
 pattern='^(credential\..*helper|core\.sshcommand|core\.askpass|core\.gitproxy|url\..*\.(push)?insteadof|remote\..*\.pushurl|http\..*(proxy|extraheader)|include(if)?\..*)$'
 keys=$(git config --local --name-only --get-regexp "$pattern" 2>/dev/null || true)
 printf '%s\n' "$keys" | while IFS= read -r k; do
@@ -54,7 +59,7 @@ done
 // pushConfigScript (step 1) prints, one per line: the hash of .git/config after neutralizing,
 // HEAD's branch ref, the commit of HEAD, the commit of refs/heads/$1, and every remote key.
 const pushConfigScript = `set -eu` + pushNeutralize + `
-echo "hash $(git hash-object .git/config)"
+echo "hash $(git hash-object "$cfgfile")"
 echo "head $(git symbolic-ref -q HEAD || true)"
 echo "headcommit $(git rev-parse --verify -q HEAD || true)"
 echo "branchcommit $(git rev-parse --verify -q "refs/heads/$1" || true)"
@@ -79,7 +84,7 @@ git grep -I -l -z -e "$2" "$1" -- || rc=$?
 // pushScript (step 4) checks the config hash again, then pushes the commit to the origin URL. Its
 // arguments: $1 config hash, $2 URL, $3 commit, $4 branch, $5 project folder.
 const pushScript = `set -eu` + pushNeutralize + `
-[ "$(git hash-object .git/config)" = "$1" ] || { echo 'the repository config changed during the push' >&2; exit 3; }
+[ "$(git hash-object "$cfgfile")" = "$1" ] || { echo 'the repository config changed during the push' >&2; exit 3; }
 exec git --no-pager --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null -c "safe.directory=$5" -c credential.helper= push "$2" "$3:refs/heads/$4"
 `
 

@@ -234,6 +234,8 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     private var pendingLocalSessionCwds: [String: String] = [:]
     /// The gateway MCP set chosen for a pending session, sent with its session/new (D-107).
     private var pendingLocalSessionMCPIDs: [String: [String]] = [:]
+    /// The runner a new gateway session was started with, by placeholder id. Absent: the project's own runner.
+    private var pendingLocalSessionRunners: [String: String] = [:]
     private var pendingLocalSessionNewCwds: [String: Bool] = [:]
     private var creatingSessionTasks: [String: Task<Void, Never>] = [:]
     // Note: Unlike AppViewModel which uses (serverId: UUID, sessionId: String)? tuple,
@@ -993,8 +995,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
     }
 
     /// Create a new session. `mcpEnabledIDs` is the gateway MCP set the new-session sheet chose (D-107).
-    /// Nil sends no MCP key, so the gateway uses its defaults.
-    func startNewSession(workingDirectory: String?, mcpEnabledIDs: [String]?) {
+    /// Nil sends no MCP key, so the gateway uses its defaults. `runner` is a runner id other than the
+    /// project's own; nil (or empty) sends no runner key, so the project's runner is used.
+    func startNewSession(workingDirectory: String?, mcpEnabledIDs: [String]?, runner: String? = nil) {
         // FR-26: a gateway session starts in a registered project. A blank path is never sent as "/".
         if gatewayNewSessionBlocked(isGateway: isGatewayServer, selectedProjectPath: workingDirectory) {
             appendClosure("Pick a project on the gateway to start a session.")
@@ -1028,6 +1031,9 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
         if let mcpEnabledIDs {
             pendingLocalSessionMCPIDs[pendingId] = mcpEnabledIDs
         }
+        if let runner, !runner.isEmpty {
+            pendingLocalSessionRunners[pendingId] = runner
+        }
 
         pendingLocalSessions.insert(pendingId)
         setActiveSession(pendingId, cwd: sanitizedCwd)
@@ -1047,10 +1053,11 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                 // Preserve any earlier working-directory discovery from placeholder edits.
                 self.pendingLocalSessionNewCwds[pendingId] = (self.pendingLocalSessionNewCwds[pendingId] == true) || newCwdAdded
                 let mcpIDs = self.pendingLocalSessionMCPIDs.removeValue(forKey: pendingId)
+                let runner = self.pendingLocalSessionRunners.removeValue(forKey: pendingId)
                 let payload = ACPSessionCreatePayload(
                     workingDirectory: creationCwd,
                     mcpServers: self.mcpServersForSession(),
-                    meta: await self.gatewayCreateMeta(forCwd: creationCwd, mcpIDs: mcpIDs)
+                    meta: await self.gatewayCreateMeta(forCwd: creationCwd, mcpIDs: mcpIDs, runner: runner)
                 )
 
                 do {
@@ -1451,10 +1458,11 @@ final class ServerViewModel: ObservableObject, Identifiable, ServerViewModelProt
                     pendingLocalSessionNewCwds[placeholderId] = (pendingLocalSessionNewCwds[placeholderId] == true) || newCwdAdded
 
                     let mcpIDs = pendingLocalSessionMCPIDs.removeValue(forKey: placeholderId)
+                    let runner = pendingLocalSessionRunners.removeValue(forKey: placeholderId)
                     let payload = ACPSessionCreatePayload(
                         workingDirectory: creationCwd,
                         mcpServers: self.mcpServersForSession(),
-                        meta: await gatewayCreateMeta(forCwd: creationCwd, mcpIDs: mcpIDs)
+                        meta: await gatewayCreateMeta(forCwd: creationCwd, mcpIDs: mcpIDs, runner: runner)
                     )
 
                     do {

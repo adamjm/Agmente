@@ -14,6 +14,8 @@ struct SidebarSessionRow: View {
     var serverColour: Color?
     /// Whether the session's connection is open. Nil draws no connection dot.
     var isConnected: Bool?
+    /// A small second line under the title: the session's runner and branch on a gateway with two or more runners.
+    var secondary: String?
 
     private var indicator: SidebarRowIndicator {
         SidebarPresentation.indicator(status: status, unread: unread)
@@ -27,11 +29,21 @@ struct SidebarSessionRow: View {
                 .frame(width: SidebarStyle.rowIconWidth)
                 .accessibilityHidden(true)
 
-            Text(title)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let secondary {
+                    Text(secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .accessibilityIdentifier("sessionRunnerLabel")
+                }
+            }
 
             Spacer(minLength: 8)
 
@@ -59,7 +71,7 @@ struct SidebarSessionRow: View {
             title: title,
             status: status,
             unread: unread,
-            extras: accessibilityExtras
+            extras: accessibilityExtras + (secondary.map { [$0] } ?? [])
         ))
     }
 

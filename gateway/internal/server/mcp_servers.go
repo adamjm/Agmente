@@ -75,7 +75,11 @@ func (s *Server) setSessionMCP(ctx context.Context, who audit.Who, params *jsonv
 	if len(missing) > 0 {
 		return nil, invalidParams("the gateway has no MCP server with id %s", missing[0])
 	}
-	a := s.agent(pid)
+	runner, err := s.store.SessionRunner(ctx, sid) // D-125: the agent the session runs on
+	if err != nil {
+		return nil, &rpcError{Code: rpcInternal, Message: "cannot read sessions"}
+	}
+	a := s.agentFor(pid, runner)
 	approvals, _ := s.openApprovals(a)
 	closed, rerr := a.setSessionMCP(sid, ids, approvals)
 	if rerr != nil {

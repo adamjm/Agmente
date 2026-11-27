@@ -70,12 +70,25 @@ func (s *Server) runGit(ctx context.Context, p store.Project, extraEnv []string,
 	return s.runner.exec(ctx, p, s.projectHome(p.ID), gitCommand(p.Path, args...), extraEnv, stdin)
 }
 
+// gitLimitKey carries a longer time limit in a context (see withGitLimit).
+type gitLimitKey struct{}
+
+// withGitLimit gives the git commands run with ctx a time limit longer than gitTimeout. A checkout
+// of a large repository (git worktree add) does not fit in NFR-8's 5 s. A shorter value is ignored.
+func withGitLimit(ctx context.Context, limit time.Duration) context.Context {
+	return context.WithValue(ctx, gitLimitKey{}, limit)
+}
+
 // runCapped runs cmd with the timeout and output cap. Output past the cap is dropped and the
 // process is killed, with Truncated set. A timeout kills the process group and returns errGitTimeout.
 // onKill functions run at each kill, before the output is drained: a process that a kill does not
 // reach (see runner_apple.go) can keep the output open, so cleanup cannot wait for the return.
 func runCapped(ctx context.Context, cmd *exec.Cmd, stdin []byte, onKill ...func()) (gitResult, error) {
-	return runCappedFor(ctx, gitTimeout, cmd, stdin, onKill...)
+	limit := gitTimeout
+	if d, ok := ctx.Value(gitLimitKey{}).(time.Duration); ok && d > limit {
+		limit = d
+	}
+	return runCappedFor(ctx, limit, cmd, stdin, onKill...)
 }
 
 // runCappedFor is runCapped with its own time limit (the push containers, D-105, need longer than

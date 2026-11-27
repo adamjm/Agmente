@@ -1905,3 +1905,25 @@ Not run or not built:
 - **Fix:** lifted Mac-only dark values for those three tones (D-123). New test `macDarkTokensMeetContrastOnTheMacDarkSurfaces`.
 - **After the fix:** simulator 626 tests, 0 failures; My Mac 626 tests, 0 failures, 2 skipped.
 - **Not done:** looking at the app on the Mac, the UI tests on the Mac, a Mac with Increase Contrast on (the dark high-contrast tones pass on the measured surfaces: 5.2 or more).
+
+## 2026-11-27: Claude Code through the model gateway, spike (D-126)
+
+- **Run:** by hand, outside the ACP Code gateway and outside `srt`. `claude-agent-acp` 0.113.0 (npm `@agentclientprotocol/claude-agent-acp`), which runs the `claude` CLI. Environment: `ANTHROPIC_BASE_URL=https://model-gateway.example.com`, `ANTHROPIC_AUTH_TOKEN` from a file (value not recorded here), `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`, and `ANTHROPIC_MODEL` set to each name below in turn.
+- **Calls made:** ACP `initialize`, `session/new` and one short `session/prompt` per model.
+- **Answered:** `claude-haiku-5-5`, Sonnet (served as `claude-sonnet-5-5`) and `claude-advantage-assist`: each returned an answer to the prompt through the gateway.
+- **Refused with 403:** `claude-sonnet-4-5`, `claude-haiku-4-5` and `claude-haiku-5-53`.
+- **Result:** the adapter works with the model gateway when the key is in `ANTHROPIC_AUTH_TOKEN`. The owner chose `claude-haiku-5-5` for the runner.
+- **Not run:** the adapter under `srt`; through the ACP Code gateway; a tool call with an approval; two runners in one project; a worktree. These are boxes S1 to S4, I1 and L1 of PLAN Phase 9.
+
+## 2026-11-27: per-session runner, Claude runner and worktree, integration and live run (D-125, D-126)
+
+- **Automated checks:** `go vet ./...`, `gofmt -l` and `go test ./... -race` pass in `gateway/`. `swift test` in `ACPClient` passes. `ACPCodeTests` on the iPhone 17 simulator: 642 XCTest and 215 Swift Testing tests, 0 failures. `node scripts/check-docs.mjs` passes.
+- **Wire suite (371 tests, serial):** it found one regression of ours. The first build named every agent's container, lock file and srt settings file with the runner, so `apple-runner` and `stop` (D-106) failed. Fix: only an agent of a runner other than the project's own is suffixed (`store.Project.Secondary`). The sessions index test now expects the `runner` field.
+- **Five wire tests fail on a clean `HEAD` as well** (checked in a detached worktree of `HEAD`, built there): `agent.test.mjs` full round trip, `runners.test.mjs` initialize, `runner-apple.test.mjs` error text (the message now names `srt`), `supervisor.test.mjs` initialize (Bob 2.0.9 fixture), and `git.test.mjs` T-29 (the Block Secrets commit hook on this Mac refuses the `store.p12` fixture file). Not caused by this work; not fixed here.
+- **Live run, through the Go gateway with the real `srt` 0.0.83 sandbox, a fake Bob runner and the real `claude-agent-acp`, model `claude-haiku-5-5`, the gateway token in a 0600 secrets file (script `.spike-acp/live.mjs`, not committed):**
+  - `initialize` listed `bob` and `claude`, default `bob`.
+  - `session/new` with `_meta["acpcode/runner"] = "claude"` in a project whose runner is `bob`: first failed with `EPERM mkdir '/tmp/claude-501'` (`temp_dir_unusable`) because the sandbox does not let the CLI write its temp folder. Fixed by setting `CLAUDE_CODE_TMPDIR` to the project home's `tmp`. Then the session started in about 3 to 5 s, a prompt returned `pong` with `end_turn`.
+  - `sessions/index` rows carried `runner` (`bob`, `claude`). An unknown runner got `-32602`.
+  - `createWorktree {projectId, runner: "claude"}` made a child project (parent id, branch `acpcode/claude/<8 hex>`, runner `claude`). A Claude session there created `hello.txt` with `hi`. The parent folder had no `hello.txt`. `git status` in the worktree showed only `?? hello.txt`.
+- **No token value** was written to the repo, a log or this file; a scan of every changed file for the value found nothing.
+- **Not run:** a tool call that asks for approval; the app on a device; real Bob next to Claude in one project; a commit from inside a worktree under `srt`; merging the worktree branch by hand; `scripts/check.sh` end to end; the mutation checks of PLAN I1.

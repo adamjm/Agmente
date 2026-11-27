@@ -173,8 +173,12 @@ func (s *Server) stopSession(ctx context.Context, who audit.Who, params *jsonv.V
 	if pid == "" {
 		return nil, &rpcError{Code: rpcInvalidParams, Message: "unknown session", Data: map[string]string{"reason": "unknown_session"}}
 	}
+	runner, err := s.store.SessionRunner(ctx, args.sessionID) // D-125: the stop reaches the agent the session runs on
+	if err != nil {
+		return nil, &rpcError{Code: rpcInternal, Message: "cannot read sessions"}
+	}
 	outcome, stopped := "not_running", []string{}
-	if a := s.existingAgent(pid); a != nil {
+	if a := s.existingAgentFor(pid, runner); a != nil {
 		if args.scope == "turn" {
 			outcome = a.stopTurn(args.sessionID)
 			if outcome == "cancelled" {
@@ -193,14 +197,7 @@ func (s *Server) stopSession(ctx context.Context, who audit.Who, params *jsonv.V
 	return map[string]any{"outcome": outcome, "stoppedSessions": stopped}, nil
 }
 
-// existingAgent returns the project's agent if one was ever made in this process, without making one.
-func (s *Server) existingAgent(projectID string) *projectAgent {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.agents[projectID]
-}
-
-// lastEvents returns when each session last had an event in this process (the projects' agents).
+// lastEvents returns when each session last had an event in this process (every agent of every project).
 func (s *Server) lastEvents() map[string]time.Time {
 	out := map[string]time.Time{}
 	s.mu.Lock()
@@ -590,10 +587,11 @@ func (a *projectAgent) setReapDone() {
 	a.mu.Unlock()
 }
 
-// removeContainer removes the podman container named for the project, if it exists (D-106). The
-// name is acpcode-<projectId>, the lock of D-015. `podman rm -f` also stops a running container.
+// removeContainer removes the podman container named for the agent, if it exists (D-106). The name
+// is agentContainerName(p): acpcode-<projectId>, or acpcode-<projectId>-<runner> for a runner that
+// is not the project's own. `podman rm -f` also stops a running container.
 func (r podmanRunner) removeContainer(p store.Project) (bool, error) {
-	name := "acpcode-" + p.ID
+	name := agentContainerName(p)
 	bin := r.cfg.Runner.Podman
 	if bin == "" {
 		bin = "podman"

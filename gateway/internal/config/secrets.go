@@ -80,20 +80,21 @@ func ReadSecretsFile(path string) ([]Secret, error) {
 	return ParseSecrets(data)
 }
 
-// validateSecrets checks agent.secretsFile and sorts its names into those the agent may receive
-// (listed in envPassthrough) and those it ignores. HOME and PATH are never secrets: the gateway sets
-// HOME, and the image sets PATH. ignored holds names only, so the caller can log them.
-func validateSecrets(v *jsonv.Value, passthrough []string) (path string, allowed, ignored []string, errs []string) {
+// validateSecrets checks a secretsFile setting (what names its owner in messages: "agent" or
+// "runners.<id>") and sorts its names into those the agent may receive (listed in envPassthrough)
+// and those it ignores. HOME and PATH are never secrets: the gateway sets HOME, and the image sets
+// PATH. ignored holds names only, so the caller can log them.
+func validateSecrets(v *jsonv.Value, what string, passthrough []string) (path string, allowed, ignored []string, errs []string) {
 	if v.IsNull() {
 		return "", nil, nil, nil
 	}
 	p, ok := v.StringValue()
 	if !ok || !filepath.IsAbs(p) {
-		return "", nil, nil, []string{"agent.secretsFile must be an absolute path to a NAME=value file"}
+		return "", nil, nil, []string{what + ".secretsFile must be an absolute path to a NAME=value file"}
 	}
 	secrets, err := ReadSecretsFile(p)
 	if err != nil {
-		return "", nil, nil, []string{"agent.secretsFile: " + err.Error()}
+		return "", nil, nil, []string{what + ".secretsFile: " + err.Error()}
 	}
 	listed := map[string]bool{}
 	for _, name := range passthrough {
@@ -102,7 +103,7 @@ func validateSecrets(v *jsonv.Value, passthrough []string) (path string, allowed
 	for _, s := range secrets {
 		switch {
 		case s.Name == "HOME" || s.Name == "PATH":
-			errs = append(errs, fmt.Sprintf("agent.secretsFile must not set %s", s.Name))
+			errs = append(errs, fmt.Sprintf("%s.secretsFile must not set %s", what, s.Name))
 		case listed[s.Name]:
 			allowed = append(allowed, s.Name)
 		default:

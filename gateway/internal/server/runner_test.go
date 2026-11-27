@@ -35,11 +35,11 @@ func TestPodmanArgsMountPathsAsIsAndPassSecretsByNameOnly(t *testing.T) {
 
 func TestHostLockIsExclusiveAndInheritedByTheAgent(t *testing.T) {
 	home := t.TempDir()
-	first, err := lockHome(home)
+	first, err := lockHome(home, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lockHome(home); !errors.Is(err, errProjectLocked) {
+	if _, err := lockHome(home, ""); !errors.Is(err, errProjectLocked) {
 		t.Fatalf("second lock: %v", err)
 	}
 	// A child that inherits the locked file keeps the lock after the gateway closes its copy.
@@ -49,11 +49,11 @@ func TestHostLockIsExclusiveAndInheritedByTheAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	first.Close()
-	if _, err := lockHome(home); !errors.Is(err, errProjectLocked) {
+	if _, err := lockHome(home, ""); !errors.Is(err, errProjectLocked) {
 		t.Fatalf("lock while the child runs: %v", err)
 	}
 	<-proc.exited
-	again, err := lockHome(home)
+	again, err := lockHome(home, "")
 	if err != nil {
 		t.Fatalf("lock after the child exited: %v", err)
 	}

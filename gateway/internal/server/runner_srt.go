@@ -62,7 +62,8 @@ type srtSettings struct {
 
 // srtSpec is what differs between the agent, git and a push command.
 type srtSpec struct {
-	domains   []string // hosts the process may reach
+	agent     bool     // the agent process: it may reach its runner's allowedDomains (D-126)
+	domains   []string // hosts the process may reach (git push: the git hosts)
 	gitConfig bool     // may write .git/config (never .git/hooks)
 	localhost bool     // may use localhost ports (the agent only, when configured)
 	readOnly  []string // extra paths it may read (the push scratch folder)
@@ -116,10 +117,15 @@ func (r *srtRunner) denyRegions() []string {
 	return uniq(out)
 }
 
-// settings builds the settings for one process of project p.
+// settings builds the settings for one process of project p. The agent's hosts and the extra read
+// paths come from the project's runner (agentFor), not from the shared runner block (D-126).
 func (r *srtRunner) settings(p store.Project, home string, spec srtSpec) srtSettings {
 	var s srtSettings
+	a, _ := agentFor(r.cfg, p) // start checks the runner first; an unknown one gets no extra hosts or paths
 	domains := spec.domains
+	if spec.agent {
+		domains = append(append([]string{}, domains...), a.AllowedDomains...)
+	}
 	if spec.localhost && r.cfg.Runner.AllowLocalBinding {
 		// Bob's HTTP client sends even a loopback request through srt's proxy, which refuses a
 		// host that is not listed. An MCP URL must use the name localhost (config refuses IP literals).
@@ -130,8 +136,8 @@ func (r *srtRunner) settings(p store.Project, home string, spec srtSpec) srtSett
 	s.Network.AllowLocalBinding = spec.localhost && r.cfg.Runner.AllowLocalBinding
 	s.Filesystem.DenyRead = r.denyRegions()
 	var allow []string
-	for _, a := range append([]string{p.Path, home}, append(spec.readOnly, r.cfg.Runner.AllowRead...)...) {
-		allow = append(allow, pathForms(a)...)
+	for _, path := range append([]string{p.Path, home}, append(spec.readOnly, a.AllowRead...)...) {
+		allow = append(allow, pathForms(path)...)
 	}
 	s.Filesystem.AllowRead = uniq(allow)
 	var write []string
@@ -142,6 +148,7 @@ func (r *srtRunner) settings(p store.Project, home string, spec srtSpec) srtSett
 	s.Filesystem.DenyWrite = []string{}
 	s.Filesystem.AllowGitConfig = spec.gitConfig
 	s.EnableWeakerNetworkIsolation = r.cfg.Runner.WeakerNetworkIsolation
+	worktreeAccess(p, &s)
 	return s
 }
 
@@ -184,6 +191,8 @@ func (r *srtRunner) writeSettings(name string, s srtSettings) (string, error) {
 // reaches srt in cmd.Env and passes through to the process, so no value is in argv. srt itself
 // needs the gateway's PATH to find node; the process gets env's PATH through the env wrapper.
 // TMPDIR is overridden here because srt would set /tmp/claude, shared by every sandbox.
+// CLAUDE_CODE_TMPDIR gets the same folder: the Claude CLI makes /tmp/claude-<uid> otherwise, which
+// the sandbox does not let it write (D-126).
 //
 // srt anchors its .git/hooks and .git/config denies at its own working directory and pins a
 // literal <cwd>/.git, so with the project as the cwd `git init` could not create .git. srt runs in
@@ -198,7 +207,8 @@ func (r *srtRunner) command(p store.Project, home, settingsName string, spec srt
 	if err != nil {
 		return nil, "", err
 	}
-	wrapper := []string{"/usr/bin/env", "TMPDIR=" + filepath.Join(home, "tmp"), "NODE_USE_ENV_PROXY=1"}
+	tmpDir := filepath.Join(home, "tmp")
+	wrapper := []string{"/usr/bin/env", "TMPDIR=" + tmpDir, "CLAUDE_CODE_TMPDIR=" + tmpDir, "NODE_USE_ENV_PROXY=1"}
 	srtEnv := []string{"PATH=" + os.Getenv("PATH")}
 	for _, kv := range env {
 		if len(kv) >= 5 && kv[:5] == "PATH=" {
@@ -235,28 +245,28 @@ func srtLaunchGate() {
 }
 
 func (r *srtRunner) start(p store.Project, home string) (*agentProcess, error) {
-	secrets, err := secretEnv(r.cfg)
-	if err != nil {
-		return nil, err
-	}
 	a, err := agentFor(r.cfg, p)
 	if err != nil {
 		return nil, err
 	}
-	lock, err := lockHome(home)
+	secrets, err := secretEnv(a)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := lockHome(home, lockRunner(p))
 	if err != nil {
 		return nil, err
 	}
 	// A marker left by a run that did not end cleanly (the gateway was killed) means commands of
 	// that run may still be alive; the lock is ours, so no agent of this project is. Kill them.
-	marker := filepath.Join(home, ".acpcode.running")
+	marker := filepath.Join(home, ".acpcode"+agentFileSuffix(p)+".running")
 	if _, err := os.Stat(marker); err == nil {
 		reapOrphans(pathForms(p.Path))
 	}
 	token := []byte(strconv.Itoa(os.Getpid()) + "-" + strconv.FormatInt(time.Now().UnixNano(), 10))
 	_ = os.WriteFile(marker, token, 0o600)
 	env := append(agentEnv(a.EnvPassthrough, home), secrets...) // a later entry wins for a duplicate name
-	cmd, _, err := r.command(p, home, p.ID+"-agent", srtSpec{domains: r.cfg.Runner.AllowedDomains, localhost: true}, a.Command, env)
+	cmd, _, err := r.command(p, home, p.ID+agentFileSuffix(p)+"-agent", srtSpec{agent: true, localhost: true}, a.Command, env)
 	if err != nil {
 		lock.Close()
 		return nil, err

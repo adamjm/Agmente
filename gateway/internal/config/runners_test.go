@@ -113,7 +113,7 @@ func TestRunnersConfigRefusesBadAgents(t *testing.T) {
 		{"bad id", `"runners": {"Bob_1": {"command": ["bob", "acp"], "image": "i"}}, "runner": {"kind": "apple", "container": "/opt/homebrew/bin/container"}`, "", "must match"},
 		{"image missing for a container runner", `"runners": {"bob": {"command": ["bob", "acp"], "image": "i"}, "omp": {"command": ["omp", "acp"]}}, "defaultRunner": "bob", "runner": {"kind": "apple", "container": "/opt/homebrew/bin/container"}`, "", "runners.omp.image must name the project image"},
 		{"shell string command", `"runners": {"bob": {"command": "bob acp", "image": "i"}}, "runner": {"kind": "apple", "container": "/opt/homebrew/bin/container"}`, "", "runners.bob.command must be a non-empty array"},
-		{"secrets file inside a runner", `"runners": {"bob": {"command": ["bob", "acp"], "image": "i", "secretsFile": "/tmp/x.env"}}, "runner": {"kind": "apple", "container": "/opt/homebrew/bin/container"}`, "", "secretsFile is not supported with runners"},
+		{"relative secrets file inside a runner", `"runners": {"bob": {"command": ["bob", "acp"], "image": "i", "secretsFile": "x.env"}}, "runner": {"kind": "apple", "container": "/opt/homebrew/bin/container"}`, "", "runners.bob.secretsFile must be an absolute path"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

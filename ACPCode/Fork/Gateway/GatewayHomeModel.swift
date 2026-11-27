@@ -100,6 +100,22 @@ final class GatewayHomeModel: ObservableObject {
     var totalUnread: Int { sessions.reduce(0) { $0 + $1.unread } }
     var awaitingApprovalCount: Int { sessions.filter { $0.status == .awaitingApproval }.count }
 
+    /// Switches a project's auto-approve on the gateway (D-124) and shows what the gateway now stores. A
+    /// refusal keeps the old value and says why in `errorMessage`. Only a person's tap calls this.
+    func setAutoApprove(projectId: String, enabled: Bool) async {
+        guard let client = clientProvider?() else { return }
+        let mine = generation
+        do {
+            let updated = try await client.setAutoApprove(projectId: projectId, enabled: enabled)
+            guard mine == generation, let index = projects.firstIndex(where: { $0.id == projectId }) else { return }
+            projects[index] = updated
+            errorMessage = nil
+        } catch {
+            guard mine == generation else { return }
+            errorMessage = (error as? GatewayError)?.message ?? error.localizedDescription
+        }
+    }
+
     /// Reloads projects and sessions. An answer that arrives after `configure` changed the server is ignored.
     func refresh() async {
         guard let client = clientProvider?() else { return }

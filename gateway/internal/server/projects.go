@@ -58,10 +58,14 @@ type projectJSON struct {
 	Runner string `json:"runner"`
 	// AutoApprove is true when the gateway answers this project's permission requests itself (D-124).
 	AutoApprove bool `json:"autoApprove"`
+	// ParentID and Branch are set for a worktree project (D-125): the project it was made from and its
+	// git branch. Left out for an ordinary project.
+	ParentID string `json:"parentId,omitempty"`
+	Branch   string `json:"branch,omitempty"`
 }
 
 func toProjectJSON(p store.Project) projectJSON {
-	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip, Runner: p.Runner, AutoApprove: p.AutoApprove}
+	out := projectJSON{ID: p.ID, Name: p.Name, Path: p.Path, DenyPaths: p.DenyPaths, WatchSkip: p.WatchSkip, Runner: p.Runner, AutoApprove: p.AutoApprove, ParentID: p.ParentID, Branch: p.Branch}
 	if p.DefaultMode != "" {
 		mode := p.DefaultMode
 		out.DefaultMode = &mode

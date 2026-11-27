@@ -44,7 +44,7 @@ type appleRunner struct {
 	cfg *config.Config
 
 	mu     sync.Mutex
-	agents map[string]*appleAgent // project id -> its agent container
+	agents map[string]*appleAgent // container name (agentContainerName) -> its agent container
 }
 
 func newAppleRunner(cfg *config.Config) *appleRunner {
@@ -73,7 +73,7 @@ func (r *appleRunner) dnsArgs() []string {
 	return []string{"--dns", r.cfg.Runner.DNS}
 }
 
-func appleAgentName(p store.Project) string { return "acpcode-" + p.ID }
+func appleAgentName(p store.Project) string { return agentContainerName(p) }
 
 // agentArgs is the `container run` command for the agent. Allow-listed variables are passed by
 // name only, so their values never appear on the command line.
@@ -114,20 +114,25 @@ func (r *appleRunner) start(p store.Project, home string) (*agentProcess, error)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, err
 	}
+	ar, err := agentFor(r.cfg, p)
+	if err != nil {
+		return nil, err
+	}
+	key := appleAgentName(p)
 	r.mu.Lock()
-	if a := r.agents[p.ID]; a != nil && !a.proc.hasExited() {
+	if a := r.agents[key]; a != nil && !a.proc.hasExited() {
 		r.mu.Unlock()
 		return nil, errProjectLocked
 	}
 	r.mu.Unlock()
 	// The container name is the lock across processes too: refuse before starting when another
 	// gateway already runs this project's container.
-	if up, err := r.listedRunning(appleAgentName(p)); err != nil {
+	if up, err := r.listedRunning(key); err != nil {
 		return nil, err
 	} else if up {
 		return nil, errProjectLocked
 	}
-	secrets, err := secretEnv(r.cfg)
+	secrets, err := secretEnv(ar)
 	if err != nil {
 		return nil, err
 	}
@@ -139,17 +144,17 @@ func (r *appleRunner) start(p store.Project, home string) (*agentProcess, error)
 	}
 	a := &appleAgent{proc: proc, ready: make(chan struct{})}
 	r.mu.Lock()
-	r.agents[p.ID] = a
+	r.agents[key] = a
 	r.mu.Unlock()
 	go func() {
 		<-proc.exited
 		r.mu.Lock()
-		if r.agents[p.ID] == a {
-			delete(r.agents, p.ID)
+		if r.agents[key] == a {
+			delete(r.agents, key)
 		}
 		r.mu.Unlock()
 	}()
-	if err := r.waitListed(appleAgentName(p), proc); err != nil {
+	if err := r.waitListed(key, proc); err != nil {
 		proc.terminate(time.Second)
 		return nil, err
 	}
@@ -179,11 +184,11 @@ func (r *appleRunner) waitListed(name string, proc *agentProcess) error {
 	}
 }
 
-// agentFor returns the project's agent container, or nil.
-func (r *appleRunner) agentFor(projectID string) *appleAgent {
+// agentFor returns the agent container with this name (agentContainerName), or nil.
+func (r *appleRunner) agentFor(name string) *appleAgent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.agents[projectID]
+	return r.agents[name]
 }
 
 // execArgs is `container exec` into the running agent container. The environment is the git
@@ -220,7 +225,7 @@ func (r *appleRunner) exec(ctx context.Context, p store.Project, home string, ar
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return gitResult{}, err
 	}
-	if a := r.agentFor(p.ID); a != nil {
+	if a := r.agentFor(appleAgentName(p)); a != nil {
 		select {
 		case <-a.ready:
 		case <-a.proc.exited:

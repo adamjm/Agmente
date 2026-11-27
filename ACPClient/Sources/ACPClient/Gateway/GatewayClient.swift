@@ -66,6 +66,25 @@ public struct GatewayClient: Sendable {
         return try decode(GatewayProject.self, from: result["project"], what: "project")
     }
 
+    /// `_acpcode/projects/createWorktree`: makes a git worktree of the project and registers it as a child project.
+    /// Returns the child (its `path` is the cwd for the session/new that follows, `parentId` and `branch` are set).
+    /// `runner` is a runner id from `GatewayInfo.runners`; it is sent only when non-nil and non-empty, else the
+    /// gateway uses the parent's runner. Refusals (not a git repository with a commit, the project is itself a
+    /// worktree project, bad runner id) come back as `GatewayError.rpc` with the gateway's own text.
+    public func createWorktree(projectId: String, runner: String? = nil) async throws -> GatewayProject {
+        var params: [String: ACP.Value] = ["projectId": .string(projectId)]
+        if let runner, !runner.isEmpty { params["runner"] = .string(runner) }
+        let result = try await call("_acpcode/projects/createWorktree", .object(params))
+        return try decode(GatewayProject.self, from: result["project"] ?? result, what: "project")
+    }
+
+    /// `_acpcode/projects/setAutoApprove` (D-124): switches one project's auto-approve on or off. Returns the
+    /// project as the gateway now stores it. Only a full-scope token may call it.
+    public func setAutoApprove(projectId: String, enabled: Bool) async throws -> GatewayProject {
+        let result = try await call("_acpcode/projects/setAutoApprove", .object(["projectId": .string(projectId), "enabled": .bool(enabled)]))
+        return try decode(GatewayProject.self, from: result["project"], what: "project")
+    }
+
     /// `_acpcode/projects/roots`: the configured roots that exist, as the gateway resolves them (D-091).
     /// A new project folder is made inside one of them.
     public func projectRoots() async throws -> [String] {

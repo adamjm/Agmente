@@ -93,6 +93,8 @@ struct GatewayHomeSections: View {
     let search: String
     var git: GitStore?
     let open: (String) -> Void
+    /// The runners the gateway lists. With two or more, session rows show their runner.
+    var runners: [GatewayRunner] = []
     /// The project whose Upload File sheet is open (D-115).
     @State private var uploadProject: GatewayProject?
 
@@ -150,7 +152,7 @@ struct GatewayHomeSections: View {
                         Text("No sessions yet").font(.footnote).foregroundStyle(.tertiary)
                     }
                     ForEach(section.sessions) { session in
-                        Button { open(session.sessionId) } label: { GatewaySessionRow(session: session).overlay(alignment: .bottom) { GatewayContextBar(usage: home.usage[session.sessionId]) } }
+                        Button { open(session.sessionId) } label: { GatewaySessionRow(session: session, secondary: GatewaySessionRunnerRules.sessionLabel(session, project: section.project, runners: runners)).overlay(alignment: .bottom) { GatewayContextBar(usage: home.usage[session.sessionId]) } }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("gatewaySession.\(session.sessionId)")
                     }
@@ -165,6 +167,8 @@ struct GatewayHomeSections: View {
 
 struct GatewaySessionRow: View {
     let session: GatewaySession
+    /// The runner (and branch) label, shown only with two or more runners.
+    var secondary: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -176,6 +180,13 @@ struct GatewaySessionRow: View {
                     Text(date, style: .relative)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if let secondary {
+                    Text(secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("sessionRunnerLabel")
                 }
             }
             Spacer()
@@ -207,8 +218,16 @@ struct GatewayNewSessionSheet: View {
     let blankWorkingDirectory: Bool
     /// The chosen MCP ids (D-107), or nil to send no key. The list is loaded from the gateway.
     let onCancel: () -> Void
-    let onCreate: (GatewayProject, [String]?) -> Void
+    /// Starts the session. Returns the gateway's message when it could not be started (a worktree that was refused),
+    /// else nil and the caller closes the sheet.
+    let onCreate: (GatewayProject, [String]?, GatewayNewSessionChoice) async -> String?
+    /// The runners the gateway lists and its default (per-session runner). The Runner picker shows with two or more.
+    let runners: [GatewayRunner]
+    let defaultRunner: String?
     @State private var selection: String?
+    @State private var runnerState: GatewayNewSessionRunnerState
+    @State private var startMessage: String?
+    @State private var isStarting = false
     @StateObject private var mcp: GatewayMCPCatalogModel
 
     /// `initialSelection` is the project the home has selected (D-091), when it is still listed.
@@ -218,14 +237,23 @@ struct GatewayNewSessionSheet: View {
         initialSelection: String? = nil,
         blankWorkingDirectory: Bool = false,
         mcpClient: @escaping () -> GatewayClient? = { nil },
+        runners: [GatewayRunner] = [],
+        defaultRunner: String? = nil,
         onCancel: @escaping () -> Void,
-        onCreate: @escaping (GatewayProject, [String]?) -> Void
+        onCreate: @escaping (GatewayProject, [String]?, GatewayNewSessionChoice) async -> String?
     ) {
         self.projects = projects
         self.blankWorkingDirectory = blankWorkingDirectory
+        self.runners = runners
+        self.defaultRunner = defaultRunner
         self.onCancel = onCancel
         self.onCreate = onCreate
         _selection = State(initialValue: initialSelection)
+        _runnerState = State(initialValue: GatewayNewSessionRunnerState(
+            runners: runners,
+            defaultRunner: defaultRunner,
+            project: gatewayNewSessionChosenProject(projects, selection: initialSelection, blankWorkingDirectory: blankWorkingDirectory)
+        ))
         _mcp = StateObject(wrappedValue: GatewayMCPCatalogModel(clientProvider: mcpClient))
     }
 
@@ -251,12 +279,27 @@ struct GatewayNewSessionSheet: View {
                     }
                     .accessibilityIdentifier("gatewayProjectChoice.\(project.id)")
                 }
+                if runnerState.offersRunner {
+                    runnerSection
+                }
                 if mcp.showsSection {
                     GatewayMCPSessionSection(model: mcp)
                 }
+                if let startMessage {
+                    Section {
+                        Text(startMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("newSessionError")
+                    }
+                }
             }
             .task { await mcp.load(projectId: chosen?.id) }
-            .onChange(of: chosen?.id) { _, id in mcp.selectProject(id) }
+            .onChange(of: chosen?.id) { _, id in
+                mcp.selectProject(id)
+                runnerState.select(project: chosen)
+                startMessage = nil
+            }
             .overlay {
                 if projects.isEmpty {
                     Text("No projects. Add one on the gateway.")
@@ -275,12 +318,46 @@ struct GatewayNewSessionSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
                         if let project = chosen, gatewayNewSessionCwd(selectedProjectPath: project.path) != nil {
-                            onCreate(project, mcp.idsToSend)
+                            let ids = mcp.idsToSend
+                            let choice = runnerState.choice
+                            isStarting = true
+                            startMessage = nil
+                            Task {
+                                startMessage = await onCreate(project, ids, choice)
+                                isStarting = false
+                            }
                         }
                     }
-                    .disabled(chosen == nil || gatewayNewSessionCwd(selectedProjectPath: chosen?.path) == nil)
+                    .disabled(isStarting || chosen == nil || gatewayNewSessionCwd(selectedProjectPath: chosen?.path) == nil)
                     .accessibilityIdentifier("gatewayCreateSession")
                 }
+            }
+        }
+    }
+
+    /// The Runner picker, and the "Separate worktree" toggle when the chosen runner is not the project's own.
+    @ViewBuilder
+    private var runnerSection: some View {
+        Section {
+            Picker("Runner", selection: Binding(
+                get: { runnerState.selectedRunner ?? "" },
+                set: { runnerState.select(runner: $0) }
+            )) {
+                ForEach(GatewaySessionRunnerRules.choices(runners), id: \.id) { runner in
+                    Text(runner.name).tag(runner.id)
+                }
+            }
+            .accessibilityIdentifier("newSessionRunner")
+            if runnerState.offersWorktree {
+                Toggle("Separate worktree", isOn: Binding(
+                    get: { runnerState.worktree },
+                    set: { runnerState.setWorktree($0) }
+                ))
+                .accessibilityIdentifier("newSessionWorktree")
+            }
+        } footer: {
+            if runnerState.offersWorktree {
+                Text("Edits happen on their own branch. Merge it back yourself.")
             }
         }
     }

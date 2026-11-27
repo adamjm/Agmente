@@ -73,6 +73,15 @@ struct SessionDetailView: View {
         return serverViewModel.sessionSummaries.first(where: { $0.id == id })?.title ?? "Session"
     }
 
+    /// The session's runner (and branch, for a worktree project) on a gateway that lists two or more runners.
+    private var gatewayRunnerLabel: String? {
+        guard serverViewModel.isGatewayServer else { return nil }
+        let id = serverViewModel.sessionId
+        guard let session = model.gatewayHome.sessions.first(where: { $0.sessionId == id }) else { return nil }
+        let project = model.gatewayHome.projects.first { $0.id == session.projectId }
+        return GatewaySessionRunnerRules.sessionLabel(session, project: project, runners: model.selectedGatewayInfo?.runners ?? [])
+    }
+
     private var selectedCommand: SessionCommand? {
         sessionViewModel.availableCommands.first { $0.name == sessionViewModel.selectedCommandName }
     }
@@ -99,6 +108,14 @@ struct SessionDetailView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
+                if let label = gatewayRunnerLabel {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .accessibilityIdentifier("sessionHeaderRunner")
+                }
                 if let planEntries = sessionViewModel.forkMeta.plan {
                     SessionPlanView(entries: planEntries)
                 }

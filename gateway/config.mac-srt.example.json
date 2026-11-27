@@ -11,20 +11,52 @@
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     }
   ],
-  "agent": {
-    "command": [
-      "/opt/homebrew/bin/bob",
-      "acp",
-      "--accept-license",
-      "--log-level",
-      "warn"
-    ],
-    "envPassthrough": [
-      "PATH",
-      "LANG",
-      "BOB_API_KEY"
-    ]
+  "runners": {
+    "bob": {
+      "name": "Bob",
+      "command": [
+        "/opt/homebrew/bin/bob",
+        "acp",
+        "--accept-license",
+        "--log-level",
+        "warn"
+      ],
+      "envPassthrough": [
+        "PATH",
+        "LANG",
+        "BOB_API_KEY"
+      ],
+      "allowedDomains": [
+        "api.us-east.bob.ibm.com",
+        "bob.ibm.com",
+        "iam.cloud.ibm.com"
+      ]
+    },
+    "claude": {
+      "name": "Claude Code",
+      "command": [
+        "/opt/homebrew/bin/claude-agent-acp"
+      ],
+      "envPassthrough": [
+        "PATH",
+        "HOME",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+        "CLAUDE_CODE_EXECUTABLE"
+      ],
+      "secretsFile": "/Users/you/acpcode/claude.env",
+      "allowedDomains": [
+        "model-gateway.example.com"
+      ],
+      "allowRead": [
+        "/opt/homebrew",
+        "/usr/local"
+      ]
+    }
   },
+  "defaultRunner": "bob",
   "projects": {
     "roots": [
       "/Users/you/acpcode/projects"
@@ -34,11 +66,6 @@
   "runner": {
     "kind": "srt",
     "srt": "/opt/homebrew/bin/srt",
-    "allowedDomains": [
-      "api.us-east.bob.ibm.com",
-      "bob.ibm.com",
-      "iam.cloud.ibm.com"
-    ],
     "allowRead": [
       "/opt/homebrew",
       "/usr/local"

@@ -58,6 +58,7 @@ func TestSchema8ProjectsGetNoRunnerUntilTheBackfill(t *testing.T) {
 	if err := s.CreateProject(ctx, Project{ID: "dddddddddddd", Name: "old", Path: "/r/d", Created: time.Now().UTC().Format(time.RFC3339)}); err != nil {
 		t.Fatal(err)
 	}
+	dropV11Columns(t, s.db)
 	if _, err := s.db.Exec(`ALTER TABLE projects DROP COLUMN auto_approve`); err != nil {
 		t.Fatal(err)
 	}
@@ -74,8 +75,8 @@ func TestSchema8ProjectsGetNoRunnerUntilTheBackfill(t *testing.T) {
 	}
 	defer s.Close()
 	var version int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 10 {
-		t.Fatalf("schema version = %d, %v; want 10", version, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 11 {
+		t.Fatalf("schema version = %d, %v; want 11", version, err)
 	}
 	if n, err := s.AssignUnsetRunners(ctx, "bob"); err != nil || n != 1 {
 		t.Fatalf("backfill = %d, %v; want the one old project", n, err)

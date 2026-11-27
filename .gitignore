@@ -27,3 +27,16 @@ secrets/
 # macOS Finder metadata
 .DS_Store
 *.crt
+
+# Local spike scripts that hold gateway hosts and tokens
+.spike-acp/
+
+# Key and certificate material anywhere (the script can write outside secrets/ with --out)
+*.p12
+*.pfx
+*.p8
+*.pem
+*.key
+*.csr
+*.srl
+*.mobileprovision

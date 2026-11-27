@@ -58,20 +58,21 @@ func agentEnv(names []string, home string) []string {
 // never a value.
 var errSecrets = errors.New("the agent secrets file cannot be read")
 
-// secretEnv reads the agent secrets file now and returns NAME=value for each entry the agent may
-// receive (PLAN 4.2). The values go only into the runner CLI's environment (cmd.Env). They never go
-// in argv: the container runners pass the name with `-e NAME`, and the host runner sets the variable
-// directly. Nothing here logs a value.
-func secretEnv(cfg *config.Config) ([]string, error) {
-	if cfg.SecretsFile == "" {
+// secretEnv reads this runner's secrets file now and returns NAME=value for each entry the agent
+// may receive (PLAN 4.2, D-126). The values go only into that runner's process environment
+// (cmd.Env): another runner's agent never gets them. They never go in argv: the container runners
+// pass the name with `-e NAME`, and the host runner sets the variable directly. Nothing here logs
+// a value.
+func secretEnv(a config.AgentRunner) ([]string, error) {
+	if a.SecretsFile == "" {
 		return nil, nil
 	}
-	secrets, err := config.ReadSecretsFile(cfg.SecretsFile)
+	secrets, err := config.ReadSecretsFile(a.SecretsFile)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errSecrets, err)
 	}
-	allowed := make(map[string]bool, len(cfg.SecretNames))
-	for _, name := range cfg.SecretNames {
+	allowed := make(map[string]bool, len(a.SecretNames))
+	for _, name := range a.SecretNames {
 		allowed[name] = true
 	}
 	var env []string
@@ -87,9 +88,47 @@ func secretEnv(cfg *config.Config) ([]string, error) {
 // set to the project (D-013) and HOME set to the project home. For tests and development only:
 // config refuses it unless runner.allowHost is true.
 //
-// Lock: an exclusive flock on <home>/.acpcode.lock, taken without waiting. The agent inherits the
+// Lock: an exclusive flock on <home>/.acpcode-<runner>.lock, taken without waiting. The agent inherits the
 // locked file (fd 3), so the lock lasts while the agent runs, even if the gateway dies first.
 type hostRunner struct{ cfg *config.Config }
+
+// agentContainerName is the container name of the agent a started project copy runs (podman and
+// apple, D-126): acpcode-<projectId> for the project's own agent, acpcode-<projectId>-<runner> for
+// an agent of another runner (p.Secondary), so two runners of one project never share a name and
+// the own agent keeps the name it always had. stop.go uses it too.
+func agentContainerName(p store.Project) string {
+	if !p.Secondary || p.Runner == "" {
+		return "acpcode-" + p.ID
+	}
+	return "acpcode-" + p.ID + "-" + p.Runner
+}
+
+// lockFileName is the lock file in the project home for a runner: .acpcode.lock when runner is
+// empty, else .acpcode-<runner>.lock, so two runners of one project do not collide.
+func lockFileName(runner string) string {
+	if runner == "" {
+		return ".acpcode.lock"
+	}
+	return ".acpcode-" + runner + ".lock"
+}
+
+// lockRunner is the runner a project copy's lock is named for: "" (the old name) for the project's
+// own agent, the runner for any other.
+func lockRunner(p store.Project) string {
+	if !p.Secondary {
+		return ""
+	}
+	return p.Runner
+}
+
+// agentFileSuffix is "" or "-<runner>": it keeps per-process files (srt settings) of two runners
+// of one project apart. The project's own agent has none.
+func agentFileSuffix(p store.Project) string {
+	if !p.Secondary || p.Runner == "" {
+		return ""
+	}
+	return "-" + p.Runner
+}
 
 // agentFor is the agent a project runs: its command, environment and image. A project's runner is
 // checked against the config when the gateway starts (checkProjectRunners), so a project never
@@ -109,15 +148,15 @@ func imageOf(cfg *config.Config, p store.Project) string {
 }
 
 func (r hostRunner) start(p store.Project, home string) (*agentProcess, error) {
-	secrets, err := secretEnv(r.cfg)
-	if err != nil {
-		return nil, err
-	}
 	a, err := agentFor(r.cfg, p)
 	if err != nil {
 		return nil, err
 	}
-	lock, err := lockHome(home)
+	secrets, err := secretEnv(a)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := lockHome(home, lockRunner(p))
 	if err != nil {
 		return nil, err
 	}
@@ -134,11 +173,11 @@ func (r hostRunner) start(p store.Project, home string) (*agentProcess, error) {
 	return proc, nil
 }
 
-func lockHome(home string) (*os.File, error) {
+func lockHome(home, runner string) (*os.File, error) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(home, ".acpcode.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(filepath.Join(home, lockFileName(runner)), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +219,7 @@ func (r podmanRunner) userArgs() []string {
 
 func (r podmanRunner) args(p store.Project, home string) []string {
 	a, _ := r.cfg.Agent(p.Runner) // start checks the runner first (agentFor)
-	args := []string{"run", "--rm", "-i", "--name", "acpcode-" + p.ID, "--pull=never", "--init"}
+	args := []string{"run", "--rm", "-i", "--name", agentContainerName(p), "--pull=never", "--init"}
 	args = append(args, r.userArgs()...)
 	args = append(args,
 		"-e", "HOME="+home,
@@ -197,13 +236,14 @@ func (r podmanRunner) args(p store.Project, home string) []string {
 }
 
 func (r podmanRunner) start(p store.Project, home string) (*agentProcess, error) {
-	if _, err := agentFor(r.cfg, p); err != nil {
+	a, err := agentFor(r.cfg, p)
+	if err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, err
 	}
-	secrets, err := secretEnv(r.cfg)
+	secrets, err := secretEnv(a)
 	if err != nil {
 		return nil, err
 	}

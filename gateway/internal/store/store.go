@@ -22,7 +22,7 @@ import (
 )
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 10
+const SchemaVersion = 11
 
 var schemaV1 = []string{
 	`CREATE TABLE projects (
@@ -105,6 +105,16 @@ var schemaV9 = []string{
 // project's permission requests with an allow option. NULL and 0 mean it asks the phone.
 var schemaV10 = []string{
 	`ALTER TABLE projects ADD COLUMN auto_approve INTEGER`,
+}
+
+// schemaV11 adds the per-session runner and the separate worktree (D-125). sessions.runner is the
+// id of the agent a session runs on; NULL means the project's runner (every session made before
+// this version). projects.parent_id and projects.branch mark a worktree project: a folder made with
+// `git worktree add` for one session's runner, a child of the project it was made from.
+var schemaV11 = []string{
+	`ALTER TABLE sessions ADD COLUMN runner TEXT`,
+	`ALTER TABLE projects ADD COLUMN parent_id TEXT`,
+	`ALTER TABLE projects ADD COLUMN branch TEXT`,
 }
 
 // schemaV5 adds a project's watcher skip list (D-065): a JSON array, NULL when none.
@@ -195,7 +205,7 @@ func (s *Store) migrate() error {
 	steps := []struct {
 		version int
 		stmts   []string
-	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}, {9, schemaV9}, {10, schemaV10}}
+	}{{1, schemaV1}, {2, schemaV2}, {3, schemaV3}, {4, schemaV4}, {5, schemaV5}, {6, schemaV6}, {7, schemaV7}, {8, schemaV8}, {9, schemaV9}, {10, schemaV10}, {11, schemaV11}}
 	for _, step := range steps {
 		if version >= step.version {
 			continue
@@ -275,9 +285,18 @@ type Project struct {
 	Created     string
 	DenyPaths   []string // additions to the secret deny-list (D-050); the built-ins always apply
 	WatchSkip   []string // folders the git watcher adds to its skip list (D-065)
-	// Runner is the id of the agent this project runs, from the gateway config's runners. It is
-	// fixed at creation. "" only before the startup backfill (AssignUnsetRunners).
+	// Runner is the id of the agent this project runs by default, from the gateway config's
+	// runners. A session may name another runner (SessionRunner). "" only before the startup
+	// backfill (AssignUnsetRunners).
 	Runner string
+	// ParentID is the project a worktree project was made from, "" for an ordinary project (D-125).
+	ParentID string
+	// Branch is the git branch of a worktree project, "" for an ordinary project (D-125).
+	Branch string
+	// Secondary is set only on the copy of a project the supervisor hands the runner for an agent
+	// that is not the project's own runner (D-125). It is never stored. It makes container, lock and
+	// file names carry the runner, so the project's own agent keeps the names it always had.
+	Secondary bool
 	// AutoApprove makes the gateway answer this project's permission requests with an allow
 	// option instead of asking the phone (D-124). Off by default.
 	AutoApprove bool
@@ -300,9 +319,16 @@ func (s *Store) CreateProject(ctx context.Context, p Project) error {
 	if err != nil {
 		return err
 	}
+	var parent, branch any
+	if p.ParentID != "" {
+		parent = p.ParentID
+	}
+	if p.Branch != "" {
+		branch = p.Branch
+	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths, watch_skip, runner) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, mode, p.Created, deny, skip, p.Runner)
+		`INSERT INTO projects (id, name, path, default_mode, created, deny_paths, watch_skip, runner, parent_id, branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, mode, p.Created, deny, skip, p.Runner, parent, branch)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: projects.path") {
 		return ErrDuplicatePath
 	}
@@ -338,14 +364,14 @@ func (s *Store) AssignUnsetRunners(ctx context.Context, runner string) (int64, e
 }
 
 // projectColumns is the SELECT list of every project read, in the order scanProject reads it.
-const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, ''), COALESCE(runner, ''), COALESCE(auto_approve, 0)`
+const projectColumns = `id, name, path, COALESCE(default_mode, ''), created, COALESCE(deny_paths, ''), COALESCE(watch_skip, ''), COALESCE(runner, ''), COALESCE(auto_approve, 0), COALESCE(parent_id, ''), COALESCE(branch, '')`
 
 // scanProject reads one row of projectColumns.
 func scanProject(row interface{ Scan(...any) error }) (Project, error) {
 	var p Project
 	var deny, skip string
 	var auto int
-	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip, &p.Runner, &auto); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultMode, &p.Created, &deny, &skip, &p.Runner, &auto, &p.ParentID, &p.Branch); err != nil {
 		return Project{}, err
 	}
 	p.AutoApprove = auto == 1
@@ -478,6 +504,24 @@ func (s *Store) SessionProject(ctx context.Context, sessionID string) (string, e
 		return "", nil
 	}
 	return id, err
+}
+
+// SetSessionRunner records the runner a session runs on (D-125). The id must be one of the
+// gateway's runners; the caller checks that.
+func (s *Store) SetSessionRunner(ctx context.Context, sessionID, runner string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET runner = ? WHERE session_id = ?`, runner, sessionID)
+	return err
+}
+
+// SessionRunner returns the runner recorded for a session, or "" when none is recorded: the
+// session runs on its project's runner (D-125).
+func (s *Store) SessionRunner(ctx context.Context, sessionID string) (string, error) {
+	var r sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT runner FROM sessions WHERE session_id = ?`, sessionID).Scan(&r)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return r.String, err
 }
 
 // SetSessionTitle records the title the agent gave a session.

@@ -235,7 +235,7 @@ func (gc *gatewayCall) finish() {
 	close(gc.done)
 	gc.s.mu.Lock()
 	agents := make([]*projectAgent, 0, len(gc.s.agents))
-	for _, a := range gc.s.agents {
+	for _, a := range gc.s.agents { // every agent of every project and runner
 		agents = append(agents, a)
 	}
 	gc.s.mu.Unlock()
@@ -266,6 +266,11 @@ func (s *Server) serveCreate(who audit.Who, id, params *jsonv.Value, reply func(
 		reply(id, nil, rerr)
 		return
 	}
+	runner, rerr := s.runnerValue(params.Get("runner")) // D-125: the session's runner, "" for the project's own
+	if rerr != nil {
+		reply(id, nil, rerr)
+		return
+	}
 	project, err := s.projectForCwd(s.pushCtx, cwd)
 	if err != nil {
 		reply(id, nil, &rpcError{Code: rpcInternal, Message: "cannot read projects"})
@@ -285,6 +290,18 @@ func (s *Server) serveCreate(who audit.Who, id, params *jsonv.Value, reply func(
 		if v := params.Get(k); !v.IsNull() {
 			newParams.Set(k, v)
 		}
+	}
+	if runner != "" {
+		// The runner goes into the session/new's _meta, so route() picks the agent as for a socket's own
+		// session/new. The phone's _meta is copied, not edited.
+		meta := jsonv.Obj()
+		if old := params.Get("_meta"); old != nil && old.Kind == jsonv.Object {
+			for _, k := range old.Keys {
+				meta.Set(k, old.Obj[k])
+			}
+		}
+		meta.Set(runnerMetaKey, jsonv.Str(runner))
+		newParams.Set("_meta", meta)
 	}
 	seq := gatewayCallSeq.Add(1)
 	newID := fmt.Sprintf("acpcode-new-%d", seq)

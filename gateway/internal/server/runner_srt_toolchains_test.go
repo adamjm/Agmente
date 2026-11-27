@@ -22,7 +22,7 @@ import (
 func (f srtFixture) agentRun(t *testing.T, name string, extraEnv []string, script string, limit time.Duration) (string, time.Duration, error) {
 	t.Helper()
 	env := append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + f.home, "LANG=en_US.UTF-8"}, extraEnv...)
-	cmd, path, err := f.runner.command(f.project, f.home, f.project.ID+"-"+name, srtSpec{domains: f.cfg.Runner.AllowedDomains}, []string{"/bin/sh", "-c", "exec 2>&1; " + script}, env)
+	cmd, path, err := f.runner.command(f.project, f.home, f.project.ID+"-"+name, srtSpec{agent: true}, []string{"/bin/sh", "-c", "exec 2>&1; " + script}, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,11 +48,11 @@ func TestLiveSRTToolchains(t *testing.T) {
 	userHome, _ := os.UserHomeDir()
 	// Go makes its module cache read-only; make it removable before the temp dir cleanup runs.
 	t.Cleanup(func() { _ = exec.Command("chmod", "-R", "u+w", f.state).Run() })
-	f.cfg.Runner.AllowRead = []string{"/opt/homebrew", "/usr/local"}
+	f.cfg.Runners[0].AllowRead = []string{"/opt/homebrew", "/usr/local"}
 	if extra := os.Getenv("ACPCODE_TEST_SRT_ALLOWREAD"); extra != "" {
-		f.cfg.Runner.AllowRead = append(f.cfg.Runner.AllowRead, strings.Split(extra, ",")...)
+		f.cfg.Runners[0].AllowRead = append(f.cfg.Runners[0].AllowRead, strings.Split(extra, ",")...)
 	}
-	f.cfg.Runner.AllowedDomains = []string{
+	f.cfg.Runners[0].AllowedDomains = []string{
 		"proxy.golang.org", "sum.golang.org", "storage.googleapis.com",
 		"crates.io", "index.crates.io", "static.crates.io",
 		"pypi.org", "files.pythonhosted.org",
@@ -107,7 +107,7 @@ func TestLiveSRTToolchains(t *testing.T) {
 
 	// cargo and rustc live in ~/.cargo/bin and the toolchain in ~/.rustup, both under the denied
 	// home. Allow just those two; ~/.cargo/credentials.toml stays unreadable.
-	f.cfg.Runner.AllowRead = append(f.cfg.Runner.AllowRead, filepath.Join(userHome, ".cargo", "bin"), filepath.Join(userHome, ".rustup"))
+	f.cfg.Runners[0].AllowRead = append(f.cfg.Runners[0].AllowRead, filepath.Join(userHome, ".cargo", "bin"), filepath.Join(userHome, ".rustup"))
 	rustEnv := []string{"CARGO_HOME=" + f.home + "/.cargo"}
 	if os.Getenv("ACPCODE_TEST_SRT_RUSTUP") != "" {
 		rustEnv = append(rustEnv, "RUSTUP_HOME="+os.Getenv("ACPCODE_TEST_SRT_RUSTUP"))

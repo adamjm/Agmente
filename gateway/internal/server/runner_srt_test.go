@@ -45,8 +45,9 @@ func newSRTFixture(t *testing.T, srt string) srtFixture {
 	cfg := withRunner(&config.Config{
 		Roots:    []string{root},
 		StateDir: state,
-		Runner:   config.Runner{Kind: "srt", SRT: srt, AllowedDomains: []string{"api.example.com", "*.cdn.example.com:443"}},
+		Runner:   config.Runner{Kind: "srt", SRT: srt},
 	}, []string{"bob", "acp", "--accept-license"}, []string{"PATH", "HOME", "BOB_API_KEY"}, "")
+	cfg.Runners[0].AllowedDomains = []string{"api.example.com", "*.cdn.example.com:443"}
 	p := store.Project{ID: "0123456789ab", Path: proj}
 	return srtFixture{cfg: cfg, runner: &srtRunner{cfg: cfg}, project: p, home: filepath.Join(state, "homes", p.ID), state: state}
 }
@@ -59,8 +60,8 @@ func TestSRTRunnerIsChosenByKind(t *testing.T) {
 
 func TestSRTSettingsConfineTheProjectAndNothingElse(t *testing.T) {
 	f := newSRTFixture(t, "/opt/homebrew/bin/srt")
-	f.cfg.Runner.AllowRead = []string{"/opt/homebrew"}
-	s := f.runner.settings(f.project, f.home, srtSpec{domains: f.cfg.Runner.AllowedDomains})
+	f.cfg.Runners[0].AllowRead = []string{"/opt/homebrew"}
+	s := f.runner.settings(f.project, f.home, srtSpec{agent: true})
 
 	if got := strings.Join(s.Network.AllowedDomains, " "); got != "*.cdn.example.com:443 api.example.com" {
 		t.Errorf("allowedDomains = %q", got)
@@ -135,7 +136,7 @@ func TestSRTWeakerNetworkIsolationFollowsConfig(t *testing.T) {
 
 func TestSRTLocalBindingIsForTheAgentOnly(t *testing.T) {
 	f := newSRTFixture(t, "/opt/homebrew/bin/srt")
-	agent := srtSpec{domains: []string{"example.com"}, localhost: true}
+	agent := srtSpec{agent: true, localhost: true}
 	if f.runner.settings(f.project, f.home, agent).Network.AllowLocalBinding {
 		t.Fatal("local binding is on without the config key")
 	}
@@ -206,7 +207,7 @@ func TestSRTCommandKeepsSecretsOutOfArgvAndSettings(t *testing.T) {
 		t.Fatal("a secret is in the settings file")
 	}
 	got := strings.Join(cmd.Args, " ")
-	want := " -- /usr/bin/env TMPDIR=" + filepath.Join(f.home, "tmp") + " NODE_USE_ENV_PROXY=1 PATH=/usr/bin:/bin /bin/sh -c cd \"$0\" && exec \"$@\" " + f.project.Path + " bob acp"
+	want := " -- /usr/bin/env TMPDIR=" + filepath.Join(f.home, "tmp") + " CLAUDE_CODE_TMPDIR=" + filepath.Join(f.home, "tmp") + " NODE_USE_ENV_PROXY=1 PATH=/usr/bin:/bin /bin/sh -c cd \"$0\" && exec \"$@\" " + f.project.Path + " bob acp"
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("argv:\n %s\nwant it to contain\n %s", got, want)
 	}
@@ -235,11 +236,11 @@ func TestSRTStartRefusesAnUnreadableSecretsFileBeforeLocking(t *testing.T) {
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	f.cfg.SecretsFile, f.cfg.SecretNames = path, []string{"BOB_API_KEY"}
+	f.cfg.Runners[0].SecretsFile, f.cfg.Runners[0].SecretNames = path, []string{"BOB_API_KEY"}
 	if _, err := f.runner.start(f.project, f.home); !errors.Is(err, errSecrets) {
 		t.Fatalf("start: %v", err)
 	}
-	lock, err := lockHome(f.home)
+	lock, err := lockHome(f.home, lockRunner(f.project))
 	if err != nil {
 		t.Fatalf("the home is locked after a refused start: %v", err)
 	}
@@ -414,7 +415,7 @@ func liveSRT(t *testing.T) srtFixture {
 		t.Skip("set ACPCODE_TEST_SRT to the srt command to run the live sandbox tests")
 	}
 	f := newSRTFixture(t, bin)
-	f.cfg.Runner.AllowedDomains = []string{"example.com"}
+	f.cfg.Runners[0].AllowedDomains = []string{"example.com"}
 	return f
 }
 

@@ -499,3 +499,99 @@ The rows list what a user must add. Go needs `weakerNetworkIsolation`, which ope
 **Memory and start time** (8 projects at once, 3 rounds, `bench-concurrent.mjs --runner srt`): 3.3 GB RSS in total (2.7 GB footprint) against 6.2 GB for the Apple runner; load median 6.7 s (Apple 9.2 s), still above the 3 s NFR-15 target because the sandbox adds about 3 s to Bob's start. A busy Bob grows to about 1.9 GB, so plan 2 GB per working project. Eight srt processes started in the same instant lost one agent in most runs (`Shell 'bash' not found in PATH`, srt's own 1 s lookup); the gateway spaces launches 250 ms apart.
 
 **Known limits.** Linux, a push to a real remote and a soak longer than 15 minutes with two projects were not tested. A shell command in a turn is stopped by Bob itself after about 260 s, with or without srt. With two busy projects a git call took up to 4.8 s against the 5 s limit. A tool that needs a host outside `allowedDomains` fails and Bob reports a network error. A stdio MCP server cannot use the network (see the MCP bullets above).
+
+## 15. Claude Code runner (D-125, D-126; in progress)
+
+This section adds Claude Code as a second runner, next to Bob, under the `srt` runner of section 14. The model calls go to the model gateway at `https://model-gateway.example.com`. The gateway injects the environment from the runner's secrets file, so you do not need a wrapper script, `~/.claude/settings.json` or any VS Code step. Contract: `docs/design/per-session-runner.md`. A step marked **verify** has not been run through the ACP Code gateway yet.
+
+1. **Prerequisites.** Section 14 is done: Node 22.21 or later and `srt` installed. If `srt` is not installed yet:
+
+   ```bash
+   npm install -g @anthropic-ai/sandbox-runtime
+   ```
+
+   Check Node:
+
+   ```bash
+   node --version
+   ```
+
+2. **Install the ACP adapter.** The `claude` CLI is not an ACP agent by itself, so the gateway runs an adapter that starts it:
+
+   ```bash
+   npm install -g @agentclientprotocol/claude-agent-acp
+   ```
+
+   The spike used version 0.113.0 (RESULTS 2026-11-27). Find the paths:
+
+   ```bash
+   which claude-agent-acp claude
+   ```
+
+   The `claude` CLI must already be installed, with the official installer or with Homebrew. A Homebrew install is under `/opt/homebrew`, which the runner can read (see `allowRead` below). **Verify:** an install under your home folder (the official installer puts it in `~/.local/bin`) is unreadable to the agent unless you add that folder to the runner's `allowRead`. Add only the narrowest folder that holds `claude`.
+
+3. **Get the API key.** Get the coding-agent key for Claude Code from your model gateway's key settings. It starts with `sk-` but not `sk-ant-`.
+
+4. **Create the secrets file.** Put it outside the repo and every project root. The folder is the same one the config uses:
+
+   ```bash
+   mkdir -p ~/acpcode
+   touch ~/acpcode/claude.env
+   chmod 600 ~/acpcode/claude.env
+   ```
+
+   Edit `~/acpcode/claude.env` with `NAME=value` lines. Replace each placeholder with your own value. Do not paste the real key into a file in the repo, a chat or a log:
+
+   ```
+   ANTHROPIC_AUTH_TOKEN=<your-claude-code-key>
+   ANTHROPIC_BASE_URL=https://model-gateway.example.com
+   ANTHROPIC_MODEL=claude-haiku-5-5
+   CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
+   CLAUDE_CODE_EXECUTABLE=/opt/homebrew/bin/claude
+   ```
+
+   The gateway refuses a secrets file that is not an absolute path, is not a regular file, or can be read by group or others. It never lets the file set `HOME` or `PATH`.
+
+5. **Add the runner.** In `~/acpcode/config.json`, the `runners` map holds one entry per agent. If the config still has the single `agent` block, move it into `runners` first (D-116): the two forms cannot be mixed. Add this entry, with your own paths, beside Bob's entry. The shared `runner.kind` is `"srt"`:
+
+   ```json
+   "claude": {
+     "name": "Claude Code",
+     "command": ["/opt/homebrew/bin/claude-agent-acp"],
+     "envPassthrough": ["PATH", "HOME", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
+                        "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "CLAUDE_CODE_EXECUTABLE"],
+     "secretsFile": "/Users/you/acpcode/claude.env",
+     "allowedDomains": ["model-gateway.example.com"],
+     "allowRead": ["/opt/homebrew", "/usr/local"]
+   }
+   ```
+
+   - `secretsFile` is the file from step 4. Only the names in `envPassthrough` reach the agent.
+   - `allowedDomains` is this runner's only network. Bob's hosts stay in Bob's entry (section 14) or in the shared `runner.allowedDomains`. A runner with no list of its own takes the shared one, and under `srt` every runner must end up with at least one domain.
+   - `allowRead` is this runner's read paths. Set it for the folder that holds `claude-agent-acp`, `node` and `claude`.
+   - Set `defaultRunner` to the runner a new project should start with. The phone picks a runner for each session, and the project's runner is the default for that choice (D-125).
+
+6. **Check the config and start.** Run the dry run from section 7, then start the gateway:
+
+   ```bash
+   gateway/bin/acpcode-gateway --config ~/acpcode/config.json --dry-run
+   ```
+
+   The gateway refuses to start when the secrets file is missing or too open, or when an `srt` runner has no domain.
+
+7. **Confirm it works.** In the app, start a session in a project and choose the Claude Code runner. Send a short prompt. The first turn starts `claude-agent-acp` under `srt`, which takes a few seconds. **Verify:** this path was not run through the ACP Code gateway at the time of writing. If the turn fails:
+
+   | Symptom | Cause | Change |
+   | --- | --- | --- |
+   | `403` that names the model | The model name is not one the model gateway serves. `claude-haiku-5-53` is refused. | Set `ANTHROPIC_MODEL=claude-haiku-5-5` in `claude.env`, restart the project's agent |
+   | `fetch failed` or `ENOTFOUND` | The host is not in the runner's `allowedDomains` | Check `model-gateway.example.com` is listed in the Claude entry |
+   | `401` or an auth error | The key is wrong, expired or in the wrong variable | Get a new key (step 3). Put it in `ANTHROPIC_AUTH_TOKEN` |
+   | `Operation not permitted` reading `claude` or `node` | The folder is not in `allowRead` | Add the narrowest folder that holds the tool |
+
+   A changed setting applies at the next agent start. Stop the project's agent, or wait for the idle stop, then send a prompt.
+
+**The model.** `claude-haiku-5-5` is the verified name. In the 2026-11-27 spike the model gateway also answered Sonnet (served as `claude-sonnet-5-5`) and `claude-advantage-assist`, and refused `claude-sonnet-4-5`, `claude-haiku-4-5` and `claude-haiku-5-53` with 403. Change `ANTHROPIC_MODEL` only to a name you have tested the same way.
+
+**The token goes in `ANTHROPIC_AUTH_TOKEN`, not `ANTHROPIC_API_KEY`.** The key is a token for the model gateway, not an Anthropic key. The verified setup (D-126) uses `ANTHROPIC_AUTH_TOKEN` only, and the gateway's own example never sets `ANTHROPIC_API_KEY`.
+
+**Two runners in one project.** The same project can have a Bob session and a Claude Code session running at once, each with its own agent. They then share one project folder, and two agents may edit the same file. When you start the second session, tick **Separate worktree**. The gateway makes a sibling folder on its own branch (`acpcode/<runner>/<8 hex>`) and the session works there. Worktrees are available under the `srt` runner only. The gateway never merges the branch: merge it yourself, for example with `git merge` in the original project folder, when you are content with the work.

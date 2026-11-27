@@ -56,17 +56,33 @@ public enum GatewayPrompt {
     }
 }
 
+/// The runner of a new session on the plain `session/new` path (per-session runner). Only a gateway server
+/// gets the key, and only for a runner that is not the project's own (the caller decides that).
+public enum GatewayRunnerMeta {
+    /// The `_meta` key of session/new that carries the runner id.
+    public static let metaKey = "acpcode/runner"
+
+    /// The `_meta` a session/new carries for `runner`: nothing for a non-gateway server, a nil or empty runner.
+    public static func sessionNewMeta(isGateway: Bool, runner: String?) -> [String: ACP.Value] {
+        guard isGateway, let runner, !runner.isEmpty else { return [:] }
+        return [metaKey: .string(runner)]
+    }
+}
+
 public extension GatewayClient {
     /// `_acpcode/sessions/create`. The gateway starts `session/new` in `cwd` (a registered project's folder) and
-    /// sends `prompt` as the first turn. `mcpServers` and `meta` are sent only when given.
+    /// sends `prompt` as the first turn. `mcpServers` and `meta` are sent only when given. `runner` is a runner id
+    /// from `GatewayInfo.runners`; it is sent as `params.runner` only when non-nil and non-empty, else the gateway
+    /// uses the project's runner.
     ///
     /// Gateway refusals come back as `GatewayError.rpc`, with the gateway's text: -32602 (not a registered
     /// project or bad params), -32012, -32000. A session that was created but whose prompt was not sent comes
     /// back as `GatewayError.sessionCreatedPromptNotSent`, carrying the session id.
-    func createSession(cwd: String, prompt: String, mcpServers: [ACP.Value]? = nil, meta: [String: ACP.Value]? = nil) async throws -> GatewaySessionCreateResult {
+    func createSession(cwd: String, prompt: String, mcpServers: [ACP.Value]? = nil, meta: [String: ACP.Value]? = nil, runner: String? = nil) async throws -> GatewaySessionCreateResult {
         var params: [String: ACP.Value] = ["cwd": .string(cwd), "prompt": GatewayPrompt.text(prompt)]
         if let mcpServers { params["mcpServers"] = .array(mcpServers) }
         if let meta, !meta.isEmpty { params["_meta"] = .object(meta) }
+        if let runner, !runner.isEmpty { params["runner"] = .string(runner) }
         let result = try await call("_acpcode/sessions/create", .object(params))
         return try decode(GatewaySessionCreateResult.self, from: result, what: "session")
     }

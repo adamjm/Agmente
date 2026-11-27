@@ -301,10 +301,8 @@ private extension ContentView {
     }
 
     /// Starts a session in a project from the project screen, as the gateway's new-session sheet does (FR-26).
-    func startSession(in project: GatewayProject, mcpIDs: [String]?) {
-        if let cwd = gatewayNewSessionCwd(selectedProjectPath: project.path) {
-            model.sendNewGatewaySession(workingDirectory: cwd, mcpEnabledIDs: mcpIDs)
-        }
+    func startSession(in project: GatewayProject, mcpIDs: [String]?, choice: GatewayNewSessionChoice) async -> String? {
+        await model.startGatewaySession(in: project, mcpIDs: mcpIDs, choice: choice)
     }
 
     @ViewBuilder
@@ -386,8 +384,9 @@ private extension ContentView {
                 isConnected: model.connectionState == .connected,
                 mcpClient: { [weak model] in model?.selectedGatewayClient() },
                 onOpenSession: { sessionId in navigationPath.append(.session(sessionId)) },
-                onCreateSession: { project, mcpIDs in startSession(in: project, mcpIDs: mcpIDs) },
-                runners: model.selectedGatewayInfo?.runners ?? []
+                onCreateSession: { project, mcpIDs, choice in await startSession(in: project, mcpIDs: mcpIDs, choice: choice) },
+                runners: model.selectedGatewayInfo?.runners ?? [],
+                defaultRunner: model.selectedGatewayInfo?.defaultRunner
             )
         case .folderSessions(let path, let displayName):
             FolderSessionsView(
@@ -876,7 +875,8 @@ private struct SessionListPage: View {
                                 git: model.gitStore,
                                 actions: model.gatewaySessionActions,
                                 serverColour: ServerColour.color(index: model.selectedServerId.map { model.serverColourIndex($0) } ?? 0),
-                                isConnected: model.connectionState == .connected
+                                isConnected: model.connectionState == .connected,
+                                runners: model.selectedGatewayInfo?.runners ?? []
                             ) { sessionId in
                                 navigate(to: .session(sessionId))
                             }
@@ -1008,12 +1008,13 @@ private struct SessionListPage: View {
                     initialSelection: gatewayHome.selectedProjectId,
                     blankWorkingDirectory: model.defaultWorkingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                     mcpClient: { [weak model] in model?.selectedGatewayClient() },
+                    runners: model.selectedGatewayInfo?.runners ?? [],
+                    defaultRunner: model.selectedGatewayInfo?.defaultRunner,
                     onCancel: { showingNewSessionSheet = false },
-                    onCreate: { project, mcpIDs in
-                        if let cwd = gatewayNewSessionCwd(selectedProjectPath: project.path) {
-                            model.sendNewGatewaySession(workingDirectory: cwd, mcpEnabledIDs: mcpIDs)
-                        }
-                        showingNewSessionSheet = false
+                    onCreate: { project, mcpIDs, choice in
+                        let message = await model.startGatewaySession(in: project, mcpIDs: mcpIDs, choice: choice)
+                        if message == nil { showingNewSessionSheet = false }
+                        return message
                     }
                 )
             } else {

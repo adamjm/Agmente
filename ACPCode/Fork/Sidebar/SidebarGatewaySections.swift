@@ -11,6 +11,9 @@ private struct SidebarProjectHeader: View {
     let section: GatewayProjectSection
     @ObservedObject var home: GatewayHomeModel
     var git: GitStore?
+    @State private var confirmingAutoApprove = false
+
+    private var autoApprove: Bool { section.project?.autoApprove ?? false }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -20,6 +23,14 @@ private struct SidebarProjectHeader: View {
             Text(section.title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
+            if let branch = section.project?.branch {
+                Text(branch)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .accessibilityIdentifier("gatewayProjectBranch.\(section.id)")
+            }
             if section.unread > 0 {
                 Text("\(section.unread)")
                     .font(.caption2.weight(.bold))
@@ -30,6 +41,16 @@ private struct SidebarProjectHeader: View {
             }
             if let agent = home.agentState(for: section.id) {
                 GatewayAgentStateLabel(projectId: section.id, agent: agent)
+            }
+            if autoApprove {
+                Label("Auto-approve", systemImage: "checkmark.shield")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.orange.opacity(0.18)))
+                    .foregroundStyle(Color.orange)
+                    .accessibilityLabel("Auto-approve is on for this project")
+                    .accessibilityIdentifier("gatewayAutoApprove.\(section.id)")
             }
             Spacer(minLength: 8)
             if let git, section.project != nil, git.supportsGit {
@@ -42,6 +63,35 @@ private struct SidebarProjectHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("gatewayProject.\(section.id)")
+        .contextMenu {
+            if let project = section.project {
+                if project.autoApprove {
+                    Button {
+                        Task { await home.setAutoApprove(projectId: project.id, enabled: false) }
+                    } label: {
+                        Label("Turn off auto-approve", systemImage: "shield")
+                    }
+                    .accessibilityIdentifier("gatewayAutoApproveOff.\(project.id)")
+                } else {
+                    Button {
+                        confirmingAutoApprove = true
+                    } label: {
+                        Label("Turn on auto-approve", systemImage: "checkmark.shield")
+                    }
+                    .accessibilityIdentifier("gatewayAutoApproveOn.\(project.id)")
+                }
+            }
+        }
+        .confirmationDialog("Auto-approve every tool call in \(section.title)?", isPresented: $confirmingAutoApprove, titleVisibility: .visible) {
+            Button("Turn on auto-approve", role: .destructive) {
+                if let project = section.project {
+                    Task { await home.setAutoApprove(projectId: project.id, enabled: true) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The gateway will allow every tool call this project's agent asks for, with no prompt on your devices. This includes running commands and editing files. You can turn it off here at any time.")
+        }
     }
 }
 
@@ -55,6 +105,8 @@ struct SidebarGatewaySections: View {
     /// The gateway connection's colour and whether it is open (D-113). Every row of this gateway shares them.
     var serverColour: Color?
     var isConnected: Bool?
+    /// The runners the gateway lists. With two or more, session rows show their runner (per-session runner).
+    var runners: [GatewayRunner] = []
     let open: (String) -> Void
 
     var body: some View {
@@ -95,7 +147,8 @@ struct SidebarGatewaySections: View {
                                     unread: session.unread,
                                     isHighlighted: session.status == .running,
                                     serverColour: serverColour,
-                                    isConnected: isConnected
+                                    isConnected: isConnected,
+                                    secondary: GatewaySessionRunnerRules.sessionLabel(session, project: section.project, runners: runners)
                                 )
                                 .overlay(alignment: .bottom) {
                                     GatewayContextBar(usage: home.usage[session.sessionId])
